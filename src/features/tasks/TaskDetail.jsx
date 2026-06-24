@@ -1,0 +1,616 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  tasksApi, STATUS_LABELS, PRIORITIES, LINK_TYPES, LINK_LABELS,
+  resolveStatuses, statusLabel,
+} from './tasksApi';
+import { projectsApi } from '../projects/projectsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import CustomFieldValue from '../customfields/CustomFieldValue';
+import TaskTypeIcon from '../../components/TaskTypeIcon';
+import Select from '../../components/Select';
+import { useAuth } from '../auth/useAuth';
+import { useTrackVisit } from '../recent/useTrackVisit';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconArrowLeft } from '../../components/icons';
+
+const FIELD_CMP = { dropdown: IconFieldDropdown, relationship: IconFieldRelationship, text: IconFieldText };
+
+const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
+const timeAgo = (d) => {
+  if (!d) return '';
+  const sec = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+  if (sec < 60) return 'just now';
+  const m = Math.floor(sec / 60); if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+  const days = Math.floor(h / 24); if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+  const w = Math.floor(days / 7); if (w < 5) return `${w} week${w > 1 ? 's' : ''} ago`;
+  const mo = Math.floor(days / 30); if (mo < 12) return `${mo} month${mo > 1 ? 's' : ''} ago`;
+  return `${Math.floor(days / 365)} year${days >= 730 ? 's' : ''} ago`;
+};
+
+const fmtDate = (d) => (d ? new Date(d).toLocaleString(undefined, {
+  day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+}) : '');
+
+const DONE = new Set(['completed', 'closed']);
+const typeIcon = (t) => <span style={{ display: 'inline-flex', color: '#6b7280', verticalAlign: 'middle' }}><TaskTypeIcon type={t} size={15} /></span>;
+
+/**
+ * Reusable task (issue) detail. Rendered both inside a modal (from the board/list)
+ * and as a full page (deep-link route). `onClose` returns the user to where they were;
+ * `onChanged` lets the parent (board/list) refresh after edits; `onOpenTask` swaps the
+ * open issue (used by subtasks / linked items).
+ */
+export default function TaskDetail({ taskId, onClose, onChanged, members: membersProp, statuses: statusesProp, onOpenTask, inModal = false }) {
+  const { user } = useAuth();
+  const confirm = useConfirm();
+  const me = user?._id || user?.id;
+
+  const [task, setTask] = useState(null);
+  const [fetchedProject, setFetchedProject] = useState(null);
+  const [fetchedMembers, setFetchedMembers] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [subtasks, setSubtasks] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [worklogs, setWorklogs] = useState([]);
+  const [siblings, setSiblings] = useState([]); // candidate tasks for linking
+  const [customFields, setCustomFields] = useState([]);
+  const [fieldValues, setFieldValues] = useState({});
+  const [error, setError] = useState(null);
+
+  // Prefer members passed from the board (already loaded); fetch only as fallback.
+  const members = (membersProp && membersProp.length) ? membersProp : fetchedMembers;
+
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleVal, setTitleVal] = useState('');
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descVal, setDescVal] = useState('');
+  const [labelsVal, setLabelsVal] = useState('');
+  const [newComment, setNewComment] = useState('');
+  const [editingComment, setEditingComment] = useState(null);
+
+  const [activityTab, setActivityTab] = useState('all'); // all | comments | history | worklog
+  const [worklog, setWorklog] = useState('');
+  const [worklogNote, setWorklogNote] = useState('');
+
+  const [addingSub, setAddingSub] = useState(false);
+  const [newSub, setNewSub] = useState('');
+  const [addingLink, setAddingLink] = useState(false);
+  const [linkType, setLinkType] = useState('relates_to');
+  const [linkTarget, setLinkTarget] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const t = await tasksApi.get(taskId);
+      setTask(t);
+      setTitleVal(t.title); setDescVal(t.description || ''); setLabelsVal((t.labels || []).join(', '));
+      setFieldValues(t.custom_fields || {});
+      const [ms, cs, act, subs, lks, wls, sibs, proj, cf] = await Promise.all([
+        projectsApi.members(t.project_id).catch(() => []),
+        tasksApi.comments(taskId).catch(() => []),
+        tasksApi.activity(taskId).catch(() => []),
+        tasksApi.subtasks(taskId).catch(() => []),
+        tasksApi.links(taskId).catch(() => []),
+        tasksApi.worklogs(taskId).catch(() => []),
+        tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
+        statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
+        customFieldsApi.list(t.project_id, t.list_id).catch(() => []),
+      ]);
+      setFetchedMembers(ms); setComments(cs); setActivity(act);
+      setSubtasks(subs); setLinks(lks); setWorklogs(wls); setSiblings(sibs); setFetchedProject(proj);
+      setCustomFields(cf);
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Failed to load task');
+    }
+  }, [taskId]);
+
+  useEffect(() => { load(); }, [load]);
+  useTrackVisit(task ? {
+    path: `/tasks/${taskId}`, name: `${task.key} ${task.title}`,
+    type: (task.type || 'task').charAt(0).toUpperCase() + (task.type || 'task').slice(1),
+    icon: task.type === 'bug' ? '🐛' : '✅', id: taskId,
+  } : null);
+
+  if (error) return <div style={{ color: '#991b1b', padding: 20 }}>{error}</div>;
+  if (!task) return <p style={{ padding: 20 }}>Loading…</p>;
+
+  const nameOf = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+  const meIsMember = members.some((m) => m.user_id === me);
+  // The space's full workflow; a task can move to any status (ClickUp-style).
+  const spaceStatuses = (statusesProp && statusesProp.length) ? statusesProp : resolveStatuses(fetchedProject);
+  const statusList = spaceStatuses.some((st) => st.key === task.status)
+    ? spaceStatuses
+    : [...spaceStatuses, { key: task.status, name: task.status, color: '#6b7280' }];
+
+  const after = async () => { await load(); onChanged?.(); };
+  const save = async (patch) => { setTask((t) => ({ ...t, ...patch })); await tasksApi.update(taskId, patch); after(); };
+
+  const move = async (to) => {
+    if (to === task.status) return;
+    setTask((t) => ({ ...t, status: to })); // optimistic
+    try { await tasksApi.changeStatus(taskId, { to_status: to }); after(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not change status'); load(); }
+  };
+  const assign = async (uid) => {
+    setTask((t) => ({ ...t, assignee_id: uid || null })); // optimistic
+    try { await tasksApi.assign(taskId, uid || null); after(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Assign failed'); load(); }
+  };
+  const addWork = async (e) => {
+    e.preventDefault(); if (!worklog) return;
+    await tasksApi.logWork(taskId, Number(worklog), worklogNote || null);
+    setWorklog(''); setWorklogNote(''); after();
+  };
+  const addComment = async (e) => { e.preventDefault(); if (!newComment.trim()) return; await tasksApi.addComment(taskId, newComment); setNewComment(''); load(); };
+  const saveEdit = async (cid) => { await tasksApi.editComment(cid, editingComment.body); setEditingComment(null); load(); };
+  const delComment = async (cid) => {
+    const ok = await confirm({ title: 'Delete comment', message: 'This comment will be deleted. This cannot be undone.' });
+    if (ok) { await tasksApi.deleteComment(cid); load(); }
+  };
+
+  const addSubtask = async (e) => {
+    e.preventDefault();
+    if (!newSub.trim()) return;
+    try {
+      await tasksApi.create({ project_id: task.project_id, title: newSub.trim(), type: 'subtask', parent_id: taskId });
+      setNewSub(''); setAddingSub(false); load(); onChanged?.();
+    } catch (err) { setError(err.response?.data?.error?.message || 'Could not add subtask'); }
+  };
+
+  const addLink = async () => {
+    if (!linkTarget) return;
+    try {
+      const updated = await tasksApi.addLink(taskId, linkTarget, linkType);
+      setLinks(updated); setLinkTarget(''); setAddingLink(false); onChanged?.();
+    } catch (err) { setError(err.response?.data?.error?.message || 'Could not add link'); }
+  };
+  const removeLink = async (target) => {
+    const updated = await tasksApi.removeLink(taskId, target);
+    setLinks(updated); onChanged?.();
+  };
+
+  const openTask = (id) => { if (onOpenTask) onOpenTask(id); };
+
+  const setFieldVal = async (id, v) => {
+    const next = { ...fieldValues, [id]: v };
+    setFieldValues(next);
+    try { await tasksApi.update(taskId, { custom_fields: next }); onChanged?.(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not save field'); }
+  };
+
+  // already-linked ids + self are not candidates for a new link
+  const linkedIds = new Set([taskId, ...links.map((l) => l.task_id)]);
+  const linkCandidates = siblings.filter((s) => !linkedIds.has(s._id));
+  const subDone = subtasks.filter((s) => DONE.has(s.status)).length;
+
+  // merged "All" activity feed (comments + audit events), newest first
+  const feed = [
+    ...comments.map((c) => ({ kind: 'comment', at: c.created_at, data: c })),
+    ...activity.map((a) => ({ kind: 'activity', at: a.created_at, data: a })),
+  ].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+
+  return (
+    <div style={inModal ? s.rootModal : undefined}>
+      <div style={inModal ? s.headerModal : s.header}>
+        <div style={s.breadcrumb}>
+          <button className="wg-back" style={s.back} onClick={onClose}>
+            <IconArrowLeft size={15} /> Board
+          </button>
+          <span style={s.crumbSep}>/</span>
+          <span style={s.keyCrumb}>{typeIcon(task.type)} {task.key}</span>
+        </div>
+        <button style={s.closeBtn} title="Close" onClick={onClose}>✕</button>
+      </div>
+
+      <div style={inModal ? s.scrollBody : undefined}>
+      {error && <p style={{ color: '#991b1b' }}>{error}</p>}
+
+      <div style={s.grid}>
+        {/* MAIN */}
+        <div>
+          {editingTitle ? (
+            <input autoFocus style={s.titleInput} value={titleVal}
+              onChange={(e) => setTitleVal(e.target.value)}
+              onBlur={() => { setEditingTitle(false); if (titleVal.trim() && titleVal !== task.title) save({ title: titleVal.trim() }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
+          ) : (
+            <h1 style={s.title} onClick={() => setEditingTitle(true)} title="Click to edit">{task.title}</h1>
+          )}
+
+          <div style={s.section}>
+            <div style={s.label}>Description</div>
+            {editingDesc ? (
+              <div>
+                <textarea autoFocus style={s.descArea} value={descVal} onChange={(e) => setDescVal(e.target.value)} />
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button style={s.btn} onClick={() => { setEditingDesc(false); save({ description: descVal }); }}>Save</button>
+                  <button style={s.btnGhost} onClick={() => { setEditingDesc(false); setDescVal(task.description || ''); }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div style={s.descBox} onClick={() => setEditingDesc(true)}>
+                {task.description || <span style={{ color: '#9ca3af' }}>Add a description…</span>}
+              </div>
+            )}
+          </div>
+
+          {/* SUBTASKS */}
+          <div style={s.section}>
+            <div style={s.sectionHead}>
+              <div style={s.label}>Subtasks</div>
+              {subtasks.length > 0 && (
+                <div style={s.progressWrap}>
+                  <div style={s.progressTrack}><div style={{ ...s.progressFill, width: `${Math.round((subDone / subtasks.length) * 100)}%` }} /></div>
+                  <span style={s.progressText}>{subDone}/{subtasks.length} done</span>
+                </div>
+              )}
+            </div>
+            {subtasks.map((st) => (
+              <div key={st._id} style={s.subRow} onClick={() => openTask(st._id)}>
+                <span style={{ flexShrink: 0 }}>{typeIcon(st.type)}</span>
+                <span style={s.subKey}>{st.key}</span>
+                <span style={{ flex: 1, textDecoration: DONE.has(st.status) ? 'line-through' : 'none', color: DONE.has(st.status) ? '#9ca3af' : '#111827' }}>{st.title}</span>
+                <StatusBadge status={st.status} statuses={spaceStatuses} />
+              </div>
+            ))}
+            {addingSub ? (
+              <form onSubmit={addSubtask} style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input autoFocus style={s.inlineInput} placeholder="What needs to be done?" value={newSub} onChange={(e) => setNewSub(e.target.value)} />
+                <button style={s.btn} type="submit">Add</button>
+                <button style={s.btnGhost} type="button" onClick={() => { setAddingSub(false); setNewSub(''); }}>Cancel</button>
+              </form>
+            ) : (
+              <button style={s.addLink} onClick={() => setAddingSub(true)}>+ Add subtask</button>
+            )}
+          </div>
+
+          {/* LINKED WORK ITEMS */}
+          <div style={s.section}>
+            <div style={s.label}>Linked work items</div>
+            {links.map((l) => (
+              <div key={l.task_id} style={s.linkRow}>
+                <span style={s.linkType}>{LINK_LABELS[l.type] || l.type}</span>
+                <span style={s.subRowInner} onClick={() => openTask(l.task_id)}>
+                  <span style={{ flexShrink: 0 }}>{typeIcon(l.task_type)}</span>
+                  <span style={s.subKey}>{l.key}</span>
+                  <span style={{ flex: 1 }}>{l.title}</span>
+                  <StatusBadge status={l.status} statuses={spaceStatuses} />
+                </span>
+                <button style={s.linkX} title="Remove link" onClick={() => removeLink(l.task_id)}>✕</button>
+              </div>
+            ))}
+            {addingLink ? (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Select style={{ minWidth: 130 }} value={linkType} onChange={setLinkType}
+                  options={LINK_TYPES.map((lt) => ({ value: lt.value, label: lt.label }))} />
+                <Select style={{ flex: 1, minWidth: 180 }} value={linkTarget} onChange={setLinkTarget} placeholder="Select a work item…"
+                  options={[{ value: '', label: 'Select a work item…' }, ...linkCandidates.map((c) => ({ value: c._id, label: `${c.key} — ${c.title}` }))]} />
+                <button style={s.btn} onClick={addLink} disabled={!linkTarget}>Link</button>
+                <button style={s.btnGhost} onClick={() => { setAddingLink(false); setLinkTarget(''); }}>Cancel</button>
+              </div>
+            ) : (
+              <button style={s.addLink} onClick={() => setAddingLink(true)}>+ Add linked work item</button>
+            )}
+          </div>
+
+          {/* CUSTOM FIELDS */}
+          {customFields.length > 0 && (
+            <div style={s.section}>
+              <div style={s.label}>Custom Fields</div>
+              {customFields.map((f) => {
+                const Cmp = FIELD_CMP[f.type] || IconFieldText;
+                return (
+                  <div key={f._id} style={s.cfRow}>
+                    <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
+                    <div style={{ flex: 1 }} />
+                    <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
+                      spaceId={task.project_id} onOpenTask={onOpenTask} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ACTIVITY (tabbed) */}
+          <div style={s.section}>
+            <div style={s.label}>Activity</div>
+            <div style={s.tabs}>
+              {[['all', 'All'], ['comments', 'Comments'], ['history', 'History'], ['worklog', 'Work log']].map(([k, lbl]) => (
+                <button key={k} style={{ ...s.tab, ...(activityTab === k ? s.tabActive : {}) }} onClick={() => setActivityTab(k)}>{lbl}</button>
+              ))}
+            </div>
+
+            {activityTab === 'comments' && (
+              <form onSubmit={addComment} style={{ margin: '12px 0', display: 'flex', gap: 10 }}>
+                <span style={s.avatar}>{initials(user?.full_name)}</span>
+                <div style={{ flex: 1 }}>
+                  <textarea style={s.descArea} placeholder="Add a comment…" value={newComment} onChange={(e) => setNewComment(e.target.value)} />
+                  <button style={s.btn} type="submit">Comment</button>
+                </div>
+              </form>
+            )}
+
+            {activityTab === 'comments' && (
+              <div>
+                {comments.length === 0 && <Empty text="No comments yet." />}
+                {comments.map((c) => (
+                  <CommentRow key={c._id} c={c} me={me} editingComment={editingComment} setEditingComment={setEditingComment}
+                    saveEdit={saveEdit} delComment={delComment} />
+                ))}
+              </div>
+            )}
+
+            {activityTab === 'history' && (
+              <div>
+                {activity.length === 0 && <Empty text="No history yet." />}
+                {activity.map((a) => <ActivityRow key={a._id} a={a} nameOf={nameOf} />)}
+              </div>
+            )}
+
+            {activityTab === 'worklog' && (
+              <div>
+                <form onSubmit={addWork} style={s.worklogForm}>
+                  <input style={{ ...s.inlineInput, width: 90 }} type="number" min="0.5" step="0.5" placeholder="Hours" value={worklog} onChange={(e) => setWorklog(e.target.value)} />
+                  <input style={s.inlineInput} placeholder="What did you work on? (optional)" value={worklogNote} onChange={(e) => setWorklogNote(e.target.value)} />
+                  <button style={s.btn} type="submit">Log time</button>
+                </form>
+                {worklogs.length === 0 ? <Empty text="No time was logged for this task yet." /> : (
+                  worklogs.slice().reverse().map((w) => (
+                    <div key={w._id} style={s.feedRow}>
+                      <span style={s.avatar}>{initials(w.user_name)}</span>
+                      <div style={{ flex: 1 }}>
+                        <div><strong>{w.user_name || 'User'}</strong> logged <strong>{w.hours}h</strong> <span style={s.muted}>· {timeAgo(w.created_at)}</span></div>
+                        {w.note && <div style={{ fontSize: 14, marginTop: 2 }}>{w.note}</div>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {activityTab === 'all' && (
+              <div>
+                {feed.length === 0 && <Empty text="No activity yet." />}
+                {feed.map((f) => (
+                  f.kind === 'comment'
+                    ? <CommentRow key={`c${f.data._id}`} c={f.data} me={me} editingComment={editingComment} setEditingComment={setEditingComment} saveEdit={saveEdit} delComment={delComment} />
+                    : <ActivityRow key={`a${f.data._id}`} a={f.data} nameOf={nameOf} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* DETAILS */}
+        <aside>
+          <Select style={{ minWidth: 160 }} value={task.status} onChange={move}
+            options={statusList.map((st) => ({ value: st.key, label: st.name }))} />
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <strong>Details</strong>
+
+            <Field label="Assignee">
+              <div>
+                <Select value={task.assignee_id || ''} onChange={assign} placeholder="Unassigned"
+                  options={[{ value: '', label: 'Unassigned' }, ...members.map((m) => ({ value: m.user_id, label: `${m.full_name}${m.user_id === me ? ' (you)' : ''}` }))]} />
+                {!task.assignee_id && meIsMember && <button style={s.assignMe} onClick={() => assign(me)}>Assign to me</button>}
+              </div>
+            </Field>
+
+            <Field label="Priority">
+              <Select value={task.priority} onChange={(v) => save({ priority: v })}
+                options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
+            </Field>
+
+            <Field label="Due date">
+              <input type="date" style={s.fieldSelect} value={task.due_date || ''} onChange={(e) => save({ due_date: e.target.value || null })} />
+            </Field>
+
+            <Field label="Labels">
+              <input style={s.fieldSelect} value={labelsVal} onChange={(e) => setLabelsVal(e.target.value)}
+                onBlur={() => save({ labels: labelsVal.split(',').map((x) => x.trim()).filter(Boolean) })} placeholder="comma, separated" />
+            </Field>
+
+            <Field label="Reporter">
+              <span style={s.person}><span style={s.avatarSm}>{initials(nameOf(task.reporter_id))}</span> {nameOf(task.reporter_id) || '—'}</span>
+            </Field>
+
+            <Field label="Logged"><span>{task.actual_hours || 0}h logged</span></Field>
+            <Field label="Estimate"><span>{task.estimate_hours ?? '—'} h</span></Field>
+          </div>
+        </aside>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={s.fieldRow}>
+      <span style={s.fieldLabel}>{label}</span>
+      <div style={{ flex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status, statuses }) {
+  const st = (statuses || []).find((x) => x.key === status);
+  if (st) {
+    const name = (st.name || status).toUpperCase();
+    return <span style={{ ...s.badge, background: `${st.color}22`, color: st.color }}>{name}</span>;
+  }
+  return <StatusBadgeLegacy status={status} />;
+}
+
+function StatusBadgeLegacy({ status }) {
+  const done = DONE.has(status);
+  return <span style={{ ...s.badge, background: done ? '#dcfce7' : '#e0e7ff', color: done ? '#166534' : '#3730a3' }}>{(STATUS_LABELS[status] || status).toUpperCase()}</span>;
+}
+
+function Empty({ text }) {
+  return <p style={{ color: '#9ca3af', fontSize: 14, padding: '14px 0' }}>{text}</p>;
+}
+
+const initials2 = initials;
+
+function CommentRow({ c, me, editingComment, setEditingComment, saveEdit, delComment }) {
+  return (
+    <div style={s.feedRow}>
+      <span style={s.avatar}>{initials2(c.author_name)}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <strong style={{ fontSize: 14 }}>{c.author_name || 'User'} <span style={s.muted}>· {timeAgo(c.created_at)}{c.is_edited ? ' (edited)' : ''}</span></strong>
+        </div>
+        {editingComment?._id === c._id ? (
+          <div>
+            <textarea style={s.descArea} value={editingComment.body} onChange={(e) => setEditingComment({ ...editingComment, body: e.target.value })} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <button style={s.btn} onClick={() => saveEdit(c._id)}>Save</button>
+              <button style={s.btnGhost} onClick={() => setEditingComment(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ margin: '4px 0', fontSize: 14 }}>{c.body}</div>
+            {c.author_id === me && (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button style={s.link} onClick={() => setEditingComment({ _id: c._id, body: c.body })}>Edit</button>
+                <button style={s.linkDanger} onClick={() => delComment(c._id)}>Delete</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const FIELD_LABEL = {
+  title: 'Title', description: 'Description', priority: 'Priority',
+  due_date: 'Due date', labels: 'Labels', type: 'Type', estimate_hours: 'Estimate',
+};
+
+// Maps an audit-log entry to a human sentence + optional detail node.
+function describeActivity(a, nameOf) {
+  const m = a.metadata || {};
+  switch (a.action) {
+    case 'task.created':
+      return { verb: <>created this work item</> };
+    case 'task.status_changed':
+      return {
+        verb: <>changed the <strong>Status</strong></>,
+        detail: (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <StatusBadge status={m.from} /><span>→</span><StatusBadge status={m.to} />
+          </div>
+        ),
+      };
+    case 'task.assigned': {
+      const name = m.assignee_id ? (nameOf(m.assignee_id) || 'someone') : null;
+      return { verb: name ? <>assigned this to <strong>{name}</strong></> : <>unassigned this</> };
+    }
+    case 'task.updated': {
+      const fields = (m.fields || []).filter((f) => f !== 'updated_at');
+      const labels = fields.map((f) => FIELD_LABEL[f] || f);
+      return { verb: <>updated {labels.length ? <strong>{labels.join(', ')}</strong> : 'the work item'}</> };
+    }
+    case 'task.worklog':
+      return { verb: <>logged <strong>{m.hours}h</strong> of work</> };
+    case 'task.link_added':
+      return { verb: <>linked a work item</> };
+    case 'task.link_removed':
+      return { verb: <>removed a link</> };
+    case 'task.archived':
+      return { verb: <>archived this work item</> };
+    case 'task.deleted':
+      return { verb: <>deleted this work item</> };
+    default:
+      return { verb: <>{(a.action || '').replace('task.', '').replace(/_/g, ' ')}</> };
+  }
+}
+
+function ActivityRow({ a, nameOf }) {
+  const who = a.actor_name || nameOf(a.actor_id) || 'User';
+  const { verb, detail } = describeActivity(a, nameOf);
+  return (
+    <div style={s.feedRow}>
+      <span style={s.avatar}>{initials2(who)}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14 }}>
+          <strong>{who}</strong> {verb}
+          <span style={s.muted}> · {fmtDate(a.created_at)} ({timeAgo(a.created_at)})</span>
+        </div>
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+const s = {
+  // Modal layout: fixed header, single scrolling body (so the whole card no longer scrolls in the backdrop).
+  rootModal: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
+  headerModal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
+    padding: '16px 24px', borderBottom: '1px solid #f1f5f9', background: '#fff' },
+  scrollBody: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px 28px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  breadcrumb: { display: 'flex', alignItems: 'center', gap: 10 },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f3f4f6', border: '1px solid #e5e7eb',
+    color: '#374151', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: '6px 12px', borderRadius: 8 },
+  crumbSep: { color: '#d1d5db' },
+  keyCrumb: { display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#374151', fontSize: 13 },
+  closeBtn: { background: 'none', border: '1px solid #e5e7eb', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: '#6b7280' },
+  grid: { display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24, alignItems: 'start' },
+  title: { fontSize: 26, margin: '0 0 16px', cursor: 'text' },
+  titleInput: { fontSize: 26, fontWeight: 700, width: '100%', boxSizing: 'border-box', border: '1px solid #111827', borderRadius: 8, padding: '4px 8px', marginBottom: 16 },
+  section: { marginBottom: 24 },
+  sectionHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  label: { fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 },
+  descBox: { minHeight: 44, border: '1px solid #f1f5f9', borderRadius: 8, padding: '10px 12px', cursor: 'text', background: '#fafafa' },
+  descArea: { width: '100%', boxSizing: 'border-box', minHeight: 70, border: '1px solid #d1d5db', borderRadius: 8, padding: 10, fontFamily: 'inherit', fontSize: 14 },
+  inlineInput: { flex: 1, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' },
+
+  // subtasks
+  progressWrap: { display: 'flex', alignItems: 'center', gap: 8 },
+  progressTrack: { width: 90, height: 6, borderRadius: 4, background: '#e5e7eb', overflow: 'hidden' },
+  progressFill: { height: '100%', background: '#16a34a' },
+  progressText: { fontSize: 12, color: '#6b7280' },
+  subRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #f1f5f9', borderRadius: 8, marginBottom: 6, cursor: 'pointer', fontSize: 14, background: '#fff' },
+  subRowInner: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', fontSize: 14 },
+  subKey: { color: '#111827', fontWeight: 600, fontSize: 12, flexShrink: 0 },
+  addLink: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', fontSize: 13, padding: '6px 0', fontWeight: 600 },
+
+  // links
+  linkRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 },
+  linkType: { fontSize: 11, color: '#6b7280', width: 92, flexShrink: 0, textTransform: 'capitalize' },
+  linkX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, flexShrink: 0 },
+  linkSelect: { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
+  cfRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid #f1f5f9' },
+  cfName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: '#111827' },
+  cfIcon: { color: '#6b7280', display: 'inline-flex' },
+  cfInput: { minWidth: 150, maxWidth: 220, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },
+
+  // activity
+  tabs: { display: 'flex', gap: 4, border: '1px solid #e5e7eb', borderRadius: 8, padding: 3, width: 'fit-content' },
+  tab: { padding: '5px 12px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#6b7280' },
+  tabActive: { background: '#f3f4f6', color: '#111827', fontWeight: 600, border: '1px solid #bfdbfe' },
+  feedRow: { display: 'flex', gap: 10, padding: '12px 0', borderTop: '1px solid #f1f5f9' },
+  worklogForm: { display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' },
+  muted: { color: '#9ca3af', fontWeight: 400, fontSize: 12 },
+  badge: { fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, letterSpacing: 0.3, flexShrink: 0 },
+
+  avatar: { width: 30, height: 30, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 },
+  avatarSm: { width: 22, height: 22, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 },
+  statusTop: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontWeight: 600, fontSize: 14, background: '#f3f4f6' },
+  fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid #f8fafc' },
+  fieldLabel: { width: 90, color: '#6b7280', fontSize: 13, flexShrink: 0 },
+  fieldSelect: { padding: '7px 9px', border: '1px solid #d1d5db', borderRadius: 7, fontSize: 14, width: '100%', boxSizing: 'border-box' },
+  assignMe: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', fontSize: 12, padding: '4px 0 0' },
+  person: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 },
+  btn: { padding: '7px 14px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' },
+  btnGhost: { padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
+  link: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', padding: 0, fontSize: 13 },
+  linkDanger: { background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, fontSize: 13 },
+};
