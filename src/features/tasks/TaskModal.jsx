@@ -51,7 +51,9 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
   // Open the native date picker on a click anywhere in the pill (not just the icon).
   const openPicker = (ref) => { try { ref.current?.showPicker?.(); } catch { /* not supported */ } };
 
-  const loadFields = () => customFieldsApi.list(spaceId, listId).then((fs) => {
+  const loadFields = () => customFieldsApi.list(spaceId, listId).then((all) => {
+    // Hide inherited Space fields that were disabled for this List.
+    const fs = all.filter((f) => f.enabled !== false);
     setFields(fs);
     // Seed ClickUp-style default values for dropdown options marked default (create only).
     if (mode !== 'edit') {
@@ -244,6 +246,18 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
               {fields.length === 0 && <div style={{ color: '#9ca3af', fontSize: 14, padding: '6px 0' }}>No custom fields yet.</div>}
               {fields.map((f) => {
                 const Cmp = FIELD_CMP[f.type] || IconFieldText;
+                // Relationship fields render full-width (name on top, related-task table below);
+                // dropdown/text stay on a compact inline row.
+                if (f.type === 'relationship') {
+                  return (
+                    <div key={f._id} style={s.fieldRelBlock}>
+                      <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
+                      <div style={{ marginTop: 8 }}>
+                        <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={f._id} style={s.fieldRow}>
                     <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
@@ -320,6 +334,7 @@ const s = {
   tagInput: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
   fieldsLabel: { fontSize: 13, color: '#9ca3af', marginBottom: 10 },
   fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderTop: '1px solid #f1f5f9' },
+  fieldRelBlock: { padding: '12px 0', borderTop: '1px solid #f1f5f9' },
   fieldName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: '#111827' },
   fieldIcon: { color: '#6b7280', display: 'inline-flex' },
   fieldInput: { minWidth: 160, maxWidth: 240, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },

@@ -26,8 +26,9 @@ export default function SpacesMenu({ collapsed }) {
   const confirm = useConfirm();
   const { user, can } = useAuth();
   const me = user?._id || user?.id;
-  // Only the Space's creator (owner) — or an admin — sees the Delete option.
-  const canDeleteSpace = (sp) => (sp.owner_id && sp.owner_id === me) || can('project.delete');
+  // Only the Space's creator (owner) sees the Delete option.
+  // TODO: Re-introduce an admin override (project.delete) when permissions return.
+  const canDeleteSpace = (sp) => !!sp.owner_id && sp.owner_id === me;
   const [spaces, setSpaces] = useState([]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [listsBySpace, setListsBySpace] = useState({});

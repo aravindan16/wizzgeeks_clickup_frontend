@@ -11,7 +11,6 @@ import { recordRecent } from './recentStore';
  */
 const ROUTE_META = {
   '/': { name: 'Dashboard', type: 'Dashboard', icon: '📊' },
-  '/my-activity': { name: 'My Activity', type: 'Page', icon: '📝' },
   '/team-activity': { name: 'Team Activity', type: 'Page', icon: '🧑‍🤝‍🧑' },
   '/projects': { name: 'Spaces', type: 'Page', icon: '🗂️' },
   '/reports': { name: 'Reports', type: 'Page', icon: '📈' },

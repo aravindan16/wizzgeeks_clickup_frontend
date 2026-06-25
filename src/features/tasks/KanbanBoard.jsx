@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -23,17 +23,24 @@ const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2)
 
 export default function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
   const open = onOpenTask || (() => {});
-  // Columns come from the space's own workflow. Include any orphan statuses found
-  // on tasks (e.g. legacy) so nothing is hidden.
-  const columns = [...statuses];
-  tasks.forEach((t) => {
-    if (!columns.some((c) => c.key === t.status)) columns.push({ key: t.status, name: t.status, color: '#6b7280' });
-  });
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const me = user?._id || user?.id;
   const [dragId, setDragId] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null); // status key currently hovered while dragging
   const [error, setError] = useState(null);
+
+  // Local mirror of the tasks prop so a drag can update the board instantly
+  // (optimistic) instead of waiting for the server round-trip + parent refetch.
+  const [board, setBoard] = useState(tasks);
+  useEffect(() => { setBoard(tasks); }, [tasks]);
+
+  // Columns come from the space's own workflow. Include any orphan statuses found
+  // on tasks (e.g. legacy) so nothing is hidden.
+  const columns = [...statuses];
+  board.forEach((t) => {
+    if (!columns.some((c) => c.key === t.status)) columns.push({ key: t.status, name: t.status, color: '#6b7280' });
+  });
 
   // Composer state
   const [composerStatus, setComposerStatus] = useState(null);
@@ -56,7 +63,7 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
   const deleteCard = async (id) => {
     setCardMenu(null);
-    const task = tasks.find((t) => t._id === id);
+    const task = board.find((t) => t._id === id);
     const ok = await confirm({
       title: `Delete: ${task?.title || 'task'}`,
       message: 'This task will be permanently deleted. This cannot be undone.',
@@ -67,7 +74,8 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
 
   const canCreate = can('task.create') && !!projectId;
-  const byStatus = (st) => tasks.filter((t) => t.status === st);
+  const byStatus = (st) => board.filter((t) => t.status === st);
+  const draggedTask = dragId ? board.find((t) => t._id === dragId) : null;
   const typeOpt = TYPE_OPTIONS.find((t) => t.value === type) || TYPE_OPTIONS[1];
   const assignee = members.find((m) => m.user_id === assigneeId);
   const assigneeLabel = assignee?.full_name || '';
@@ -87,13 +95,24 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
 
   const onDrop = async (status) => {
-    setError(null);
-    const task = tasks.find((t) => t._id === dragId);
+    const id = dragId;
     setDragId(null);
+    setDragOverCol(null);
+    setError(null);
+    const task = board.find((t) => t._id === id);
     if (!task || task.status === status) return;
-    // ClickUp-style: tasks move freely between any of the space's statuses.
-    try { await tasksApi.changeStatus(task._id, { to_status: status }); onChanged(); }
-    catch (err) { setError(err.response?.data?.error?.message || 'Could not move task'); }
+    // Optimistic: move the card instantly so there's no perceived lag, then
+    // persist in the background. Revert if the server rejects it.
+    const prev = board;
+    setBoard((b) => b.map((t) => (t._id === id ? { ...t, status } : t)));
+    try {
+      // ClickUp-style: tasks move freely between any of the space's statuses.
+      await tasksApi.changeStatus(id, { to_status: status });
+      onChanged();
+    } catch (err) {
+      setBoard(prev); // roll back the optimistic move
+      setError(err.response?.data?.error?.message || 'Could not move task');
+    }
   };
 
   const submitCreate = async (st) => {
@@ -130,8 +149,10 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
           const st = col.key;
           const bg = `${col.color}14`; // soft tint of the status color (over white)
           return (
-          <div key={st} className="wg-col" style={{ background: bg }}
-            onDragOver={(e) => e.preventDefault()} onDrop={() => onDrop(st)}>
+          <div key={st} className="wg-col"
+            style={{ background: bg, ...(dragId && dragOverCol === st ? s.colDropTarget : {}) }}
+            onDragOver={(e) => { e.preventDefault(); if (dragOverCol !== st) setDragOverCol(st); }}
+            onDrop={() => onDrop(st)}>
             <div className="wg-col-head" style={{ background: bg }}>
               <span style={{ ...s.statusDot, background: col.color }} />
               <span style={{ flex: 1, color: col.color }}>{col.name}</span>
@@ -139,10 +160,12 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
             </div>
             <div className="wg-col-body">
               {byStatus(st).map((t) => {
-                const subCount = tasks.filter((x) => x.parent_id === t._id).length;
+                const subCount = board.filter((x) => x.parent_id === t._id).length;
                 return (
                 <div key={t._id} className="wg-card"
                   draggable onDragStart={() => setDragId(t._id)}
+                  onDragEnd={() => { setDragId(null); setDragOverCol(null); }}
+                  style={dragId === t._id ? s.cardDragging : undefined}
                   onClick={() => open(t._id)}>
                   <div style={s.cardTop}>
                     <span style={s.cardTitle}>{t.title}</span>
@@ -170,6 +193,11 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
                 </div>
                 );
               })}
+
+              {/* ClickUp-style drop placeholder: shows where the card will land. */}
+              {draggedTask && dragOverCol === st && draggedTask.status !== st && (
+                <div style={s.placeholder}>Drop here</div>
+              )}
 
               {canCreate && (composerStatus === st ? (
                 <div style={s.composer} onClick={(e) => e.stopPropagation()}>
@@ -266,6 +294,15 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
 
 const s = {
   board: { display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start', height: '100%' },
+  // Drop-target column: a soft ring (the placeholder card is the main cue).
+  colDropTarget: { boxShadow: 'inset 0 0 0 2px rgba(17,24,39,.18)' },
+  // The card being dragged is dimmed so the landing placeholder reads clearly.
+  cardDragging: { opacity: 0.4 },
+  // ClickUp-style "drop here" ghost card shown in the target column while dragging.
+  placeholder: { height: 60, border: '2px dashed #b6bcc6', borderRadius: 10,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#9ca3af', fontSize: 12.5, fontWeight: 600, letterSpacing: '.02em',
+    background: 'rgba(255,255,255,.55)', animation: 'wg-pop 120ms ease' },
   statusDot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 },
   count: { background: '#e6e9ee', color: '#64748b', borderRadius: 999, padding: '1px 9px', fontWeight: 700, fontSize: 12 },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },

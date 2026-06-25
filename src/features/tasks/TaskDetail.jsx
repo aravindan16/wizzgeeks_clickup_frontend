@@ -96,11 +96,12 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
         tasksApi.worklogs(taskId).catch(() => []),
         tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
         statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
-        customFieldsApi.list(t.project_id, t.list_id).catch(() => []),
+        customFieldsApi.list(t.project_id, t.list_id, t._id).catch(() => []),
       ]);
       setFetchedMembers(ms); setComments(cs); setActivity(act);
       setSubtasks(subs); setLinks(lks); setWorklogs(wls); setSiblings(sibs); setFetchedProject(proj);
-      setCustomFields(cf);
+      // Hide inherited Space fields disabled for this List.
+      setCustomFields((cf || []).filter((f) => f.enabled !== false));
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load task');
     }
@@ -301,6 +302,19 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               <div style={s.label}>Custom Fields</div>
               {customFields.map((f) => {
                 const Cmp = FIELD_CMP[f.type] || IconFieldText;
+                // Relationship fields render as a full-width related-task table (ClickUp-style);
+                // dropdown/text stay on a compact inline row.
+                if (f.type === 'relationship') {
+                  return (
+                    <div key={f._id} style={s.cfRelBlock}>
+                      <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
+                      <div style={{ marginTop: 8 }}>
+                        <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
+                          spaceId={task.project_id} onOpenTask={onOpenTask} />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={f._id} style={s.cfRow}>
                     <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
@@ -588,6 +602,7 @@ const s = {
   linkX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, flexShrink: 0 },
   linkSelect: { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
   cfRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid #f1f5f9' },
+  cfRelBlock: { padding: '12px 0', borderTop: '1px solid #f1f5f9' },
   cfName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: '#111827' },
   cfIcon: { color: '#6b7280', display: 'inline-flex' },
   cfInput: { minWidth: 150, maxWidth: 220, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },

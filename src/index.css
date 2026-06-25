@@ -139,6 +139,7 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   display: flex;
   flex-direction: column;
   max-height: 100%;
+  transition: box-shadow var(--t-fast), transform var(--t-fast);
 }
 .wg-col-head {
   position: sticky;
@@ -252,6 +253,10 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
 .wg-sb-actions { display: none; align-items: center; flex-shrink: 0; }
 .wg-sb-row:hover .wg-sb-actions { display: flex; }
 .wg-sb-row:hover .wg-sb-count { display: none; }
+
+/* Select trigger: no harsh black outline on mouse focus; soft ring for keyboard only. */
+.wg-select-trigger:focus { outline: none; }
+.wg-select-trigger:focus-visible { outline: none; border-color: #111827; box-shadow: 0 0 0 3px rgba(17,24,39,.12); }
 
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two

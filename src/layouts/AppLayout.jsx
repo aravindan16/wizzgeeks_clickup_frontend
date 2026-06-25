@@ -9,7 +9,7 @@ import RecentMenu from '../features/recent/RecentMenu';
 import StarredMenu from '../features/starred/StarredMenu';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
-  IconDashboard, IconActivity, IconMembers, IconReports, IconSettings,
+  IconDashboard, IconMembers, IconReports, IconSettings,
   IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
 
@@ -19,7 +19,6 @@ import {
  */
 const NAV = [
   { to: '/', label: 'Dashboard', Icon: IconDashboard, end: true },
-  { to: '/my-activity', label: 'My Activity', Icon: IconActivity, permission: 'dailyupdate.create' },
   { to: '/team-activity', label: 'Team Activity', Icon: IconMembers, permission: 'dailyupdate.read.team' },
   { to: '/reports', label: 'Reports', Icon: IconReports, permission: 'report.view.self' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },

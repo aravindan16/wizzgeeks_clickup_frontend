@@ -12,7 +12,6 @@ import ProjectDetailsPage from './features/projects/ProjectDetailsPage';
 import ListBoardPage from './features/lists/ListBoardPage';
 import TasksPage from './features/tasks/TasksPage';
 import TaskDetailsPage from './features/tasks/TaskDetailsPage';
-import MyActivityPage from './features/daily/MyActivityPage';
 import TeamActivityPage from './features/daily/TeamActivityPage';
 import ReportsPage from './features/reports/ReportsPage';
 import RegisterPage from './features/auth/RegisterPage';
@@ -72,11 +71,6 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute permission="dailyupdate.create" />}>
-        <Route element={<AppLayout />}>
-          <Route path="/my-activity" element={<MyActivityPage />} />
-        </Route>
-      </Route>
 
       <Route element={<ProtectedRoute permission="dailyupdate.read.team" />}>
         <Route element={<AppLayout />}>

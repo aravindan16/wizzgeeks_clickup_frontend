@@ -88,9 +88,13 @@ export default function ProjectDetailsPage() {
   };
   const visibleTasks = tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
   const activeFilterCount = countFilters(filters);
-  const canManage = canManageGlobal || isOwner;
+  // TODO: Re-introduce role-based permissions later. For now ANY member of the
+  // space can manage members (add/remove/change role) — no specific role needed.
+  const isMember = memberIds.has(me);
+  const canManage = isOwner || isMember || canManageGlobal;
   const canArchive = can('project.update') || isOwner;
-  const canDelete = can('project.delete') || isOwner;
+  // Only the person who created the space (owner) can delete it.
+  const canDelete = isOwner;
 
   const changeRole = async (uid, role) => { await projectsApi.updateMember(id, uid, { user_id: uid, project_role: role }); load(); };
   const removeMember = async (uid) => { await projectsApi.removeMember(id, uid); load(); };
