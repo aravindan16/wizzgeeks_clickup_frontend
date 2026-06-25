@@ -84,12 +84,6 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
               placeholder="e.g. Wizzgeeks development team" required autoFocus />
           </Field>
 
-          <Field label="Key">
-            <input style={ov.input} value={key}
-              onChange={(e) => { setKeyEdited(true); setKey(e.target.value.toUpperCase()); }}
-              maxLength={10} required />
-          </Field>
-
           <Field label="Description (optional)">
             <textarea style={{ ...ov.input, minHeight: 56 }} value={description}
               onChange={(e) => setDescription(e.target.value)} />

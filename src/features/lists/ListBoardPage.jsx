@@ -89,7 +89,7 @@ export default function ListBoardPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={s.listIcon}>≡</div>
           <div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>{space.key} · List</div>
+            <div style={{ color: '#6b7280', fontSize: 13 }}>{list.key || space.key} · List</div>
             <h2 style={{ margin: '2px 0' }}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</h2>
           </div>
         </div>
