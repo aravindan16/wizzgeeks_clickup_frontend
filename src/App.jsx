@@ -13,7 +13,6 @@ import ListBoardPage from './features/lists/ListBoardPage';
 import TasksPage from './features/tasks/TasksPage';
 import TaskDetailsPage from './features/tasks/TaskDetailsPage';
 import TeamActivityPage from './features/daily/TeamActivityPage';
-import ReportsPage from './features/reports/ReportsPage';
 import RegisterPage from './features/auth/RegisterPage';
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage';
 import ResetPasswordPage from './features/auth/ResetPasswordPage';
@@ -78,11 +77,6 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute permission="report.view.self" />}>
-        <Route element={<AppLayout />}>
-          <Route path="/reports" element={<ReportsPage />} />
-        </Route>
-      </Route>
 
       <Route element={<ProtectedRoute permission="user.read" />}>
         <Route element={<AppLayout />}>

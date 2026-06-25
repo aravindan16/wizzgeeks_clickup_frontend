@@ -9,7 +9,6 @@ import CustomFieldValue from '../customfields/CustomFieldValue';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import Select from '../../components/Select';
 import { useAuth } from '../auth/useAuth';
-import { useTrackVisit } from '../recent/useTrackVisit';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconArrowLeft } from '../../components/icons';
 
@@ -108,11 +107,6 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   }, [taskId]);
 
   useEffect(() => { load(); }, [load]);
-  useTrackVisit(task ? {
-    path: `/tasks/${taskId}`, name: `${task.key} ${task.title}`,
-    type: (task.type || 'task').charAt(0).toUpperCase() + (task.type || 'task').slice(1),
-    icon: task.type === 'bug' ? '🐛' : '✅', id: taskId,
-  } : null);
 
   if (error) return <div style={{ color: '#991b1b', padding: 20 }}>{error}</div>;
   if (!task) return <p style={{ padding: 20 }}>Loading…</p>;

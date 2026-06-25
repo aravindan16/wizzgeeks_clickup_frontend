@@ -4,9 +4,6 @@ import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
 import NotificationBell from '../features/notifications/NotificationBell';
-import RouteTracker from '../features/recent/RouteTracker';
-import RecentMenu from '../features/recent/RecentMenu';
-import StarredMenu from '../features/starred/StarredMenu';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
@@ -20,7 +17,6 @@ import {
 const NAV = [
   { to: '/', label: 'Dashboard', Icon: IconDashboard, end: true },
   { to: '/team-activity', label: 'Team Activity', Icon: IconMembers, permission: 'dailyupdate.read.team' },
-  { to: '/reports', label: 'Reports', Icon: IconReports, permission: 'report.view.self' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/audit', label: 'Audit Log', Icon: IconReports, permission: 'audit.read' },
   { to: '/settings', label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
@@ -57,7 +53,6 @@ export default function AppLayout() {
 
   return (
     <div style={s.shell}>
-      <RouteTracker />
 
       {/* ===== TOP BAR (full width) ===== */}
       <header style={s.topbar}>
@@ -87,8 +82,6 @@ export default function AppLayout() {
         <aside style={{ ...s.sidebar, width }}>
           <div style={s.navScroll}>
             <nav style={s.nav}>
-              <RecentMenu collapsed={collapsed} />
-              <StarredMenu collapsed={collapsed} />
               {NAV.filter((n) => !n.permission || can(n.permission)).map((n) => (
                 <NavLink key={n.to} to={n.to} end={n.end} title={n.label}
                   className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}

@@ -13,7 +13,6 @@ import ProjectModal from './ProjectModal';
 import AddMembersModal from './AddMembersModal';
 import SpaceSummary from './SpaceSummary';
 import { useAuth } from '../auth/useAuth';
-import { useTrackVisit } from '../recent/useTrackVisit';
 import { useConfirm } from '../../components/ConfirmDialog';
 
 /**
@@ -63,9 +62,6 @@ export default function ProjectDetailsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  useTrackVisit(project ? {
-    path: `/projects/${id}`, name: project.name, type: 'Space', icon: '📁', id,
-  } : null);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!project) return <p>Loading…</p>;

@@ -9,7 +9,6 @@ import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { useTrackVisit } from '../recent/useTrackVisit';
 import { IconBoard, IconList, IconSearch } from '../../components/icons';
 
 /**
@@ -61,9 +60,6 @@ export default function ListBoardPage() {
     return () => window.removeEventListener('wg:list-updated', onUpdate);
   }, [id, load]);
 
-  useTrackVisit(list ? {
-    path: `/lists/${id}`, name: list.name, type: 'List', icon: '≡', id,
-  } : null);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!list || !space) return <p>Loading…</p>;

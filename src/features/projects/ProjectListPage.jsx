@@ -5,10 +5,8 @@ import SpaceSetupModal from './SpaceSetupModal';
 import { useAuth } from '../auth/useAuth';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
-import { IconSearch, IconStar } from '../../components/icons';
+import { IconSearch } from '../../components/icons';
 import Select from '../../components/Select';
-import { useStarred } from '../starred/useStarred';
-import { starItem, unstarItem } from '../starred/starredStore';
 
 const PAGE_SIZE = 10;
 
@@ -27,8 +25,6 @@ export default function ProjectListPage() {
   const [page, setPage] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
-  const starredItems = useStarred('space');
-  const starredIds = new Set(starredItems.map((i) => i.entity_id));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,17 +38,7 @@ export default function ProjectListPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const toggleStar = (e, p) => {
-    e.stopPropagation();
-    if (starredIds.has(p._id)) {
-      unstarItem('space', p._id);
-    } else {
-      starItem({ entity_type: 'space', entity_id: p._id, path: `/projects/${p._id}`, name: p.name, icon: '📁' });
-    }
-  };
-
-  // Starred spaces float to the top of the current page.
-  const rows = [...data.items].sort((a, b) => (starredIds.has(b._id) ? 1 : 0) - (starredIds.has(a._id) ? 1 : 0));
+  const rows = data.items;
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
 
   const openMenu = (e, id) => {
@@ -108,14 +94,13 @@ export default function ProjectListPage() {
         <table style={s.table}>
           <thead>
             <tr>
-              <Th style={{ width: 40 }}>★</Th>
               <Th>Name</Th><Th>Key</Th><Th>Type</Th><Th>Lead</Th><Th>Space URL</Th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={s.empty}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={5} style={s.empty}>Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={6} style={s.empty}>
+              <tr><td colSpan={5} style={s.empty}>
                 <div style={{ marginBottom: 12 }}>No spaces yet.</div>
                 {can('project.create') && (
                   <button style={s.primary} onClick={() => setSetupOpen(true)}>Create space</button>
@@ -124,12 +109,6 @@ export default function ProjectListPage() {
             )}
             {!loading && rows.map((p) => (
               <tr key={p._id} style={s.row} onClick={() => navigate(`/projects/${p._id}`)}>
-                <Td>
-                  <button style={{ ...s.star, color: starredIds.has(p._id) ? '#111827' : '#cbd5e1' }}
-                    onClick={(e) => toggleStar(e, p)} title="Star">
-                    <IconStar size={16} />
-                  </button>
-                </Td>
                 <Td>
                   <div style={s.nameCell}>
                     <span style={s.spaceIcon}>{p.key?.[0] || 'S'}</span>
