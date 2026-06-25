@@ -1,0 +1,18 @@
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        # Frontend reaches the backend through the nginx /api proxy over the
+        # shared network (same origin → no CORS, cookies just work).
+        VITE_API_BASE_URL: /api/v1
+    container_name: dat_frontend
+    restart: unless-stopped
+    ports:
+      - "7303:80"
+    networks:
+      - shared-app-network
+
+networks:
+  shared-app-network:
+    external: true
