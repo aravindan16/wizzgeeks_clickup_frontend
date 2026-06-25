@@ -125,7 +125,7 @@ export default function ListBoardPage() {
         <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
       </div>
 
-      <div style={s.viewArea}>
+      <div style={{ ...s.viewArea, overflow: tab === 'board' ? 'hidden' : 'auto' }}>
         {tab === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
             listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId} />
@@ -150,7 +150,9 @@ export default function ListBoardPage() {
 }
 
 const s = {
-  page: { display: 'flex', flexDirection: 'column', height: '100%' },
+  // height+negative margin consume the app's bottom padding so the board's
+  // horizontal scrollbar sits at the very bottom of the viewport.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
     border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
   backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
@@ -162,5 +164,5 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
   clearFilters: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' },
-  viewArea: { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 },
+  viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
 };

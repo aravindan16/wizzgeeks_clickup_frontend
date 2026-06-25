@@ -142,7 +142,7 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
     : members;
 
   return (
-    <div>
+    <div style={s.wrap}>
       {error && <p style={{ color: '#991b1b' }}>{error}</p>}
       <div style={s.board}>
         {columns.map((col) => {
@@ -293,7 +293,9 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
 }
 
 const s = {
-  board: { display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start', height: '100%' },
+  // Wrapper fills the view area so the board (and its columns' max-height) get a real height.
+  wrap: { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' },
+  board: { flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', overflowY: 'hidden', paddingBottom: 8, alignItems: 'flex-start' },
   // Drop-target column: a soft ring (the placeholder card is the main cue).
   colDropTarget: { boxShadow: 'inset 0 0 0 2px rgba(17,24,39,.18)' },
   // The card being dragged is dimmed so the landing placeholder reads clearly.
