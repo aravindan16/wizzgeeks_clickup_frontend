@@ -51,7 +51,9 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
   // Open the native date picker on a click anywhere in the pill (not just the icon).
   const openPicker = (ref) => { try { ref.current?.showPicker?.(); } catch { /* not supported */ } };
 
-  const loadFields = () => customFieldsApi.list(spaceId, listId).then((fs) => {
+  const loadFields = () => customFieldsApi.list(spaceId, listId).then((all) => {
+    // Hide inherited Space fields that were disabled for this List.
+    const fs = all.filter((f) => f.enabled !== false);
     setFields(fs);
     // Seed ClickUp-style default values for dropdown options marked default (create only).
     if (mode !== 'edit') {
@@ -241,9 +243,21 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
             </div>
           ) : (
             <div>
-              {fields.length === 0 && <div style={{ color: '#9ca3af', fontSize: 14, padding: '6px 0' }}>No custom fields yet.</div>}
+              {fields.length === 0 && <div style={{ color: 'var(--c-faint)', fontSize: 14, padding: '6px 0' }}>No custom fields yet.</div>}
               {fields.map((f) => {
                 const Cmp = FIELD_CMP[f.type] || IconFieldText;
+                // Relationship fields render full-width (name on top, related-task table below);
+                // dropdown/text stay on a compact inline row.
+                if (f.type === 'relationship') {
+                  return (
+                    <div key={f._id} style={s.fieldRelBlock}>
+                      <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
+                      <div style={{ marginTop: 8 }}>
+                        <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={f._id} style={s.fieldRow}>
                     <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
@@ -276,7 +290,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
             </div>
           )}
 
-          {error && <p style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</p>}
+          {error && <p style={{ color: '#ef4444', fontSize: 13, marginTop: 10 }}>{error}</p>}
         </div>
 
         {/* Footer */}
@@ -297,37 +311,38 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
 
 const s = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.5)', zIndex: 75, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px', overflowY: 'auto' },
-  modal: { background: '#fff', borderRadius: 14, width: 760, maxWidth: '96vw', boxShadow: '0 24px 64px rgba(16,24,40,.3)', display: 'flex', flexDirection: 'column' },
-  tabs: { display: 'flex', alignItems: 'center', gap: 22, padding: '14px 20px', borderBottom: '1px solid #f1f5f9' },
+  modal: { background: 'var(--c-surface)', borderRadius: 14, width: 760, maxWidth: '96vw', boxShadow: '0 24px 64px rgba(16,24,40,.3)', display: 'flex', flexDirection: 'column' },
+  tabs: { display: 'flex', alignItems: 'center', gap: 22, padding: '14px 20px', borderBottom: '1px solid var(--c-border)' },
   tab: { fontSize: 15, cursor: 'default' },
-  tabActive: { color: '#111827', fontWeight: 700, borderBottom: '2px solid #111827', paddingBottom: 12, marginBottom: -14 },
-  tabMuted: { color: '#9ca3af' },
+  tabActive: { color: 'var(--c-text-strong)', fontWeight: 700, borderBottom: '2px solid var(--c-text-strong)', paddingBottom: 12, marginBottom: -14 },
+  tabMuted: { color: 'var(--c-faint)' },
   body: { padding: '18px 20px', display: 'flex', flexDirection: 'column' },
   topRow: { display: 'flex', gap: 10, marginBottom: 14 },
-  selPill: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' },
-  nameInput: { border: 'none', outline: 'none', fontSize: 24, fontWeight: 600, color: '#111827', padding: '4px 0', marginBottom: 4 },
-  descInput: { border: 'none', outline: 'none', fontSize: 15, color: '#374151', minHeight: 70, resize: 'vertical', fontFamily: 'inherit', marginBottom: 12 },
+  selPill: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--c-text)', cursor: 'pointer' },
+  nameInput: { border: 'none', outline: 'none', fontSize: 24, fontWeight: 600, color: 'var(--c-text-strong)', background: 'var(--c-surface)', padding: '4px 0', marginBottom: 4 },
+  descInput: { border: 'none', outline: 'none', fontSize: 15, color: 'var(--c-text)', background: 'var(--c-surface)', minHeight: 70, resize: 'vertical', fontFamily: 'inherit', marginBottom: 12 },
   pills: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 22 },
-  pill: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 13, color: '#475569', fontWeight: 500 },
-  statusPill: { background: '#f3f4f6', fontWeight: 700, color: '#374151' },
+  pill: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)', cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)', fontWeight: 500 },
+  statusPill: { background: 'var(--c-hover)', fontWeight: 700, color: 'var(--c-text)' },
   dot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 },
   avatar: { width: 18, height: 18, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 },
   hiddenInput: { position: 'absolute', inset: 0, opacity: 0, width: '100%', pointerEvents: 'none' },
-  popover: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 200, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 5, padding: 5 },
-  popHead: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', padding: '4px 10px' },
-  popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: '#374151' },
-  popDivider: { height: 1, background: '#f1f5f9', margin: '4px 0' },
-  tagInput: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
-  fieldsLabel: { fontSize: 13, color: '#9ca3af', marginBottom: 10 },
-  fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderTop: '1px solid #f1f5f9' },
-  fieldName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: '#111827' },
-  fieldIcon: { color: '#6b7280', display: 'inline-flex' },
-  fieldInput: { minWidth: 160, maxWidth: 240, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },
-  addTaskBtn: { border: '1px solid #e5e7eb', borderRadius: 7, padding: '6px 12px', fontSize: 13, color: '#6b7280', cursor: 'pointer' },
-  softBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' },
+  popover: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 200, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 5, padding: 5 },
+  popHead: { fontSize: 11, color: 'var(--c-faint)', textTransform: 'uppercase', padding: '4px 10px' },
+  popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: 'var(--c-text)' },
+  popDivider: { height: 1, background: 'var(--c-border)', margin: '4px 0' },
+  tagInput: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  fieldsLabel: { fontSize: 13, color: 'var(--c-faint)', marginBottom: 10 },
+  fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderTop: '1px solid var(--c-border)' },
+  fieldRelBlock: { padding: '12px 0', borderTop: '1px solid var(--c-border)' },
+  fieldName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: 'var(--c-text-strong)' },
+  fieldIcon: { color: 'var(--c-muted)', display: 'inline-flex' },
+  fieldInput: { minWidth: 160, maxWidth: 240, padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 7, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  addTaskBtn: { border: '1px solid var(--c-border)', borderRadius: 7, padding: '6px 12px', fontSize: 13, color: 'var(--c-muted)', cursor: 'pointer' },
+  softBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--c-hover)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: 'var(--c-text)', cursor: 'pointer' },
   subRow: { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 },
-  subInput: { flex: 1, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14 },
-  subDel: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'inline-flex', flexShrink: 0 },
-  footer: { display: 'flex', alignItems: 'center', padding: '14px 20px', borderTop: '1px solid #f1f5f9' },
-  createBtn: { background: '#111827', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
+  subInput: { flex: 1, padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  subDel: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', display: 'inline-flex', flexShrink: 0 },
+  footer: { display: 'flex', alignItems: 'center', padding: '14px 20px', borderTop: '1px solid var(--c-border)' },
+  createBtn: { background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
 };

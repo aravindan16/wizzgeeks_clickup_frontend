@@ -9,7 +9,6 @@ import CustomFieldValue from '../customfields/CustomFieldValue';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import Select from '../../components/Select';
 import { useAuth } from '../auth/useAuth';
-import { useTrackVisit } from '../recent/useTrackVisit';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconArrowLeft } from '../../components/icons';
 
@@ -34,7 +33,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleString(undefined, {
 }) : '');
 
 const DONE = new Set(['completed', 'closed']);
-const typeIcon = (t) => <span style={{ display: 'inline-flex', color: '#6b7280', verticalAlign: 'middle' }}><TaskTypeIcon type={t} size={15} /></span>;
+const typeIcon = (t) => <span style={{ display: 'inline-flex', color: 'var(--c-muted)', verticalAlign: 'middle' }}><TaskTypeIcon type={t} size={15} /></span>;
 
 /**
  * Reusable task (issue) detail. Rendered both inside a modal (from the board/list)
@@ -96,24 +95,20 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
         tasksApi.worklogs(taskId).catch(() => []),
         tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
         statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
-        customFieldsApi.list(t.project_id, t.list_id).catch(() => []),
+        customFieldsApi.list(t.project_id, t.list_id, t._id).catch(() => []),
       ]);
       setFetchedMembers(ms); setComments(cs); setActivity(act);
       setSubtasks(subs); setLinks(lks); setWorklogs(wls); setSiblings(sibs); setFetchedProject(proj);
-      setCustomFields(cf);
+      // Hide inherited Space fields disabled for this List.
+      setCustomFields((cf || []).filter((f) => f.enabled !== false));
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load task');
     }
   }, [taskId]);
 
   useEffect(() => { load(); }, [load]);
-  useTrackVisit(task ? {
-    path: `/tasks/${taskId}`, name: `${task.key} ${task.title}`,
-    type: (task.type || 'task').charAt(0).toUpperCase() + (task.type || 'task').slice(1),
-    icon: task.type === 'bug' ? '🐛' : '✅', id: taskId,
-  } : null);
 
-  if (error) return <div style={{ color: '#991b1b', padding: 20 }}>{error}</div>;
+  if (error) return <div style={{ color: '#ef4444', padding: 20 }}>{error}</div>;
   if (!task) return <p style={{ padding: 20 }}>Loading…</p>;
 
   const nameOf = (uid) => members.find((m) => m.user_id === uid)?.full_name;
@@ -205,7 +200,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       </div>
 
       <div style={inModal ? s.scrollBody : undefined}>
-      {error && <p style={{ color: '#991b1b' }}>{error}</p>}
+      {error && <p style={{ color: '#ef4444' }}>{error}</p>}
 
       <div style={s.grid}>
         {/* MAIN */}
@@ -231,7 +226,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               </div>
             ) : (
               <div style={s.descBox} onClick={() => setEditingDesc(true)}>
-                {task.description || <span style={{ color: '#9ca3af' }}>Add a description…</span>}
+                {task.description || <span style={{ color: 'var(--c-faint)' }}>Add a description…</span>}
               </div>
             )}
           </div>
@@ -251,7 +246,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               <div key={st._id} style={s.subRow} onClick={() => openTask(st._id)}>
                 <span style={{ flexShrink: 0 }}>{typeIcon(st.type)}</span>
                 <span style={s.subKey}>{st.key}</span>
-                <span style={{ flex: 1, textDecoration: DONE.has(st.status) ? 'line-through' : 'none', color: DONE.has(st.status) ? '#9ca3af' : '#111827' }}>{st.title}</span>
+                <span style={{ flex: 1, textDecoration: DONE.has(st.status) ? 'line-through' : 'none', color: DONE.has(st.status) ? 'var(--c-faint)' : 'var(--c-text-strong)' }}>{st.title}</span>
                 <StatusBadge status={st.status} statuses={spaceStatuses} />
               </div>
             ))}
@@ -301,6 +296,19 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               <div style={s.label}>Custom Fields</div>
               {customFields.map((f) => {
                 const Cmp = FIELD_CMP[f.type] || IconFieldText;
+                // Relationship fields render as a full-width related-task table (ClickUp-style);
+                // dropdown/text stay on a compact inline row.
+                if (f.type === 'relationship') {
+                  return (
+                    <div key={f._id} style={s.cfRelBlock}>
+                      <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
+                      <div style={{ marginTop: 8 }}>
+                        <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
+                          spaceId={task.project_id} onOpenTask={onOpenTask} />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={f._id} style={s.cfRow}>
                     <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
@@ -404,8 +412,16 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </Field>
 
-            <Field label="Due date">
-              <input type="date" style={s.fieldSelect} value={task.due_date || ''} onChange={(e) => save({ due_date: e.target.value || null })} />
+            <Field label="Start date">
+              <input type="date" style={s.fieldSelect} value={task.start_date || ''}
+                max={task.end_date || undefined}
+                onChange={(e) => save({ start_date: e.target.value || null })} />
+            </Field>
+
+            <Field label="End date">
+              <input type="date" style={s.fieldSelect} value={task.end_date || ''}
+                min={task.start_date || undefined}
+                onChange={(e) => save({ end_date: e.target.value || null, due_date: e.target.value || null })} />
             </Field>
 
             <Field label="Labels">
@@ -451,7 +467,7 @@ function StatusBadgeLegacy({ status }) {
 }
 
 function Empty({ text }) {
-  return <p style={{ color: '#9ca3af', fontSize: 14, padding: '14px 0' }}>{text}</p>;
+  return <p style={{ color: 'var(--c-faint)', fontSize: 14, padding: '14px 0' }}>{text}</p>;
 }
 
 const initials2 = initials;
@@ -553,64 +569,65 @@ const s = {
   // Modal layout: fixed header, single scrolling body (so the whole card no longer scrolls in the backdrop).
   rootModal: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   headerModal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
-    padding: '16px 24px', borderBottom: '1px solid #f1f5f9', background: '#fff' },
+    padding: '16px 24px', borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface)' },
   scrollBody: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px 28px' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   breadcrumb: { display: 'flex', alignItems: 'center', gap: 10 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f3f4f6', border: '1px solid #e5e7eb',
-    color: '#374151', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: '6px 12px', borderRadius: 8 },
-  crumbSep: { color: '#d1d5db' },
-  keyCrumb: { display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#374151', fontSize: 13 },
-  closeBtn: { background: 'none', border: '1px solid #e5e7eb', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: '#6b7280' },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--c-hover)', border: '1px solid var(--c-border)',
+    color: 'var(--c-text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: '6px 12px', borderRadius: 8 },
+  crumbSep: { color: 'var(--c-faint)' },
+  keyCrumb: { display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--c-text)', fontSize: 13 },
+  closeBtn: { background: 'none', border: '1px solid var(--c-border)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--c-muted)' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24, alignItems: 'start' },
   title: { fontSize: 26, margin: '0 0 16px', cursor: 'text' },
-  titleInput: { fontSize: 26, fontWeight: 700, width: '100%', boxSizing: 'border-box', border: '1px solid #111827', borderRadius: 8, padding: '4px 8px', marginBottom: 16 },
+  titleInput: { fontSize: 26, fontWeight: 700, width: '100%', boxSizing: 'border-box', border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 8px', marginBottom: 16, background: 'var(--c-surface)', color: 'var(--c-text)' },
   section: { marginBottom: 24 },
   sectionHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  label: { fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 },
-  descBox: { minHeight: 44, border: '1px solid #f1f5f9', borderRadius: 8, padding: '10px 12px', cursor: 'text', background: '#fafafa' },
-  descArea: { width: '100%', boxSizing: 'border-box', minHeight: 70, border: '1px solid #d1d5db', borderRadius: 8, padding: 10, fontFamily: 'inherit', fontSize: 14 },
-  inlineInput: { flex: 1, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' },
+  label: { fontSize: 13, fontWeight: 700, color: 'var(--c-text)', marginBottom: 8 },
+  descBox: { minHeight: 44, border: '1px solid var(--c-border)', borderRadius: 8, padding: '10px 12px', cursor: 'text', background: 'var(--c-surface-2)' },
+  descArea: { width: '100%', boxSizing: 'border-box', minHeight: 70, border: '1px solid var(--c-border)', borderRadius: 8, padding: 10, fontFamily: 'inherit', fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  inlineInput: { flex: 1, padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: 'var(--c-surface)', color: 'var(--c-text)' },
 
   // subtasks
   progressWrap: { display: 'flex', alignItems: 'center', gap: 8 },
-  progressTrack: { width: 90, height: 6, borderRadius: 4, background: '#e5e7eb', overflow: 'hidden' },
+  progressTrack: { width: 90, height: 6, borderRadius: 4, background: 'var(--c-surface-3)', overflow: 'hidden' },
   progressFill: { height: '100%', background: '#16a34a' },
-  progressText: { fontSize: 12, color: '#6b7280' },
-  subRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #f1f5f9', borderRadius: 8, marginBottom: 6, cursor: 'pointer', fontSize: 14, background: '#fff' },
+  progressText: { fontSize: 12, color: 'var(--c-muted)' },
+  subRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, marginBottom: 6, cursor: 'pointer', fontSize: 14, background: 'var(--c-surface)' },
   subRowInner: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', fontSize: 14 },
-  subKey: { color: '#111827', fontWeight: 600, fontSize: 12, flexShrink: 0 },
-  addLink: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', fontSize: 13, padding: '6px 0', fontWeight: 600 },
+  subKey: { color: 'var(--c-text-strong)', fontWeight: 600, fontSize: 12, flexShrink: 0 },
+  addLink: { background: 'none', border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', fontSize: 13, padding: '6px 0', fontWeight: 600 },
 
   // links
   linkRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 },
-  linkType: { fontSize: 11, color: '#6b7280', width: 92, flexShrink: 0, textTransform: 'capitalize' },
-  linkX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, flexShrink: 0 },
-  linkSelect: { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
-  cfRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid #f1f5f9' },
-  cfName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: '#111827' },
-  cfIcon: { color: '#6b7280', display: 'inline-flex' },
-  cfInput: { minWidth: 150, maxWidth: 220, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },
+  linkType: { fontSize: 11, color: 'var(--c-muted)', width: 92, flexShrink: 0, textTransform: 'capitalize' },
+  linkX: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 12, flexShrink: 0 },
+  linkSelect: { padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14 },
+  cfRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: '1px solid var(--c-border)' },
+  cfRelBlock: { padding: '12px 0', borderTop: '1px solid var(--c-border)' },
+  cfName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: 'var(--c-text-strong)' },
+  cfIcon: { color: 'var(--c-muted)', display: 'inline-flex' },
+  cfInput: { minWidth: 150, maxWidth: 220, padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 7, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
 
   // activity
-  tabs: { display: 'flex', gap: 4, border: '1px solid #e5e7eb', borderRadius: 8, padding: 3, width: 'fit-content' },
-  tab: { padding: '5px 12px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#6b7280' },
-  tabActive: { background: '#f3f4f6', color: '#111827', fontWeight: 600, border: '1px solid #bfdbfe' },
-  feedRow: { display: 'flex', gap: 10, padding: '12px 0', borderTop: '1px solid #f1f5f9' },
+  tabs: { display: 'flex', gap: 4, border: '1px solid var(--c-border)', borderRadius: 8, padding: 3, width: 'fit-content' },
+  tab: { padding: '5px 12px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)' },
+  tabActive: { background: 'var(--c-hover)', color: 'var(--c-text-strong)', fontWeight: 600, border: '1px solid #bfdbfe' },
+  feedRow: { display: 'flex', gap: 10, padding: '12px 0', borderTop: '1px solid var(--c-border)' },
   worklogForm: { display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' },
-  muted: { color: '#9ca3af', fontWeight: 400, fontSize: 12 },
+  muted: { color: 'var(--c-faint)', fontWeight: 400, fontSize: 12 },
   badge: { fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, letterSpacing: 0.3, flexShrink: 0 },
 
   avatar: { width: 30, height: 30, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 },
   avatarSm: { width: 22, height: 22, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 },
-  statusTop: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontWeight: 600, fontSize: 14, background: '#f3f4f6' },
-  fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid #f8fafc' },
-  fieldLabel: { width: 90, color: '#6b7280', fontSize: 13, flexShrink: 0 },
-  fieldSelect: { padding: '7px 9px', border: '1px solid #d1d5db', borderRadius: 7, fontSize: 14, width: '100%', boxSizing: 'border-box' },
-  assignMe: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', fontSize: 12, padding: '4px 0 0' },
+  statusTop: { width: '100%', padding: '10px 12px', border: '1px solid var(--c-border)', borderRadius: 8, fontWeight: 600, fontSize: 14, background: 'var(--c-hover)' },
+  fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--c-border)' },
+  fieldLabel: { width: 90, color: 'var(--c-muted)', fontSize: 13, flexShrink: 0 },
+  fieldSelect: { padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 7, fontSize: 14, width: '100%', boxSizing: 'border-box', background: 'var(--c-surface)', color: 'var(--c-text)' },
+  assignMe: { background: 'none', border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', fontSize: 12, padding: '4px 0 0' },
   person: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 },
-  btn: { padding: '7px 14px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' },
-  btnGhost: { padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
-  link: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', padding: 0, fontSize: 13 },
-  linkDanger: { background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, fontSize: 13 },
+  btn: { padding: '7px 14px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, cursor: 'pointer' },
+  btnGhost: { padding: '7px 14px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--c-text)' },
+  link: { background: 'none', border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 13 },
+  linkDanger: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontSize: 13 },
 };

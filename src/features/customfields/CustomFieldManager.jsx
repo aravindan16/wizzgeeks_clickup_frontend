@@ -10,14 +10,14 @@ import { Chevron } from '../../components/icons';
 const TYPE_CMP = { dropdown: IconFieldDropdown, relationship: IconFieldRelationship, text: IconFieldText };
 const TypeIcon = ({ type, size = 16 }) => { const C = TYPE_CMP[type] || IconFieldText; return <C size={size} />; };
 
-// Table groups: List fields grouped by type; Space fields under "Tasks".
+// Table groups: List fields grouped by type; inherited Space fields under "Inherited".
 const GROUPS = [
   { key: 'dropdown', label: 'Dropdown', type: 'dropdown', tint: '#dcfce7', fg: '#16a34a' },
   { key: 'relationship', label: 'Relationship', type: 'relationship', tint: '#e0e7ff', fg: '#000000' },
   { key: 'text', label: 'Text', type: 'text', tint: '#dbeafe', fg: '#111827' },
-  { key: 'tasks', label: 'Tasks', type: null, tint: '#e0e7ff', fg: '#000000' }, // Space-scoped fields
+  { key: 'tasks', label: 'Inherited', type: null, tint: '#fef9c3', fg: '#854d0e' }, // Space-scoped fields inherited by this List
 ];
-// Group by field type; Space fields shown *inherited* inside a List go under "Tasks".
+// Group by field type; Space fields shown *inherited* inside a List go under "Inherited".
 const groupOf = (f) => (f.inherited ? 'tasks' : f.type);
 
 const PALETTE = ['#6647f0', '#3b82f6', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308',
@@ -116,6 +116,16 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
     try { await customFieldsApi.update(f._id, { name: name.trim() }); toast.success('Field renamed'); loadFields(); loadCounts(); }
     catch (e) { toast.error(e.response?.data?.error?.message || 'Could not rename field'); }
   };
+  // Enable/disable an inherited Space field for the List currently being viewed.
+  const toggleListField = async (f) => {
+    if (loc.kind !== 'list') return;
+    const enable = f.enabled === false; // currently disabled → enable
+    try {
+      await customFieldsApi.setListEnabled(f._id, loc.id, enable);
+      toast.success(enable ? 'Field enabled for this list' : 'Field disabled for this list');
+      loadFields();
+    } catch (e) { toast.error(e.response?.data?.error?.message || 'Could not update field'); }
+  };
   // Drag-to-reorder fields (only the editable, non-inherited ones; disabled while searching).
   const canReorder = !query.trim() && typeFilter === 'all';
   const reorderField = async (targetId) => {
@@ -144,13 +154,10 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
         <aside style={s.nav}>
           <div style={s.navTitle}>Custom Field Manager</div>
 
-          <div style={s.navSection}>
-            <span>By Location</span>
-            <span style={{ color: '#9ca3af', display: 'inline-flex' }}><IconSearch size={15} /></span>
-          </div>
-          <div style={{ padding: '0 8px 6px' }}>
+          <div style={{ padding: '0 8px 8px' }}>
             <div style={{ position: 'relative' }}>
-              <input style={{ ...s.search, padding: '7px 10px', fontSize: 13 }} placeholder="Search…" value={locSearch} onChange={(e) => setLocSearch(e.target.value)} />
+              <span style={s.navSearchIcon}><IconSearch size={15} /></span>
+              <input style={s.navSearch} placeholder="Search…" value={locSearch} onChange={(e) => setLocSearch(e.target.value)} />
             </div>
           </div>
 
@@ -267,8 +274,18 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
                           <td style={s.td}><span style={s.creator}><span style={s.avatar}>{initials(f.created_by_name)}</span>{f.created_by_name || '—'}</span></td>
                           <td style={s.td}>{fmtDate(f.created_at)}</td>
                           <td style={s.td}><span style={s.locPill}>{f.location || '—'}</span>{f.inherited && <span style={s.inheritTag}>inherited</span>}</td>
-                          <td style={{ ...s.td, position: 'relative', textAlign: 'right' }}>
-                            <button className="icon-btn" style={s.dots} onClick={() => { setRowMenu(rowMenu === f._id ? null : f._id); setMoveFor(null); }}>⋯</button>
+                          <td style={{ ...s.td, position: 'relative' }}>
+                            <div style={s.actionsCell}>
+                              {f.inherited && loc.kind === 'list' && (
+                                <span style={s.toggleCell} title={f.enabled === false ? 'Disabled for this list — turn on to use it here' : 'Enabled for this list'}>
+                                  <Switch on={f.enabled !== false} onClick={() => toggleListField(f)} />
+                                  <span style={{ ...s.toggleLabel, color: f.enabled === false ? '#9ca3af' : '#16a34a' }}>
+                                    {f.enabled === false ? 'Disabled' : 'Enabled'}
+                                  </span>
+                                </span>
+                              )}
+                              <button className="icon-btn" style={s.dots} onClick={() => { setRowMenu(rowMenu === f._id ? null : f._id); setMoveFor(null); }}>⋯</button>
+                            </div>
                             {rowMenu === f._id && (
                               <>
                                 <div style={s.menuScrim} onMouseDown={() => { setRowMenu(null); setMoveFor(null); }} />
@@ -521,13 +538,15 @@ function Segmented({ value, options, onChange }) {
 
 const s = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 85, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4vh 16px' },
-  modal: { position: 'relative', background: '#fff', borderRadius: 12, width: 1280, maxWidth: '96vw', height: '90vh', boxShadow: '0 20px 50px rgba(16,24,40,.18)', display: 'flex', overflow: 'hidden', fontSize: 14 },
+  modal: { position: 'relative', background: '#fff', borderRadius: 12, width: 1440, maxWidth: '97vw', height: '90vh', boxShadow: '0 20px 50px rgba(16,24,40,.18)', display: 'flex', overflow: 'hidden', fontSize: 14 },
 
-  nav: { width: 280, flexShrink: 0, borderRight: '1px solid #E5E7EB', background: '#fff', padding: 12, overflowY: 'auto' },
+  nav: { width: 232, flexShrink: 0, borderRight: '1px solid #E5E7EB', background: '#fff', padding: 12, overflowY: 'auto' },
   navTitle: { fontSize: 13, fontWeight: 700, color: '#111827', padding: '6px 10px 12px' },
   navItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, margin: '1px 0' },
   navDivider: { height: 1, background: '#E5E7EB', margin: '10px 6px' },
   navSection: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#6b7280', fontWeight: 600, padding: '4px 10px 6px' },
+  navSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px 8px 32px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 13 },
+  navSearchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   navName: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   count: { color: '#9ca3af', fontSize: 12, fontWeight: 600, flexShrink: 0 },
   spaceRow: { display: 'flex', alignItems: 'center' },
@@ -569,6 +588,9 @@ const s = {
   avatar: { width: 24, height: 24, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 },
   locPill: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#374151', background: '#F3F4F6', borderRadius: 6, padding: '3px 10px' },
   inheritTag: { marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#92740a', background: '#fef9c3', borderRadius: 999, padding: '1px 7px' },
+  actionsCell: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, whiteSpace: 'nowrap' },
+  toggleCell: { display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0 },
+  toggleLabel: { fontSize: 12, fontWeight: 600, minWidth: 52 },
   dots: { fontSize: 18, color: '#9ca3af', lineHeight: 1 },
   menuScrim: { position: 'fixed', inset: 0, zIndex: 30 },
   rowMenu: { position: 'absolute', top: 'calc(50% + 10px)', right: 14, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 31, padding: 5, minWidth: 200, textAlign: 'left' },

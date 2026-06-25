@@ -1,8 +1,8 @@
 import apiClient from '../../services/apiClient';
 
 export const customFieldsApi = {
-  list: (spaceId, listId) =>
-    apiClient.get('/custom-fields', { params: { space_id: spaceId, list_id: listId || undefined } }).then((r) => r.data),
+  list: (spaceId, listId, taskId) =>
+    apiClient.get('/custom-fields', { params: { space_id: spaceId, list_id: listId || undefined, task_id: taskId || undefined } }).then((r) => r.data),
   listAll: (spaceId) =>
     apiClient.get('/custom-fields', { params: { space_id: spaceId, all: true } }).then((r) => r.data),
   reusable: (spaceId, listId) =>
@@ -11,6 +11,9 @@ export const customFieldsApi = {
   update: (id, payload) => apiClient.patch(`/custom-fields/${id}`, payload).then((r) => r.data),
   move: (id, payload) => apiClient.post(`/custom-fields/${id}/move`, payload).then((r) => r.data),
   reorder: (ids) => apiClient.post('/custom-fields/reorder', { ids }).then((r) => r.data),
+  // Enable/disable an inherited (Space) field for a single List.
+  setListEnabled: (id, listId, enabled) =>
+    apiClient.post(`/custom-fields/${id}/list-toggle`, { list_id: listId, enabled }).then((r) => r.data),
   duplicate: (id, payload) => apiClient.post(`/custom-fields/${id}/duplicate`, payload).then((r) => r.data),
   remove: (id) => apiClient.delete(`/custom-fields/${id}`).then((r) => r.data),
 };

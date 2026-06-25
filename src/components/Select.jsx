@@ -45,11 +45,13 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
     };
   }, [open]);
 
-  const pick = (v) => { onChange(v); setOpen(false); };
+  // Drop focus after choosing so the trigger doesn't keep a "selected"/focused
+  // border once the value is set.
+  const pick = (v) => { onChange(v); setOpen(false); btnRef.current?.blur(); };
 
   return (
     <div ref={ref} style={{ position: 'relative', ...style }}>
-      <button ref={btnRef} type="button" disabled={disabled}
+      <button ref={btnRef} type="button" disabled={disabled} className="wg-select-trigger"
         style={{ ...s.trigger, ...(open ? s.triggerOpen : {}), ...(disabled ? s.disabled : {}) }}
         onClick={() => !disabled && setOpen((o) => !o)}>
         <span style={{ ...s.value, color: selected ? '#1f2430' : '#9ca3af' }}>{selected ? selected.label : placeholder}</span>

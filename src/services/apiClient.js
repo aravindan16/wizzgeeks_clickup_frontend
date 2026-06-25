@@ -19,6 +19,22 @@ export function getAccessToken() {
   return accessToken;
 }
 
+// --- Global loading indicator -------------------------------------------------
+// Tracks in-flight requests so a top progress bar can show whenever the app is
+// talking to the API. Components subscribe via subscribeLoading().
+let activeRequests = 0;
+const loadingListeners = new Set();
+const notifyLoading = () => loadingListeners.forEach((fn) => fn(activeRequests > 0));
+
+export function subscribeLoading(fn) {
+  loadingListeners.add(fn);
+  fn(activeRequests > 0);
+  return () => loadingListeners.delete(fn);
+}
+
+const startRequest = () => { activeRequests += 1; notifyLoading(); };
+const endRequest = () => { activeRequests = Math.max(0, activeRequests - 1); notifyLoading(); };
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
@@ -29,16 +45,21 @@ apiClient.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+  if (!config._silent) startRequest();
   return config;
 });
 
 let refreshPromise = null;
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (!response.config?._silent) endRequest();
+    return response;
+  },
   async (error) => {
     const original = error.config;
     const status = error.response?.status;
+    if (!original?._silent) endRequest();
 
     // Avoid infinite loops; don't refresh the refresh call itself.
     if (status === 401 && !original._retry && !original.url?.includes('/auth/refresh')) {

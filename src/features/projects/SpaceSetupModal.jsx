@@ -74,7 +74,7 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
     <div style={ov.backdrop} onClick={onClose}>
       <div style={ov.modal} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ margin: '0 0 4px' }}>Let’s set up your space</h2>
-        <p style={{ color: '#6b7280', marginTop: 0 }}>
+        <p style={{ color: 'var(--c-muted)', marginTop: 0 }}>
           These form the building blocks of your space. You can change these settings later.
         </p>
 
@@ -82,12 +82,6 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
           <Field label="Space name">
             <input style={ov.input} value={name} onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Wizzgeeks development team" required autoFocus />
-          </Field>
-
-          <Field label="Key">
-            <input style={ov.input} value={key}
-              onChange={(e) => { setKeyEdited(true); setKey(e.target.value.toUpperCase()); }}
-              maxLength={10} required />
           </Field>
 
           <Field label="Description (optional)">
@@ -104,7 +98,7 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
             <div style={ov.statusHead}>
               <span>
                 <strong>Statuses</strong>
-                <div style={{ color: '#6b7280', fontSize: 13 }}>{statuses.map((s) => s.name).join(', ')}</div>
+                <div style={{ color: 'var(--c-muted)', fontSize: 13 }}>{statuses.map((s) => s.name).join(', ')}</div>
               </span>
               <button type="button" style={ov.editBtn} onClick={() => setEditStatuses(true)}>Customize</button>
             </div>
@@ -121,7 +115,7 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
             {VIEWS.map((v) => <Chip key={v}>{v}</Chip>)}
           </Block>
 
-          {error && <p style={{ color: '#991b1b', fontSize: 13 }}>{error}</p>}
+          {error && <p style={{ color: '#ef4444', fontSize: 13 }}>{error}</p>}
 
           <div style={ov.footer}>
             <button type="button" style={ov.ghost} onClick={onClose}>Cancel</button>
@@ -153,9 +147,9 @@ function Block({ title, value, open, onToggle, children }) {
       <button type="button" style={ov.blockHead} onClick={onToggle}>
         <span>
           <strong>{title}</strong>
-          <div style={{ color: '#6b7280', fontSize: 13 }}>{value}</div>
+          <div style={{ color: 'var(--c-muted)', fontSize: 13 }}>{value}</div>
         </span>
-        <span style={{ color: '#9ca3af', display: 'inline-flex' }}><Chevron open={open} size={14} /></span>
+        <span style={{ color: 'var(--c-faint)', display: 'inline-flex' }}><Chevron open={open} size={14} /></span>
       </button>
       {open && <div style={ov.chips}>{children}</div>}
     </div>
@@ -167,22 +161,23 @@ const Chip = ({ children }) => <span style={ov.chip}>{children}</span>;
 const ov = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 },
-  modal: { background: '#fff', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw',
+  modal: { background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw',
     maxHeight: '92vh', overflowY: 'auto' },
-  input: { padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, width: '100%', boxSizing: 'border-box' },
-  block: { border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 10 },
+  input: { padding: '10px 12px', border: '1px solid var(--c-border)', borderRadius: 8, width: '100%', boxSizing: 'border-box',
+    background: 'var(--c-surface)', color: 'var(--c-text)' },
+  block: { border: '1px solid var(--c-border)', borderRadius: 10, marginBottom: 10 },
   blockHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
-    background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' },
+    background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', textAlign: 'left', color: 'var(--c-text)' },
   chips: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 14px 12px' },
-  chip: { fontSize: 13, background: '#f1f2f4', color: '#3730a3', borderRadius: 999, padding: '3px 10px' },
+  chip: { fontSize: 13, background: 'var(--c-surface-3)', color: 'var(--c-text)', borderRadius: 999, padding: '3px 10px' },
   statusHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px' },
-  editBtn: { background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: 13 },
+  editBtn: { background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: 13 },
   statusChip: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600,
-    background: '#fff', border: '1px solid', borderRadius: 999, padding: '3px 10px' },
+    background: 'var(--c-surface)', border: '1px solid', borderRadius: 999, padding: '3px 10px' },
   statusDot: { width: 9, height: 9, borderRadius: '50%' },
   toggleRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '10px 0', marginTop: 4, fontSize: 14 },
   footer: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  primary: { padding: '10px 18px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
-  ghost: { padding: '10px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
+  primary: { padding: '10px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  ghost: { padding: '10px 18px', background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, cursor: 'pointer' },
 };

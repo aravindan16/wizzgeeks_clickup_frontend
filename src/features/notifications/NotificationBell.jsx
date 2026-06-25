@@ -45,7 +45,7 @@ export default function NotificationBell() {
     <div style={{ position: 'relative' }} ref={ref}>
       <button style={s.bell} onClick={() => setOpen((o) => !o)} title="Notifications">
         <IconBell size={18} />
-        {data.unread > 0 && <span style={s.badge}>{data.unread}</span>}
+        {data.unread > 0 && <span style={s.badge}>{data.unread > 9 ? '9+' : data.unread}</span>}
       </button>
       {open && (
         <div style={s.dropdown}>
@@ -73,8 +73,11 @@ export default function NotificationBell() {
 const s = {
   bell: { position: 'relative', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 8 },
-  badge: { position: 'absolute', top: -4, right: -6, background: '#b91c1c', color: '#fff',
-    borderRadius: 999, fontSize: 11, padding: '0 5px', fontWeight: 700 },
+  badge: { position: 'absolute', top: 2, right: 2, transform: 'translate(35%,-35%)',
+    minWidth: 17, height: 17, padding: '0 4px', boxSizing: 'border-box',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    background: '#ef4444', color: '#fff', border: '2px solid #fff', borderRadius: 999,
+    fontSize: 10.5, fontWeight: 700, lineHeight: 1 },
   dropdown: { position: 'absolute', right: 0, top: 32, width: 320, background: '#fff',
     border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 60 },
   dropHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12,

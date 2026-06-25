@@ -13,7 +13,6 @@ import ProjectModal from './ProjectModal';
 import AddMembersModal from './AddMembersModal';
 import SpaceSummary from './SpaceSummary';
 import { useAuth } from '../auth/useAuth';
-import { useTrackVisit } from '../recent/useTrackVisit';
 import { useConfirm } from '../../components/ConfirmDialog';
 
 /**
@@ -63,9 +62,6 @@ export default function ProjectDetailsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  useTrackVisit(project ? {
-    path: `/projects/${id}`, name: project.name, type: 'Space', icon: '📁', id,
-  } : null);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!project) return <p>Loading…</p>;
@@ -88,9 +84,13 @@ export default function ProjectDetailsPage() {
   };
   const visibleTasks = tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
   const activeFilterCount = countFilters(filters);
-  const canManage = canManageGlobal || isOwner;
+  // TODO: Re-introduce role-based permissions later. For now ANY member of the
+  // space can manage members (add/remove/change role) — no specific role needed.
+  const isMember = memberIds.has(me);
+  const canManage = isOwner || isMember || canManageGlobal;
   const canArchive = can('project.update') || isOwner;
-  const canDelete = can('project.delete') || isOwner;
+  // Only the person who created the space (owner) can delete it.
+  const canDelete = isOwner;
 
   const changeRole = async (uid, role) => { await projectsApi.updateMember(id, uid, { user_id: uid, project_role: role }); load(); };
   const removeMember = async (uid) => { await projectsApi.removeMember(id, uid); load(); };
@@ -152,7 +152,7 @@ export default function ProjectDetailsPage() {
       )}
 
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
-      <div style={s.viewArea}>
+      <div style={{ ...s.viewArea, overflow: tab === 'board' ? 'hidden' : 'auto' }}>
       {/* BOARD */}
       {tab === 'board' && (
         <KanbanBoard tasks={visibleTasks} onChanged={loadTasks} projectId={id} members={members}
@@ -229,8 +229,10 @@ const Td = ({ children }) => <td style={s.td}>{children}</td>;
 
 const s = {
   // Full-height column: header/tabs/toolbar stay fixed, only viewArea scrolls.
-  page: { display: 'flex', flexDirection: 'column', height: '100%' },
-  viewArea: { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 },
+  // height+negative margin consume the app's bottom padding so the board's
+  // horizontal scrollbar sits at the very bottom of the viewport.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
+  viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
     border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
   backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },

@@ -26,8 +26,9 @@ export default function SpacesMenu({ collapsed }) {
   const confirm = useConfirm();
   const { user, can } = useAuth();
   const me = user?._id || user?.id;
-  // Only the Space's creator (owner) — or an admin — sees the Delete option.
-  const canDeleteSpace = (sp) => (sp.owner_id && sp.owner_id === me) || can('project.delete');
+  // Only the Space's creator (owner) sees the Delete option.
+  // TODO: Re-introduce an admin override (project.delete) when permissions return.
+  const canDeleteSpace = (sp) => !!sp.owner_id && sp.owner_id === me;
   const [spaces, setSpaces] = useState([]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [listsBySpace, setListsBySpace] = useState({});
@@ -253,7 +254,6 @@ export default function SpacesMenu({ collapsed }) {
                         <span style={s.rowName}>{l.name}</span>
                         {l.privacy === 'private' && <span title="Private" style={{ opacity: .7 }}>🔒</span>}
                       </NavLink>
-                      <span className="wg-sb-count" style={s.count}>{l.task_count ?? 0}</span>
                       <span className="wg-sb-actions" style={s.rowActions}>
                         <button className="icon-btn" style={s.iconBtn} title="List actions"
                           onClick={() => { setTopMenu(false); setSpaceMenu(null); setListMenu(listMenu?.id === l._id ? null : { id: l._id, spaceId: sp._id }); }}><IconDots size={16} /></button>

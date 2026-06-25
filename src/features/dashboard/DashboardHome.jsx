@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { dashboardApi } from './dashboardApi';
 import { useAuth } from '../auth/useAuth';
 import BarChart from '../../components/charts/BarChart';
-import RecentlyVisited from '../recent/RecentlyVisited';
 import { STATUS_LABELS } from '../tasks/tasksApi';
 
 /**
@@ -26,7 +25,6 @@ export default function DashboardHome() {
   return (
     <div>
       <h2>Welcome, {user?.full_name}</h2>
-      <RecentlyVisited />
       <div style={s.tabs}>
         {tabs.map((t) => (
           <button key={t.id} style={tab === t.id ? s.tabActive : s.tab} onClick={() => setTab(t.id)}>

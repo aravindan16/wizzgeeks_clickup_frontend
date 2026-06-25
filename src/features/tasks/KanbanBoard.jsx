@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -23,17 +23,24 @@ const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2)
 
 export default function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
   const open = onOpenTask || (() => {});
-  // Columns come from the space's own workflow. Include any orphan statuses found
-  // on tasks (e.g. legacy) so nothing is hidden.
-  const columns = [...statuses];
-  tasks.forEach((t) => {
-    if (!columns.some((c) => c.key === t.status)) columns.push({ key: t.status, name: t.status, color: '#6b7280' });
-  });
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const me = user?._id || user?.id;
   const [dragId, setDragId] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null); // status key currently hovered while dragging
   const [error, setError] = useState(null);
+
+  // Local mirror of the tasks prop so a drag can update the board instantly
+  // (optimistic) instead of waiting for the server round-trip + parent refetch.
+  const [board, setBoard] = useState(tasks);
+  useEffect(() => { setBoard(tasks); }, [tasks]);
+
+  // Columns come from the space's own workflow. Include any orphan statuses found
+  // on tasks (e.g. legacy) so nothing is hidden.
+  const columns = [...statuses];
+  board.forEach((t) => {
+    if (!columns.some((c) => c.key === t.status)) columns.push({ key: t.status, name: t.status, color: '#6b7280' });
+  });
 
   // Composer state
   const [composerStatus, setComposerStatus] = useState(null);
@@ -56,7 +63,7 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
   const deleteCard = async (id) => {
     setCardMenu(null);
-    const task = tasks.find((t) => t._id === id);
+    const task = board.find((t) => t._id === id);
     const ok = await confirm({
       title: `Delete: ${task?.title || 'task'}`,
       message: 'This task will be permanently deleted. This cannot be undone.',
@@ -67,7 +74,8 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
 
   const canCreate = can('task.create') && !!projectId;
-  const byStatus = (st) => tasks.filter((t) => t.status === st);
+  const byStatus = (st) => board.filter((t) => t.status === st);
+  const draggedTask = dragId ? board.find((t) => t._id === dragId) : null;
   const typeOpt = TYPE_OPTIONS.find((t) => t.value === type) || TYPE_OPTIONS[1];
   const assignee = members.find((m) => m.user_id === assigneeId);
   const assigneeLabel = assignee?.full_name || '';
@@ -87,13 +95,24 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
   };
 
   const onDrop = async (status) => {
-    setError(null);
-    const task = tasks.find((t) => t._id === dragId);
+    const id = dragId;
     setDragId(null);
+    setDragOverCol(null);
+    setError(null);
+    const task = board.find((t) => t._id === id);
     if (!task || task.status === status) return;
-    // ClickUp-style: tasks move freely between any of the space's statuses.
-    try { await tasksApi.changeStatus(task._id, { to_status: status }); onChanged(); }
-    catch (err) { setError(err.response?.data?.error?.message || 'Could not move task'); }
+    // Optimistic: move the card instantly so there's no perceived lag, then
+    // persist in the background. Revert if the server rejects it.
+    const prev = board;
+    setBoard((b) => b.map((t) => (t._id === id ? { ...t, status } : t)));
+    try {
+      // ClickUp-style: tasks move freely between any of the space's statuses.
+      await tasksApi.changeStatus(id, { to_status: status });
+      onChanged();
+    } catch (err) {
+      setBoard(prev); // roll back the optimistic move
+      setError(err.response?.data?.error?.message || 'Could not move task');
+    }
   };
 
   const submitCreate = async (st) => {
@@ -103,7 +122,8 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
     try {
       await tasksApi.create({
         project_id: projectId, list_id: listId, title: value, status: st, type,
-        due_date: dueDate || null, assignee_id: assigneeId || null,
+        // The composer's date is the task's end/due date (shown as "End date" in detail).
+        end_date: dueDate || null, due_date: dueDate || null, assignee_id: assigneeId || null,
       });
       setTitle(''); // keep type/date/assignee for rapid entry, like Jira
       onChanged();
@@ -123,15 +143,19 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
     : members;
 
   return (
-    <div>
+    <div style={s.wrap}>
       {error && <p style={{ color: '#991b1b' }}>{error}</p>}
       <div style={s.board}>
         {columns.map((col) => {
           const st = col.key;
-          const bg = `${col.color}14`; // soft tint of the status color (over white)
+          // Soft tint of the status color layered over the themed column surface,
+          // so columns stay visible boxes in both light and dark mode.
+          const bg = `linear-gradient(${col.color}14, ${col.color}14), var(--c-surface-3)`;
           return (
-          <div key={st} className="wg-col" style={{ background: bg }}
-            onDragOver={(e) => e.preventDefault()} onDrop={() => onDrop(st)}>
+          <div key={st} className="wg-col"
+            style={{ background: bg, ...(dragId && dragOverCol === st ? s.colDropTarget : {}) }}
+            onDragOver={(e) => { e.preventDefault(); if (dragOverCol !== st) setDragOverCol(st); }}
+            onDrop={() => onDrop(st)}>
             <div className="wg-col-head" style={{ background: bg }}>
               <span style={{ ...s.statusDot, background: col.color }} />
               <span style={{ flex: 1, color: col.color }}>{col.name}</span>
@@ -139,10 +163,12 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
             </div>
             <div className="wg-col-body">
               {byStatus(st).map((t) => {
-                const subCount = tasks.filter((x) => x.parent_id === t._id).length;
+                const subCount = board.filter((x) => x.parent_id === t._id).length;
                 return (
                 <div key={t._id} className="wg-card"
                   draggable onDragStart={() => setDragId(t._id)}
+                  onDragEnd={() => { setDragId(null); setDragOverCol(null); }}
+                  style={dragId === t._id ? s.cardDragging : undefined}
                   onClick={() => open(t._id)}>
                   <div style={s.cardTop}>
                     <span style={s.cardTitle}>{t.title}</span>
@@ -170,6 +196,11 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
                 </div>
                 );
               })}
+
+              {/* ClickUp-style drop placeholder: shows where the card will land. */}
+              {draggedTask && dragOverCol === st && draggedTask.status !== st && (
+                <div style={s.placeholder}>Drop here</div>
+              )}
 
               {canCreate && (composerStatus === st ? (
                 <div style={s.composer} onClick={(e) => e.stopPropagation()}>
@@ -265,55 +296,66 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
 }
 
 const s = {
-  board: { display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start', height: '100%' },
+  // Wrapper fills the view area so the board (and its columns' max-height) get a real height.
+  wrap: { height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' },
+  board: { flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', overflowY: 'hidden', paddingBottom: 8, alignItems: 'flex-start' },
+  // Drop-target column: a soft ring (the placeholder card is the main cue).
+  colDropTarget: { boxShadow: 'inset 0 0 0 2px var(--c-faint)' },
+  // The card being dragged is dimmed so the landing placeholder reads clearly.
+  cardDragging: { opacity: 0.4 },
+  // ClickUp-style "drop here" ghost card shown in the target column while dragging.
+  placeholder: { height: 60, border: '2px dashed var(--c-border)', borderRadius: 10,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'var(--c-faint)', fontSize: 12.5, fontWeight: 600, letterSpacing: '.02em',
+    background: 'var(--c-hover)', animation: 'wg-pop 120ms ease' },
   statusDot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 },
-  count: { background: '#e6e9ee', color: '#64748b', borderRadius: 999, padding: '1px 9px', fontWeight: 700, fontSize: 12 },
+  count: { background: 'var(--c-surface-3)', color: 'var(--c-muted)', borderRadius: 999, padding: '1px 9px', fontWeight: 700, fontSize: 12 },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
-  cardTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: '#1f2430', display: '-webkit-box',
+  cardTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: 'var(--c-text)', display: '-webkit-box',
     WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
   chipsRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 },
   priChip: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
     textTransform: 'capitalize', borderRadius: 999, padding: '2px 9px' },
   priDot: { width: 7, height: 7, borderRadius: 999 },
   metaChip: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600,
-    color: '#64748b', background: '#f1f5f9', borderRadius: 999, padding: '2px 8px' },
-  labelChip: { fontSize: 11, fontWeight: 600, background: '#f1f2f4', color: '#000000', borderRadius: 999, padding: '2px 8px' },
+    color: 'var(--c-muted)', background: 'var(--c-surface-3)', borderRadius: 999, padding: '2px 8px' },
+  labelChip: { fontSize: 11, fontWeight: 600, background: 'var(--c-surface-3)', color: 'var(--c-text)', borderRadius: 999, padding: '2px 8px' },
   cardBottom: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
   idRow: { display: 'inline-flex', alignItems: 'center', gap: 6 },
-  cardAvatar: { width: 26, height: 26, borderRadius: '50%', background: '#111827', color: '#fff',
+  cardAvatar: { width: 26, height: 26, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 },
-  cardAvatarEmpty: { width: 26, height: 26, borderRadius: '50%', background: '#fff', border: '1.5px dashed #cbd5e1',
-    color: '#94a3b8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 },
-  key: { fontWeight: 700, color: '#111827', fontSize: 12, letterSpacing: '.02em' },
+  cardAvatarEmpty: { width: 26, height: 26, borderRadius: '50%', background: 'var(--c-surface)', border: '1.5px dashed var(--c-border)',
+    color: 'var(--c-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 },
+  key: { fontWeight: 700, color: 'var(--c-text-strong)', fontSize: 12, letterSpacing: '.02em' },
   createBtn: { display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer',
+    padding: '9px 12px', background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
     borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', marginTop: 2 },
-  composer: { background: '#fff', border: '2px solid #111827', borderRadius: 10, padding: 10 },
+  composer: { background: 'var(--c-surface)', border: '2px solid var(--c-text-strong)', borderRadius: 10, padding: 10 },
   composerTop: { display: 'flex', justifyContent: 'flex-end', marginBottom: 2 },
-  composerClose: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 13, padding: 2 },
+  composerClose: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 13, padding: 2 },
   composerInput: { width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none',
-    resize: 'none', fontSize: 14, fontFamily: 'inherit' },
+    resize: 'none', fontSize: 14, fontFamily: 'inherit', background: 'transparent', color: 'var(--c-text)' },
   composerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 },
-  tbtn: { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: 7, padding: '5px 8px', cursor: 'pointer', fontSize: 13, color: '#475569' },
+  tbtn: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+    borderRadius: 7, padding: '5px 8px', cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)' },
   tbtnIcon: { display: 'inline-flex', fontSize: 14, lineHeight: 1 },
-  dateBtn: { display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: 7, padding: '5px 8px', cursor: 'pointer', fontSize: 13, color: '#475569', position: 'relative', overflow: 'hidden' },
+  dateBtn: { display: 'inline-flex', alignItems: 'center', background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+    borderRadius: 7, padding: '5px 8px', cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)', position: 'relative', overflow: 'hidden' },
   dateInput: { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' },
   miniAvatar: { width: 18, height: 18, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 },
-  cancelBtn: { background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '2px 10px',
-    cursor: 'pointer', color: '#6b7280', fontSize: 13 },
-  enterBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, background: '#111827', border: 'none',
-    borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: '#fff', fontSize: 13, fontWeight: 600 },
-  enterBtnOff: { background: '#e5e7eb', color: '#9ca3af', cursor: 'not-allowed' },
+  cancelBtn: { background: 'none', border: '1px solid var(--c-border)', borderRadius: 6, padding: '2px 10px',
+    cursor: 'pointer', color: 'var(--c-muted)', fontSize: 13 },
+  enterBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--c-primary)', border: 'none',
+    borderRadius: 7, padding: '6px 12px', cursor: 'pointer', color: 'var(--c-on-primary)', fontSize: 13, fontWeight: 600 },
+  enterBtnOff: { background: 'var(--c-hover)', color: 'var(--c-faint)', cursor: 'not-allowed' },
   // Fixed pickers
   pickBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
-  popFixed: { position: 'fixed', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
-    boxShadow: '0 12px 32px rgba(0,0,0,.2)', zIndex: 401, minWidth: 200, padding: 4 },
-  popSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db',
-    borderRadius: 6, fontSize: 14, marginBottom: 4 },
+  popFixed: { position: 'fixed', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8,
+    boxShadow: '0 12px 32px rgba(0,0,0,.2)', zIndex: 401, minWidth: 200, padding: 4, color: 'var(--c-text)' },
+  popSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--c-border)',
+    borderRadius: 6, fontSize: 14, marginBottom: 4, background: 'var(--c-surface)', color: 'var(--c-text)' },
   popItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
-    background: 'none', border: 'none', padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14 },
-  popEmpty: { padding: '8px 10px', color: '#6b7280', fontSize: 13 },
+    background: 'none', border: 'none', padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  popEmpty: { padding: '8px 10px', color: 'var(--c-muted)', fontSize: 13 },
 };
