@@ -418,8 +418,16 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </Field>
 
-            <Field label="Due date">
-              <input type="date" style={s.fieldSelect} value={task.due_date || ''} onChange={(e) => save({ due_date: e.target.value || null })} />
+            <Field label="Start date">
+              <input type="date" style={s.fieldSelect} value={task.start_date || ''}
+                max={task.end_date || undefined}
+                onChange={(e) => save({ start_date: e.target.value || null })} />
+            </Field>
+
+            <Field label="End date">
+              <input type="date" style={s.fieldSelect} value={task.end_date || ''}
+                min={task.start_date || undefined}
+                onChange={(e) => save({ end_date: e.target.value || null, due_date: e.target.value || null })} />
             </Field>
 
             <Field label="Labels">

@@ -254,7 +254,6 @@ export default function SpacesMenu({ collapsed }) {
                         <span style={s.rowName}>{l.name}</span>
                         {l.privacy === 'private' && <span title="Private" style={{ opacity: .7 }}>🔒</span>}
                       </NavLink>
-                      <span className="wg-sb-count" style={s.count}>{l.task_count ?? 0}</span>
                       <span className="wg-sb-actions" style={s.rowActions}>
                         <button className="icon-btn" style={s.iconBtn} title="List actions"
                           onClick={() => { setTopMenu(false); setSpaceMenu(null); setListMenu(listMenu?.id === l._id ? null : { id: l._id, spaceId: sp._id }); }}><IconDots size={16} /></button>

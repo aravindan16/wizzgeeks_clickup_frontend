@@ -122,7 +122,8 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
     try {
       await tasksApi.create({
         project_id: projectId, list_id: listId, title: value, status: st, type,
-        due_date: dueDate || null, assignee_id: assigneeId || null,
+        // The composer's date is the task's end/due date (shown as "End date" in detail).
+        end_date: dueDate || null, due_date: dueDate || null, assignee_id: assigneeId || null,
       });
       setTitle(''); // keep type/date/assignee for rapid entry, like Jira
       onChanged();

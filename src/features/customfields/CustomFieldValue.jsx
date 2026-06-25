@@ -149,7 +149,7 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
           })}
         </div>
       )}
-      <button style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add task</button>
+      <button style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add</button>
       {open && (
         <div style={t.relPop}>
           <input autoFocus style={t.relSearch} placeholder="Search tasks…" value={query} onChange={(e) => setQuery(e.target.value)} />
