@@ -4,6 +4,7 @@ import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
 import NotificationBell from '../features/notifications/NotificationBell';
+import GlobalLoader from '../components/GlobalLoader';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
@@ -112,7 +113,7 @@ export default function AppLayout() {
           </button>
         </aside>
 
-        <main style={s.main}><Outlet /></main>
+        <main style={s.main}><GlobalLoader /><Outlet /></main>
       </div>
     </div>
   );
@@ -218,5 +219,5 @@ const s = {
   menuItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
     padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#374151' },
   menuIcon: { width: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit' },
-  main: { flex: 1, padding: 24, background: '#f9fafb', minWidth: 0, overflow: 'auto' },
+  main: { flex: 1, padding: 24, background: '#f9fafb', minWidth: 0, overflow: 'auto', position: 'relative' },
 };

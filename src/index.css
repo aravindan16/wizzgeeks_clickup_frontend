@@ -277,6 +277,20 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
 .wg-menu-item { transition: background var(--t-fast); }
 .wg-menu-item:hover { background: #f3f4f6; }
 
+/* --- Global API loading spinner (covers the content area) --- */
+.wg-loader-overlay {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: #f9fafb;                   /* opaque: hides the half-loaded page behind it */
+}
+.wg-spinner {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 4px solid rgba(37, 99, 235, .18);
+  border-top-color: #2563eb;            /* the moving arc */
+  animation: wg-spin .7s linear infinite;
+}
+@keyframes wg-spin { to { transform: rotate(360deg); } }
+
 /* --- Tabs --- */
 .wg-tab {
   position: relative;
