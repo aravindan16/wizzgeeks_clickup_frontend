@@ -27,6 +27,6 @@ export default function TaskDetailModal({ taskId, onClose, onChanged, members, o
 const ov = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 70,
     display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '3vh 2vw', overflow: 'hidden' },
-  modal: { background: '#fff', borderRadius: 14, width: 1200, maxWidth: '96vw', height: '94vh',
+  modal: { background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 14, width: 1200, maxWidth: '96vw', height: '94vh',
     overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(16,24,40,.32)' },
 };

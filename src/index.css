@@ -16,15 +16,21 @@
   --sh-md: 0 4px 12px rgba(16,24,40,.10);
   --sh-lg: 0 12px 28px rgba(16,24,40,.16);
 
-  /* Palette */
-  --c-bg: #f7f8fa;
-  --c-surface: #ffffff;
+  /* Palette (light) */
+  --c-bg: #f7f8fa;            /* app background */
+  --c-surface: #ffffff;       /* cards / panels / popovers */
+  --c-surface-2: #f9fafb;     /* main content bg, subtle panels */
+  --c-surface-3: #f4f5f7;     /* board columns, chips */
   --c-border: #e8eaed;
+  --c-border-2: #f1f5f9;      /* subtle dividers */
   --c-text: #1f2430;
+  --c-text-strong: #111827;
   --c-muted: #6b7280;
   --c-faint: #9ca3af;
-  --c-primary: #111827;
-  --c-primary-weak: #f1f2f4;
+  --c-hover: #f3f4f6;         /* row / item hover */
+  --c-primary: #111827;       /* primary action bg */
+  --c-on-primary: #ffffff;    /* text on primary */
+  --c-primary-weak: #f1f2f4;  /* selected / soft accent bg */
 
   /* Status group colors (consistent across the app) */
   --st-not-started: #94a3b8;
@@ -43,8 +49,28 @@
   text-rendering: optimizeLegibility;
 }
 
+/* --- Dark theme: override the palette tokens; everything keyed to var() follows. --- */
+:root[data-theme="dark"] {
+  --c-bg: #0f1117;
+  --c-surface: #181b23;
+  --c-surface-2: #14171e;
+  --c-surface-3: #1f232c;
+  --c-border: #2a2f3a;
+  --c-border-2: #232730;
+  --c-text: #e5e7eb;
+  --c-text-strong: #f3f4f6;
+  --c-muted: #9aa3b2;
+  --c-faint: #6b7280;
+  --c-hover: #232833;
+  --c-primary: #f3f4f6;       /* light button on dark */
+  --c-on-primary: #111827;
+  --c-primary-weak: #232833;
+  color-scheme: dark;          /* dark native form controls / scrollbars */
+}
+:root[data-theme="dark"] body { background: var(--c-bg); color: var(--c-text); }
+
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; background: var(--c-bg); color: var(--c-text); }
 
 /* Accessible focus ring for keyboard users */
 :focus-visible {
@@ -62,7 +88,7 @@ select {
   font-size: 14px;
   font-weight: 500;
   color: var(--c-text);
-  background-color: #fff;
+  background-color: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   padding: 9px 36px 9px 13px;
@@ -75,16 +101,16 @@ select {
   background-size: 16px;
   transition: border-color var(--t-fast), box-shadow var(--t-fast), background-color var(--t-fast);
 }
-select:hover { border-color: #c7cdd6; background-color: #fafbfc; }
+select:hover { border-color: #c7cdd6; background-color: var(--c-hover); }
 select:focus, select:focus-visible {
   outline: none;
   border-color: var(--c-primary);
   box-shadow: 0 0 0 3px rgba(17, 24, 39, .12);
 }
-select:disabled { background-color: #f3f4f6; color: var(--c-faint); cursor: not-allowed; box-shadow: none; }
+select:disabled { background-color: var(--c-hover); color: var(--c-faint); cursor: not-allowed; box-shadow: none; }
 /* Style the open option list where the browser allows it (Chromium/Firefox). */
-option { color: var(--c-text); background: #fff; padding: 8px; }
-option:checked { background: var(--c-primary-weak); color: var(--c-primary); font-weight: 600; }
+option { color: var(--c-text); background: var(--c-surface); padding: 8px; }
+option:checked { background: var(--c-primary-weak); color: var(--c-text-strong); font-weight: 600; }
 
 /* Subtle, modern scrollbars */
 * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
@@ -124,8 +150,8 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   border-radius: var(--r-pill);
   font-size: 12px;
   font-weight: 600;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--c-surface-3);
+  color: var(--c-muted);
 }
 
 /* --- Board: columns + cards --- */
@@ -133,7 +159,7 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   min-width: 288px;
   width: 288px;
   flex-shrink: 0;
-  background: #f4f5f7;
+  background: var(--c-surface-3);
   border-radius: var(--r-lg);
   padding: var(--sp-2);
   display: flex;
@@ -154,8 +180,8 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
-  color: #475569;
-  background: #f4f5f7;
+  color: var(--c-muted);
+  background: var(--c-surface-3);
   border-radius: var(--r-md);
 }
 /* Body sizes to its cards (so short/empty columns stay small), but when the column
@@ -175,7 +201,7 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
 .wg-card:hover {
   box-shadow: var(--sh-md);
   transform: translateY(-2px);
-  border-color: #d6dae0;
+  border-color: var(--c-border);
 }
 .wg-card:active { transform: translateY(0); }
 
@@ -191,13 +217,13 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   position: relative;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.nav-item:hover { background: #f3f4f6; color: #111827; }
+.nav-item:hover { background: var(--c-hover); color: var(--c-text-strong); }
 .nav-item.active::before {
   content: '';
   position: absolute;
   left: 0; top: 50%; transform: translateY(-50%);
   width: 3px; height: 60%;
-  background: #111827;
+  background: var(--c-text-strong);
   border-radius: 999px;
 }
 
@@ -238,19 +264,19 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
 
 /* --- Custom Field Manager (ClickUp-style) --- */
 .cf-row { transition: background var(--t-fast); }
-.cf-row:hover { background: #f9fafb; }
-.cf-nav { background: none; color: #475569; transition: background var(--t-fast), color var(--t-fast); }
-.cf-nav:hover { background: #f3f4f6; color: #111827; }
+.cf-row:hover { background: var(--c-hover); }
+.cf-nav { background: none; color: var(--c-muted); transition: background var(--t-fast), color var(--t-fast); }
+.cf-nav:hover { background: var(--c-hover); color: var(--c-text-strong); }
 .cf-nav.active, .cf-nav.active:hover {
-  background: #f1f2f4;
-  color: #111827;
+  background: var(--c-primary-weak);
+  color: var(--c-text-strong);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 #111827;
+  box-shadow: inset 3px 0 0 var(--c-text-strong);
 }
 
 /* --- Sidebar rows (Spaces / Lists) --- */
 .wg-sb-row { transition: background var(--t-fast); }
-.wg-sb-row:hover { background: #f3f4f6; }
+.wg-sb-row:hover { background: var(--c-hover); }
 /* Count and hover-actions share one right-edge slot (in flow), so the row name
    shrinks to make room instead of being overlapped. Only one shows at a time. */
 .wg-sb-actions { display: none; align-items: center; flex-shrink: 0; }
@@ -259,29 +285,29 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
 
 /* Select trigger: no harsh black outline on mouse focus; soft ring for keyboard only. */
 .wg-select-trigger:focus { outline: none; }
-.wg-select-trigger:focus-visible { outline: none; border-color: #111827; box-shadow: 0 0 0 3px rgba(17,24,39,.12); }
+.wg-select-trigger:focus-visible { outline: none; border-color: var(--c-text-strong); box-shadow: 0 0 0 3px rgba(120,130,150,.2); }
 
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two
    shades are kept far enough apart that they never look like the same state. */
 .wg-select-opt { background: none; transition: background var(--t-fast); }
-.wg-select-opt[aria-selected="true"] { background: #f6f7f9; }
-.wg-select-opt:hover { background: #e8eaee; }
-.wg-select-opt[aria-selected="true"]:hover { background: #e1e4e8; }
+.wg-select-opt[aria-selected="true"] { background: var(--c-primary-weak); }
+.wg-select-opt:hover { background: var(--c-hover); }
+.wg-select-opt[aria-selected="true"]:hover { background: var(--c-hover); }
 
 /* --- Task detail back button --- */
 .wg-back { transition: background var(--t-fast), border-color var(--t-fast); }
-.wg-back:hover { background: #e8eaee; border-color: #d1d5db; }
+.wg-back:hover { background: var(--c-hover); border-color: var(--c-border); }
 
 /* --- User dropdown menu items --- */
 .wg-menu-item { transition: background var(--t-fast); }
-.wg-menu-item:hover { background: #f3f4f6; }
+.wg-menu-item:hover { background: var(--c-hover); }
 
 /* --- Global API loading spinner (covers the content area) --- */
 .wg-loader-overlay {
   position: absolute; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center;
-  background: #f9fafb;                   /* opaque: hides the half-loaded page behind it */
+  background: var(--c-surface-2);         /* opaque: hides the half-loaded page behind it */
 }
 .wg-spinner {
   width: 46px; height: 46px; border-radius: 50%;
@@ -304,13 +330,13 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   border-radius: var(--r-sm) var(--r-sm) 0 0;
   transition: color var(--t-fast), background var(--t-fast);
 }
-.wg-tab:hover { color: var(--c-text); background: #f1f5f9; }
+.wg-tab:hover { color: var(--c-text); background: var(--c-hover); }
 .wg-tab.active { color: var(--c-text); font-weight: 600; }
 .wg-tab.active::after {
   content: '';
   position: absolute;
   left: 10px; right: 10px; bottom: -1px; height: 2.5px;
-  background: #111827;
+  background: var(--c-text-strong);
   border-radius: 999px;
 }
 
@@ -321,10 +347,10 @@ option:checked { background: var(--c-primary-weak); color: var(--c-primary); fon
   cursor: pointer; border: 1px solid transparent; transition: background var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
 }
 .btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--c-primary); color: #fff; }
-.btn-primary:hover { background: #000000; box-shadow: var(--sh-sm); }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); }
+.btn-primary:hover { filter: brightness(.92); box-shadow: var(--sh-sm); }
 .btn-ghost { background: var(--c-surface); border-color: var(--c-border); color: var(--c-text); }
-.btn-ghost:hover { background: #f8fafc; }
+.btn-ghost:hover { background: var(--c-hover); }
 
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
