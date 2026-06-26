@@ -1,1 +1,0 @@
-import{k as o,a as n,j as i}from"./index-9StSBU3I.js";import{T as r}from"./TaskDetail-DQHYzb3q.js";function l(){const{id:a}=o(),s=n(),t=()=>{window.history.length>1?s(-1):s("/")};return i.jsx(r,{taskId:a,onClose:t,onChanged:()=>{},onOpenTask:e=>s(`/tasks/${e}`)})}export{l as default};

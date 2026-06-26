@@ -112,7 +112,6 @@ export default function AppLayout() {
                 <span style={s.chipRole}>{role}</span>
               </span>
             )}
-            {!collapsed && <span style={{ color: '#9ca3af' }}><IconChevronDown size={14} /></span>}
           </button>
         </aside>
 

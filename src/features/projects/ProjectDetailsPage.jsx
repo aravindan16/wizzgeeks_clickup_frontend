@@ -4,6 +4,9 @@ import { projectsApi, PROJECT_ROLES } from './projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
+import TaskTableView from '../tasks/TaskTableView';
+import ViewTabs from '../tasks/ViewTabs';
+import { useViews } from '../tasks/useViews';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
 import { IconBoard, IconMembers, IconSearch, IconFolder } from '../../components/icons';
 import Select from '../../components/Select';
@@ -16,6 +19,8 @@ import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { SkeletonBoard } from '../../components/Skeleton';
 
+const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
+
 /**
  * A Project behaves like a Jira "Space": opening it shows tabbed views — the
  * Board (Kanban of this project's tasks) by default, plus Overview (stats) and
@@ -27,7 +32,6 @@ export default function ProjectDetailsPage() {
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const me = user?._id || user?.id;
-  const [tab, setTab] = useState('board');
   const [project, setProject] = useState(null);
   const [stats, setStats] = useState(null);
   const [members, setMembers] = useState([]);
@@ -37,8 +41,12 @@ export default function ProjectDetailsPage() {
   const [taskOpen, setTaskOpen] = useState(false);
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [taskQuery, setTaskQuery] = useState('');
-  const [filters, setFilters] = useState(emptyFilters);
   const [openTaskId, setOpenTaskId] = useState(null);
+
+  // Views (List/Board/Table tabs) — persisted per Space, shared with the List board.
+  const vs = useViews(id);
+  const { activeId, setActiveId, updateView, activeView } = vs;
+  const activeFilters = activeView?.filters || EMPTY_FILTERS;
 
   const canManageGlobal = can('project.member.manage');
 
@@ -84,20 +92,22 @@ export default function ProjectDetailsPage() {
     const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
       nameMap.get(t.assignee_id), nameMap.get(t.reporter_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
     const matchesFilters = (t) => {
-      if (filters.assignee.length && !filters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-      if (filters.status.length && !filters.status.includes(t.status)) return false;
-      if (filters.type.length && !filters.type.includes(t.type)) return false;
-      if (filters.label.length && !(t.labels || []).some((l) => filters.label.includes(l))) return false;
+      if (activeFilters.assignee.length && !activeFilters.assignee.includes(t.assignee_id || 'unassigned')) return false;
+      if (activeFilters.status.length && !activeFilters.status.includes(t.status)) return false;
+      if (activeFilters.type.length && !activeFilters.type.includes(t.type)) return false;
+      if ((activeFilters.priority || []).length && !activeFilters.priority.includes(t.priority)) return false;
+      if ((activeFilters.label || []).length && !(t.labels || []).some((l) => activeFilters.label.includes(l))) return false;
       return true;
     };
     return tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
-  }, [tasks, taskQuery, filters, nameMap]);
+  }, [tasks, taskQuery, activeFilters, nameMap]);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!project) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
   const isOwner = project.owner_id && project.owner_id === me;
-  const activeFilterCount = countFilters(filters);
+  const activeFilterCount = countFilters(activeFilters);
+  const isMembersTab = activeId === 'members';
   // TODO: Re-introduce role-based permissions later. For now ANY member of the
   // space can manage members (add/remove/change role) — no specific role needed.
   const isMember = memberIds.has(me);
@@ -137,28 +147,26 @@ export default function ProjectDetailsPage() {
         </div>
       </div>
 
-      {/* Space tabs */}
-      <div style={s.tabs}>
-        {/* Only Board for now; Summary/List can be re-enabled later. Members kept for people management. */}
-        {[['board', 'Board', IconBoard], ['members', 'Members', IconMembers]].map(([key, label, Icon]) => (
-          <button key={key} className={`wg-tab${tab === key ? ' active' : ''}`} onClick={() => setTab(key)}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon size={16} /> {label}</span>
-          </button>
-        ))}
-      </div>
+      {/* View tabs (List / Board / Table) + Members + "+ View". Double-click or
+          right-click a tab to rename/delete; filters persist per view. */}
+      <ViewTabs vs={vs} extraTabs={[{
+        id: 'members', label: 'Members', icon: <IconMembers size={16} />,
+        active: isMembersTab, onClick: () => setActiveId('members'),
+      }]} />
 
-      {/* Common search toolbar for Board + List */}
-      {tab === 'board' && (
+      {/* Common search + filter toolbar for any task view. */}
+      {!isMembersTab && (
         <div style={s.searchBar}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
             <div style={{ position: 'relative', maxWidth: 320, flex: 1 }}>
               <span style={s.searchIcon}><IconSearch size={15} /></span>
-              <input style={s.searchInput} placeholder="Search board" value={taskQuery}
+              <input style={s.searchInput} placeholder={`Search ${activeView?.name?.toLowerCase() || 'tasks'}`} value={taskQuery}
                 onChange={(e) => setTaskQuery(e.target.value)} />
             </div>
-            <BoardFilter members={members} tasks={tasks} statuses={statuses} value={filters} onChange={setFilters} />
+            <BoardFilter members={members} tasks={tasks} statuses={statuses} value={activeFilters}
+              onChange={(f) => updateView(activeId, { filters: f })} />
             {activeFilterCount > 0 && (
-              <button style={s.clearFilters} onClick={() => setFilters(emptyFilters())}>Clear filters</button>
+              <button style={s.clearFilters} onClick={() => updateView(activeId, { filters: emptyFilters() })}>Clear filters</button>
             )}
           </div>
           <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
@@ -166,24 +174,24 @@ export default function ProjectDetailsPage() {
       )}
 
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
-      <div style={{ ...s.viewArea, overflow: tab === 'board' ? 'hidden' : 'auto' }}>
-      {/* BOARD */}
-      {tab === 'board' && (
+      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+      {!isMembersTab && activeView?.type === 'board' && (
         <KanbanBoard tasks={visibleTasks} onChanged={loadTasks} projectId={id} members={members}
           statuses={statuses} onOpenTask={setOpenTaskId} />
       )}
 
-      {/* LIST */}
-      {tab === 'list' && (
+      {!isMembersTab && activeView?.type === 'list' && (
         <TaskListView tasks={visibleTasks} members={members} statuses={statuses} onChanged={loadTasks}
           onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
       )}
 
-      {/* SUMMARY */}
-      {tab === 'summary' && <SpaceSummary tasks={tasks} members={members} statuses={statuses} />}
+      {!isMembersTab && activeView?.type === 'table' && (
+        <TaskTableView tasks={visibleTasks} members={members} statuses={statuses}
+          onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
+      )}
 
       {/* MEMBERS */}
-      {tab === 'members' && (
+      {isMembersTab && (
         <div>
           {canManage && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -257,7 +265,18 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
   clearFilters: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' },
-  tabs: { display: 'flex', gap: 4, margin: '16px 0', borderBottom: '1px solid #e5e7eb' },
+  tabs: { display: 'flex', alignItems: 'center', gap: 4, margin: '16px 0', borderBottom: '1px solid var(--c-border)', flexWrap: 'wrap' },
+  tabWrap: { display: 'inline-flex', alignItems: 'center' },
+  menuBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
+  viewMenu: { position: 'fixed', zIndex: 401, minWidth: 180, background: 'var(--c-surface)', color: 'var(--c-text)',
+    border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.18)', padding: 6 },
+  viewMenuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none',
+    border: 'none', padding: '9px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  viewMenuItemDisabled: { color: 'var(--c-faint)', cursor: 'not-allowed' },
+  renameInput: { font: 'inherit', fontSize: 14, fontWeight: 600, padding: '6px 8px', border: '1px solid var(--c-primary)',
+    borderRadius: 7, background: 'var(--c-surface)', color: 'var(--c-text)', width: 120, outline: 'none' },
+  addViewBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--c-muted)',
+    cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '8px 10px' },
   tab: { padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' },
   tabActive: { padding: '8px 16px', background: 'none', border: 'none', borderBottom: '2px solid #111827', cursor: 'pointer', fontWeight: 600 },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 12 },

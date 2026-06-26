@@ -9,16 +9,23 @@ const TYPES = [
   { value: 'bug', label: 'Bug', icon: '🐛' },
 ];
 
+const PRIORITIES = [
+  { value: 'critical', label: 'Urgent', color: '#ef4444' },
+  { value: 'high', label: 'High', color: '#eab308' },
+  { value: 'medium', label: 'Normal', color: '#3b82f6' },
+  { value: 'low', label: 'Low', color: '#9ca3af' },
+];
+
 const CATS = [
   { key: 'assignee', label: 'Assignee' },
   { key: 'status', label: 'Status' },
   { key: 'type', label: 'Work type' },
-  { key: 'label', label: 'Labels' },
+  { key: 'priority', label: 'Priority' },
 ];
 
-const EMPTY = { assignee: [], status: [], type: [], label: [] };
+const EMPTY = { assignee: [], status: [], type: [], priority: [], label: [] };
 
-export function emptyFilters() { return { assignee: [], status: [], type: [], label: [] }; }
+export function emptyFilters() { return { assignee: [], status: [], type: [], priority: [], label: [] }; }
 export function countFilters(v) { return CATS.reduce((n, c) => n + ((v?.[c.key]?.length) || 0), 0); }
 
 /**
@@ -47,6 +54,9 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
         return statuses.map((st) => ({ value: st.key, label: st.name, color: st.color }));
       case 'type':
         return TYPES.map((t) => ({ value: t.value, label: t.label, icon: <TaskTypeIcon type={t.value} size={14} /> }));
+      case 'priority':
+        return PRIORITIES.map((p) => ({ value: p.value, label: p.label,
+          icon: <span style={{ width: 9, height: 9, borderRadius: 999, background: p.color, display: 'inline-block' }} /> }));
       case 'label':
         return labels.map((l) => ({ value: l, label: l }));
       default:
