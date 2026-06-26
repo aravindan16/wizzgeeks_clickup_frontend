@@ -3,6 +3,7 @@ import { useDispatch } from 'react-redux';
 import { Routes, Route } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout';
 import ProtectedRoute from './routes/ProtectedRoute';
+import GlobalLoader from './components/GlobalLoader';
 import { NotFoundPage } from './components/ErrorPages';
 import { bootstrap } from './features/auth/authSlice';
 
@@ -26,7 +27,7 @@ const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 
 // Lightweight fallback shown while a route chunk loads.
 const RouteFallback = () => (
-  <div className="wg-loader-overlay" style={{ background: 'transparent' }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
     <span className="wg-spinner" />
   </div>
 );
@@ -38,14 +39,23 @@ const RouteFallback = () => (
  * Public:    /login
  * Protected: everything under AppLayout (requires authentication)
  */
+// Public auth routes where the user is logged OUT — no session to restore, so we
+// skip the /auth/refresh bootstrap (it would just 401 pointlessly).
+const AUTH_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password'];
+
 export default function App() {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    dispatch(bootstrap());
+    // Only attempt a silent session restore when NOT landing on an auth page.
+    if (!AUTH_ROUTES.includes(window.location.pathname)) {
+      dispatch(bootstrap());
+    }
   }, [dispatch]);
 
   return (
+    <>
+    <GlobalLoader />
     <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -104,5 +114,6 @@ export default function App() {
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
     </Suspense>
+    </>
   );
 }

@@ -57,8 +57,9 @@ export default function SpacesMenu({ collapsed }) {
 
   const loadLists = useCallback(async (spaceId) => {
     try {
-      const items = await listsApi.forSpace(spaceId);
-      setListsBySpace((m) => ({ ...m, [spaceId]: items }));
+      // _silent: expanding a Space should never flash the global loader.
+      const r = await apiClient.get('/lists', { params: { space_id: spaceId }, _silent: true });
+      setListsBySpace((m) => ({ ...m, [spaceId]: r.data || [] }));
     } catch { setListsBySpace((m) => ({ ...m, [spaceId]: [] })); }
   }, []);
 
@@ -96,13 +97,10 @@ export default function SpacesMenu({ collapsed }) {
     });
   }, [spaces]);
 
-  // Keep expanded spaces' Lists fresh: refetch when the window regains focus
-  // (Lists can change in other views/tabs, so the cache must self-heal).
-  useEffect(() => {
-    const refresh = () => expanded.forEach((sid) => loadLists(sid));
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
-  }, [expanded, loadLists]);
+  // (Removed the refetch-on-window-focus listener: it fired a /lists request for
+  // every expanded Space on each focus change — a refetch storm when switching
+  // between the page and devtools/other tabs. Lists refresh on expand and after
+  // create/rename/delete, which is enough.)
 
   // Close any open popover on outside click / Escape.
   useEffect(() => {

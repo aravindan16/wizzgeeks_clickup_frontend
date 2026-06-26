@@ -4,7 +4,6 @@ import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
 import NotificationBell from '../features/notifications/NotificationBell';
-import GlobalLoader from '../components/GlobalLoader';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
@@ -75,7 +74,6 @@ export default function AppLayout() {
 
         <div style={s.topRight}>
           <NotificationBell />
-          <button style={s.topIconBtn} title="Help"><IconHelp size={18} /></button>
           <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
             onCustomize={() => setCustomizeOpen(true)} />
         </div>
@@ -115,7 +113,7 @@ export default function AppLayout() {
           </button>
         </aside>
 
-        <main style={s.main}><GlobalLoader /><Outlet /></main>
+        <main style={s.main}><Outlet /></main>
       </div>
 
       <ThemeCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
@@ -224,7 +222,7 @@ const s = {
   menuName: { fontWeight: 700, fontSize: 15, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   menuEmail: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   menuItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
-    padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+    padding: '12px 16px', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   menuIcon: { width: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit' },
   main: { flex: 1, padding: 24, background: 'var(--c-surface-2)', minWidth: 0, overflow: 'auto', position: 'relative' },
 };

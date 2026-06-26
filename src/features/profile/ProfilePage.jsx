@@ -88,18 +88,6 @@ export default function ProfilePage() {
               <button style={btn} type="submit">Change password</button>
             </form>
           </div>
-
-          <div className="card">
-            <strong>Notification preferences</strong>
-            <label style={prefRow}>
-              <span>In-app notifications</span>
-              <input type="checkbox" checked={!!prefs.in_app} onChange={() => togglePref('in_app')} />
-            </label>
-            <label style={prefRow}>
-              <span>Email notifications</span>
-              <input type="checkbox" checked={!!prefs.email} onChange={() => togglePref('email')} />
-            </label>
-          </div>
         </div>
       </div>
     </div>

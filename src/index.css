@@ -347,19 +347,21 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 .wg-back:hover { background: var(--c-hover); border-color: var(--c-border); }
 
 /* --- User dropdown menu items --- */
-.wg-menu-item { transition: background var(--t-fast); }
+.wg-menu-item { background: none; border: none; transition: background var(--t-fast); }
 .wg-menu-item:hover { background: var(--c-hover); }
 
-/* --- Global API loading spinner (covers the content area) --- */
+/* --- Global API loading: centered circular spinner over the viewport --- */
 .wg-loader-overlay {
-  position: absolute; inset: 0; z-index: 50;
+  position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
-  background: var(--c-surface-2);         /* opaque: hides the half-loaded page behind it */
+  background: color-mix(in srgb, var(--c-bg) 60%, transparent);
+  backdrop-filter: blur(1.5px);
 }
+
 .wg-spinner {
   width: 46px; height: 46px; border-radius: 50%;
-  border: 4px solid rgba(37, 99, 235, .18);
-  border-top-color: #2563eb;            /* the moving arc */
+  border: 4px solid color-mix(in srgb, var(--c-primary) 20%, transparent);
+  border-top-color: var(--c-primary);
   animation: wg-spin .7s linear infinite;
 }
 @keyframes wg-spin { to { transform: rotate(360deg); } }
