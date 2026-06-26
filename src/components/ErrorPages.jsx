@@ -22,5 +22,5 @@ export function UnauthorizedPage() {
 
 const wrap = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
   minHeight: '70vh', textAlign: 'center' };
-const btn = { marginTop: 16, padding: '10px 18px', background: '#111827', color: '#fff', borderRadius: 8,
+const btn = { marginTop: 16, padding: '10px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', borderRadius: 8,
   textDecoration: 'none', fontWeight: 600 };

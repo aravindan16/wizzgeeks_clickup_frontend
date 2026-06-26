@@ -154,7 +154,7 @@ const s = {
     color: '#6b7280', background: '#f9fafb' },
   td: { padding: '12px 14px', fontSize: 14 },
   empty: { padding: 24, textAlign: 'center', color: '#6b7280' },
-  primary: { padding: '9px 16px', background: '#111827', color: '#fff', border: 'none',
+  primary: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none',
     borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db',
     borderRadius: 8, cursor: 'pointer' },

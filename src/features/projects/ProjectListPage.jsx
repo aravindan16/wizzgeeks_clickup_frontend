@@ -198,5 +198,5 @@ const s = {
   pageBtn: { width: 32, height: 32, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' },
   pageNum: { width: 32, height: 32, borderRadius: 6, border: '1px solid #111827', color: '#111827',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 },
-  primary: { padding: '9px 18px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  primary: { padding: '9px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
 };

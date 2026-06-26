@@ -9,7 +9,7 @@ export const projectsApi = {
   update: (id, payload) => apiClient.patch(`/projects/${id}`, payload).then((r) => r.data),
   archive: (id) => apiClient.post(`/projects/${id}/archive`).then((r) => r.data),
   remove: (id) => apiClient.delete(`/projects/${id}`).then((r) => r.data),
-  members: (id) => apiClient.get(`/projects/${id}/members`).then((r) => r.data),
+  members: (id, opts) => apiClient.get(`/projects/${id}/members`, opts).then((r) => r.data),
   addMember: (id, payload) =>
     apiClient.post(`/projects/${id}/members`, payload).then((r) => r.data),
   updateMember: (id, userId, payload) =>

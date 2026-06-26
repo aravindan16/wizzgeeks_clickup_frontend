@@ -11,6 +11,7 @@ import Select from '../../components/Select';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconArrowLeft } from '../../components/icons';
+import { beginSilent, endSilent } from '../../services/apiClient';
 
 const FIELD_CMP = { dropdown: IconFieldDropdown, relationship: IconFieldRelationship, text: IconFieldText };
 
@@ -81,6 +82,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [linkTarget, setLinkTarget] = useState('');
 
   const load = useCallback(async () => {
+    // Silent: this whole batch (opening the panel, or refreshing after an action)
+    // must NOT flash the global loading overlay over the page behind the modal.
+    beginSilent();
     try {
       const t = await tasksApi.get(taskId);
       setTask(t);
@@ -103,6 +107,8 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       setCustomFields((cf || []).filter((f) => f.enabled !== false));
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load task');
+    } finally {
+      endSilent();
     }
   }, [taskId]);
 

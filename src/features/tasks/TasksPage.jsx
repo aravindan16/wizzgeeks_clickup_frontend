@@ -125,10 +125,10 @@ const s = {
   input: { padding: '8px 11px', border: '1px solid #d1d5db', borderRadius: 8 },
   toggle: { display: 'flex', border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden' },
   toggleBtn: { padding: '8px 14px', background: '#fff', border: 'none', cursor: 'pointer' },
-  toggleActive: { padding: '8px 14px', background: '#111827', color: '#fff', border: 'none', cursor: 'pointer' },
+  toggleActive: { padding: '8px 14px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', cursor: 'pointer' },
   table: { width: '100%', borderCollapse: 'collapse', background: '#fff' },
   th: { textAlign: 'left', padding: '12px 14px', fontSize: 12, textTransform: 'uppercase', color: '#6b7280', background: '#f9fafb' },
   td: { padding: '10px 14px', fontSize: 14 },
   empty: { padding: 24, textAlign: 'center', color: '#6b7280' },
-  primary: { padding: '9px 16px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  primary: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
 };

@@ -5,7 +5,7 @@ export const tasksApi = {
   get: (id) => apiClient.get(`/tasks/${id}`).then((r) => r.data),
   create: (payload) => apiClient.post('/tasks', payload).then((r) => r.data),
   update: (id, payload) => apiClient.patch(`/tasks/${id}`, payload).then((r) => r.data),
-  changeStatus: (id, payload) => apiClient.patch(`/tasks/${id}/status`, payload).then((r) => r.data),
+  changeStatus: (id, payload, opts) => apiClient.patch(`/tasks/${id}/status`, payload, opts).then((r) => r.data),
   assign: (id, assignee_id) => apiClient.post(`/tasks/${id}/assign`, { assignee_id }).then((r) => r.data),
   worklog: (id, hours) => apiClient.post(`/tasks/${id}/worklog`, { hours }).then((r) => r.data),
   archive: (id) => apiClient.post(`/tasks/${id}/archive`).then((r) => r.data),

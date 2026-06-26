@@ -1,8 +1,8 @@
 import apiClient from '../../services/apiClient';
 
 export const customFieldsApi = {
-  list: (spaceId, listId, taskId) =>
-    apiClient.get('/custom-fields', { params: { space_id: spaceId, list_id: listId || undefined, task_id: taskId || undefined } }).then((r) => r.data),
+  list: (spaceId, listId, taskId, opts) =>
+    apiClient.get('/custom-fields', { params: { space_id: spaceId, list_id: listId || undefined, task_id: taskId || undefined }, ...(opts || {}) }).then((r) => r.data),
   listAll: (spaceId) =>
     apiClient.get('/custom-fields', { params: { space_id: spaceId, all: true } }).then((r) => r.data),
   reusable: (spaceId, listId) =>

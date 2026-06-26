@@ -88,18 +88,6 @@ export default function ProfilePage() {
               <button style={btn} type="submit">Change password</button>
             </form>
           </div>
-
-          <div className="card">
-            <strong>Notification preferences</strong>
-            <label style={prefRow}>
-              <span>In-app notifications</span>
-              <input type="checkbox" checked={!!prefs.in_app} onChange={() => togglePref('in_app')} />
-            </label>
-            <label style={prefRow}>
-              <span>Email notifications</span>
-              <input type="checkbox" checked={!!prefs.email} onChange={() => togglePref('email')} />
-            </label>
-          </div>
         </div>
       </div>
     </div>
@@ -118,6 +106,6 @@ function Field({ label, type = 'text', value, onChange }) {
 const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 };
 const avatar = { width: 64, height: 64, borderRadius: '50%', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const inp = { padding: '9px 11px', border: '1px solid #d1d5db', borderRadius: 8 };
-const btn = { marginTop: 6, padding: '9px 16px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' };
+const btn = { marginTop: 6, padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' };
 const linkBtn = { display: 'block', marginTop: 6, background: 'none', border: 'none', color: '#111827', cursor: 'pointer', padding: 0, fontSize: 13 };
 const prefRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #f1f5f9', marginTop: 8 };

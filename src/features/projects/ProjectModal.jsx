@@ -123,7 +123,7 @@ const ov = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
   modal: { background: '#fff', borderRadius: 12, padding: 24, width: 500, maxWidth: '90vw' },
   input: { padding: '9px 11px', border: '1px solid #d1d5db', borderRadius: 8, width: '100%' },
-  btn: { padding: '9px 18px', background: '#111827', color: '#fff', border: 'none',
+  btn: { padding: '9px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none',
     borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   btnGhost: { padding: '9px 18px', background: '#fff', border: '1px solid #d1d5db',
     borderRadius: 8, cursor: 'pointer' },
