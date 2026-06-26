@@ -203,6 +203,6 @@ const ov = {
     padding: '10px 14px', cursor: 'pointer', borderLeft: '3px solid transparent' },
   roleOptionActive: { background: '#f3f4f6', borderLeft: '3px solid #111827' },
   footer: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 },
-  primary: { padding: '9px 20px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  primary: { padding: '9px 20px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   ghost: { padding: '9px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
 };

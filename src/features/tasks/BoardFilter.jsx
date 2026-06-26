@@ -67,7 +67,7 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
 
   return (
     <div style={{ position: 'relative' }}>
-      <button style={{ ...st.btn, ...(open || active ? st.btnActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button className="wg-filter-btn" style={{ ...st.btn, ...(open || active ? st.btnActive : {}) }} onClick={() => setOpen((o) => !o)}>
         <span>≡ Filter</span>
         {active > 0 && <span style={st.badge}>{active}</span>}
       </button>
@@ -100,7 +100,7 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
                     value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
                 </div>
                 <div style={st.optList}>
-                  {shown.length === 0 && <div style={{ color: '#9ca3af', fontSize: 13, padding: 8 }}>No options</div>}
+                  {shown.length === 0 && <div style={{ color: 'var(--c-faint)', fontSize: 13, padding: 8 }}>No options</div>}
                   {shown.map((o) => {
                     const checked = (v[cat] || []).includes(o.value);
                     return (
@@ -109,7 +109,7 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
                         {cat === 'assignee' && (o.avatar
                           ? <span style={st.avatar}>{initials(o.avatar)}</span>
                           : <span style={st.avatarEmpty}>👤</span>)}
-                        {o.icon && <span style={{ display: 'inline-flex', alignItems: 'center', color: '#6b7280' }}>{o.icon}</span>}
+                        {o.icon && <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--c-muted)' }}>{o.icon}</span>}
                         {cat === 'status' && (
                           <span style={{ ...st.statusChip, ...(o.color ? { background: `${o.color}22`, color: o.color } : {}) }}>
                             {o.label.toUpperCase()}
@@ -126,7 +126,7 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
             <div style={st.footRow}>
               <button style={st.footLink} onClick={clearAll} disabled={active === 0}>Clear all</button>
               <button style={{ ...st.footLink, marginLeft: 'auto' }} onClick={clearCat} disabled={(v[cat] || []).length === 0}>Clear</button>
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>{shown.length} of {all.length}</span>
+              <span style={{ color: 'var(--c-faint)', fontSize: 12 }}>{shown.length} of {all.length}</span>
             </div>
           </div>
         </>
@@ -136,32 +136,33 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
 }
 
 const st = {
-  btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid #d1d5db',
-    borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#374151', whiteSpace: 'nowrap' },
-  btnActive: { borderColor: '#111827', color: '#111827', background: '#f3f4f6' },
-  badge: { background: '#dbeafe', color: '#000000', borderRadius: 6, padding: '0 6px', fontSize: 12, fontWeight: 700 },
+  btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid var(--c-border)',
+    borderRadius: 8, background: 'var(--c-surface)', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)', whiteSpace: 'nowrap' },
+  btnActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)', background: 'var(--c-primary-weak)' },
+  badge: { background: 'var(--c-primary)', color: 'var(--c-on-primary)', borderRadius: 6, padding: '0 6px', fontSize: 12, fontWeight: 700 },
   backdrop: { position: 'fixed', inset: 0, zIndex: 60 },
-  pop: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 61, width: 560, background: '#fff',
-    border: '1px solid #e5e7eb', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,.18)', overflow: 'hidden' },
+  pop: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 61, width: 560, background: 'var(--c-surface)',
+    color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,.18)', overflow: 'hidden' },
   body: { display: 'grid', gridTemplateColumns: '180px 1fr', minHeight: 240 },
-  left: { borderRight: '1px solid #f1f5f9', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 },
+  left: { borderRight: '1px solid var(--c-border)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 },
   catRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left',
-    padding: '8px 10px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: '#374151' },
-  catRowActive: { background: '#f3f4f6', color: '#111827', fontWeight: 600 },
-  catCount: { background: '#dbeafe', color: '#000000', borderRadius: 6, padding: '0 6px', fontSize: 12, fontWeight: 700 },
+    padding: '8px 10px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  catRowActive: { background: 'var(--c-primary-weak)', color: 'var(--c-primary)', fontWeight: 600 },
+  catCount: { background: 'var(--c-primary)', color: 'var(--c-on-primary)', borderRadius: 6, padding: '0 6px', fontSize: 12, fontWeight: 700 },
   right: { padding: 12 },
-  searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
-  search: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 30px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
+  searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--c-faint)', display: 'inline-flex' },
+  search: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 30px', border: '1px solid var(--c-border)',
+    borderRadius: 8, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
   optList: { maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 },
-  opt: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 14 },
-  optChecked: { background: '#f3f4f6' },
-  cb: { width: 16, height: 16, cursor: 'pointer' },
+  opt: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  optChecked: { background: 'var(--c-primary-weak)' },
+  cb: { width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--c-primary)' },
   avatar: { width: 22, height: 22, borderRadius: '50%', background: '#f59e0b', color: '#fff', display: 'inline-flex',
     alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 },
-  avatarEmpty: { width: 22, height: 22, borderRadius: '50%', background: '#e5e7eb', display: 'inline-flex',
+  avatarEmpty: { width: 22, height: 22, borderRadius: '50%', background: 'var(--c-surface-3)', display: 'inline-flex',
     alignItems: 'center', justifyContent: 'center', fontSize: 11 },
-  statusChip: { flex: 1, fontSize: 11, fontWeight: 700, color: '#3730a3', background: '#e0e7ff', borderRadius: 4,
+  statusChip: { flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--c-primary)', background: 'var(--c-primary-weak)', borderRadius: 4,
     padding: '2px 6px', width: 'fit-content', display: 'inline-block' },
-  footRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderTop: '1px solid #f1f5f9' },
-  footLink: { background: 'none', border: 'none', color: '#111827', cursor: 'pointer', fontSize: 13, padding: 0 },
+  footRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderTop: '1px solid var(--c-border)' },
+  footLink: { background: 'none', border: 'none', color: 'var(--c-primary)', cursor: 'pointer', fontSize: 13, padding: 0 },
 };

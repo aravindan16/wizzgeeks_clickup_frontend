@@ -10,6 +10,7 @@ import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
 import { IconBoard, IconList, IconSearch } from '../../components/icons';
+import { SkeletonBoard } from '../../components/Skeleton';
 
 /**
  * A List inside a Space: shows only this List's tasks. Reuses the Board / List
@@ -38,6 +39,11 @@ export default function ListBoardPage() {
 
   const load = useCallback(async () => {
     try {
+      // Tasks only need the list id (already in the URL), so fire that request
+      // immediately — in parallel with the list/space/members chain — instead of
+      // waiting for them. The board content (the heaviest call) no longer queues
+      // behind list → space → members, removing the open-list delay.
+      const tasksP = loadTasks(id);
       const l = await listsApi.get(id);
       setList(l);
       const [sp, ms] = await Promise.all([
@@ -45,7 +51,7 @@ export default function ListBoardPage() {
         projectsApi.members(l.space_id).catch(() => []),
       ]);
       setSpace(sp); setMembers(ms);
-      await loadTasks(id);
+      await tasksP;
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load list');
     }
@@ -62,7 +68,7 @@ export default function ListBoardPage() {
 
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
-  if (!list || !space) return <p>Loading…</p>;
+  if (!list || !space) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
   // A List with custom statuses overrides the Space's workflow.
   const statusSource = (list.status_mode === 'custom' && list.statuses?.length) ? list : space;

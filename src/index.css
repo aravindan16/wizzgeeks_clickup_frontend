@@ -69,6 +69,30 @@
 }
 :root[data-theme="dark"] body { background: var(--c-bg); color: var(--c-text); }
 
+/* --- Accent themes: recolor the primary/brand token (ClickUp-style). ---
+   'black' uses the default tokens (incl. the dark-mode light button). The
+   colored accents apply in BOTH light and dark with white button text; placed
+   after the dark block so they win source-order ties for --c-primary. */
+:root[data-accent="purple"] { --c-primary: #7c3aed; --c-on-primary: #ffffff; --c-primary-weak: #ede9fe; }
+:root[data-accent="blue"]   { --c-primary: #2563eb; --c-on-primary: #ffffff; --c-primary-weak: #dbeafe; }
+:root[data-accent="pink"]   { --c-primary: #ec4899; --c-on-primary: #ffffff; --c-primary-weak: #fce7f3; }
+:root[data-accent="violet"] { --c-primary: #6d28d9; --c-on-primary: #ffffff; --c-primary-weak: #ede9fe; }
+:root[data-accent="indigo"] { --c-primary: #4f46e5; --c-on-primary: #ffffff; --c-primary-weak: #e0e7ff; }
+:root[data-accent="orange"] { --c-primary: #ea580c; --c-on-primary: #ffffff; --c-primary-weak: #ffedd5; }
+:root[data-accent="teal"]   { --c-primary: #0d9488; --c-on-primary: #ffffff; --c-primary-weak: #ccfbf1; }
+:root[data-accent="bronze"] { --c-primary: #a16207; --c-on-primary: #ffffff; --c-primary-weak: #fef3c7; }
+:root[data-accent="mint"]   { --c-primary: #10b981; --c-on-primary: #ffffff; --c-primary-weak: #d1fae5; }
+/* In dark mode, soften the "weak" tint so selected rows aren't glaring. */
+:root[data-theme="dark"][data-accent="purple"],
+:root[data-theme="dark"][data-accent="blue"],
+:root[data-theme="dark"][data-accent="pink"],
+:root[data-theme="dark"][data-accent="violet"],
+:root[data-theme="dark"][data-accent="indigo"],
+:root[data-theme="dark"][data-accent="orange"],
+:root[data-theme="dark"][data-accent="teal"],
+:root[data-theme="dark"][data-accent="bronze"],
+:root[data-theme="dark"][data-accent="mint"] { --c-primary-weak: #232833; }
+
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--c-bg); color: var(--c-text); }
 
@@ -111,6 +135,29 @@ select:disabled { background-color: var(--c-hover); color: var(--c-faint); curso
 /* Style the open option list where the browser allows it (Chromium/Firefox). */
 option { color: var(--c-text); background: var(--c-surface); padding: 8px; }
 option:checked { background: var(--c-primary-weak); color: var(--c-text-strong); font-weight: 600; }
+
+/* --- Text fields / search bars: themed surfaces + accent focus everywhere ---
+   Element-level rules so inputs without inline bg follow the theme; the focus
+   rule uses !important + a box-shadow ring so the accent shows even where an
+   inline border is set on the input. */
+input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])),
+textarea {
+  background-color: var(--c-surface);
+  color: var(--c-text);
+  border-color: var(--c-border);
+}
+input::placeholder, textarea::placeholder { color: var(--c-faint); opacity: 1; }
+input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"])):focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--c-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 22%, transparent);
+}
+/* Themed checkboxes/radios across the app. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
+
+/* Filter button: show the accent on hover too (not just when active/open). */
+.wg-filter-btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
 
 /* Subtle, modern scrollbars */
 * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
@@ -316,6 +363,14 @@ option:checked { background: var(--c-primary-weak); color: var(--c-text-strong);
   animation: wg-spin .7s linear infinite;
 }
 @keyframes wg-spin { to { transform: rotate(360deg); } }
+
+/* --- Skeleton loaders (shimmer) --- */
+.wg-skeleton {
+  background: linear-gradient(90deg, var(--c-surface-3) 25%, var(--c-hover) 37%, var(--c-surface-3) 63%);
+  background-size: 400% 100%;
+  animation: wg-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes wg-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 /* --- Tabs --- */
 .wg-tab {

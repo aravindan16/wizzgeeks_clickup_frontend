@@ -46,4 +46,4 @@ export default function ResetPasswordPage() {
 const wrap = { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' };
 const lbl = { fontSize: 13, fontWeight: 600, marginTop: 8, display: 'block' };
 const inp = { padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, width: '100%', marginTop: 4 };
-const btn = { marginTop: 14, padding: '10px 12px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', width: '100%' };
+const btn = { marginTop: 14, padding: '10px 12px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer', width: '100%' };

@@ -232,8 +232,8 @@ const s = {
   colorGrid: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6, marginBottom: 8 },
   colorDot: { width: 22, height: 22, borderRadius: '50%', border: 'none', cursor: 'pointer' },
   hexInput: { width: '100%', boxSizing: 'border-box', padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 },
-  colorDone: { width: '100%', marginTop: 8, padding: '7px 10px', background: '#111827', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
+  colorDone: { width: '100%', marginTop: 8, padding: '7px 10px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
   foot: { display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid #f1f5f9' },
   tmplBtn: { padding: '9px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
-  apply: { padding: '9px 18px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
+  apply: { padding: '9px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
 };

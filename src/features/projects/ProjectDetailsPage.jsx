@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectsApi, PROJECT_ROLES } from './projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
@@ -14,6 +14,7 @@ import AddMembersModal from './AddMembersModal';
 import SpaceSummary from './SpaceSummary';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { SkeletonBoard } from '../../components/Skeleton';
 
 /**
  * A Project behaves like a Jira "Space": opening it shows tabbed views — the
@@ -48,13 +49,17 @@ export default function ProjectDetailsPage() {
 
   const load = useCallback(async () => {
     try {
+      // Tasks only need project_id (already in the URL), so fire that request in
+      // the SAME wave as project/stats/members instead of waiting for them. The
+      // board content (heaviest call) no longer queues behind the space metadata,
+      // removing the open-space delay.
       const [p, st, ms] = await Promise.all([
         projectsApi.get(id),
         projectsApi.stats(id),
         projectsApi.members(id),
+        loadTasks(),
       ]);
       setProject(p); setStats(st); setMembers(ms);
-      await loadTasks();
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load project');
     }
@@ -62,27 +67,36 @@ export default function ProjectDetailsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // --- Memoized derivations (hooks must run before the early returns below) ---
+  // member_id → name map: O(1) lookups instead of members.find() per task per render.
+  const memberIds = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
+  const nameMap = useMemo(() => {
+    const map = new Map();
+    members.forEach((m) => map.set(m.user_id, m.full_name));
+    return map;
+  }, [members]);
+  const statuses = useMemo(() => (project ? resolveStatuses(project) : []), [project]);
+
+  // Search + filters recomputed only when tasks/query/filters change — not on
+  // every unrelated re-render (modals opening, etc.).
+  const visibleTasks = useMemo(() => {
+    const tq = taskQuery.trim().toLowerCase();
+    const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
+      nameMap.get(t.assignee_id), nameMap.get(t.reporter_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
+    const matchesFilters = (t) => {
+      if (filters.assignee.length && !filters.assignee.includes(t.assignee_id || 'unassigned')) return false;
+      if (filters.status.length && !filters.status.includes(t.status)) return false;
+      if (filters.type.length && !filters.type.includes(t.type)) return false;
+      if (filters.label.length && !(t.labels || []).some((l) => filters.label.includes(l))) return false;
+      return true;
+    };
+    return tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
+  }, [tasks, taskQuery, filters, nameMap]);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
-  if (!project) return <p>Loading…</p>;
+  if (!project) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
-  const memberIds = new Set(members.map((m) => m.user_id));
   const isOwner = project.owner_id && project.owner_id === me;
-  const statuses = resolveStatuses(project);
-
-  // Common task search + filters — applied to both Board and List views.
-  const nameOf = (uid) => members.find((m) => m.user_id === uid)?.full_name;
-  const tq = taskQuery.trim().toLowerCase();
-  const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
-    nameOf(t.assignee_id), nameOf(t.reporter_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
-  const matchesFilters = (t) => {
-    if (filters.assignee.length && !filters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-    if (filters.status.length && !filters.status.includes(t.status)) return false;
-    if (filters.type.length && !filters.type.includes(t.type)) return false;
-    if (filters.label.length && !(t.labels || []).some((l) => filters.label.includes(l))) return false;
-    return true;
-  };
-  const visibleTasks = tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
   const activeFilterCount = countFilters(filters);
   // TODO: Re-introduce role-based permissions later. For now ANY member of the
   // space can manage members (add/remove/change role) — no specific role needed.
@@ -237,7 +251,7 @@ const s = {
     border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
   backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
-  spaceIcon: { width: 44, height: 44, borderRadius: 10, background: '#111827', color: '#fff',
+  spaceIcon: { width: 44, height: 44, borderRadius: 10, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0 },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
@@ -254,7 +268,7 @@ const s = {
   td: { padding: '10px 14px', fontSize: 14 },
   select: { padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 8 },
   addRow: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  primary: { padding: '8px 16px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  primary: { padding: '8px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
   link: { background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0 },

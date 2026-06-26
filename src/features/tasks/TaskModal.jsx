@@ -51,7 +51,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
   // Open the native date picker on a click anywhere in the pill (not just the icon).
   const openPicker = (ref) => { try { ref.current?.showPicker?.(); } catch { /* not supported */ } };
 
-  const loadFields = () => customFieldsApi.list(spaceId, listId).then((all) => {
+  const loadFields = () => customFieldsApi.list(spaceId, listId, undefined, { _silent: true }).then((all) => {
     // Hide inherited Space fields that were disabled for this List.
     const fs = all.filter((f) => f.enabled !== false);
     setFields(fs);
@@ -83,7 +83,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
     }
     setSubtasks([]);
     setPop(null); setError(null); setShowFields(true);
-    if (spaceId) projectsApi.members(spaceId).then(setMembers).catch(() => setMembers([]));
+    if (spaceId) projectsApi.members(spaceId, { _silent: true }).then(setMembers).catch(() => setMembers([]));
     if (spaceId) loadFields();
   }, [open, mode, task, spaceId, listId]); // eslint-disable-line
 

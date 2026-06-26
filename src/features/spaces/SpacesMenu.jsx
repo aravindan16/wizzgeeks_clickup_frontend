@@ -11,6 +11,7 @@ import { useAuth } from '../auth/useAuth';
 import { IconPlus, IconFields, IconTrash, IconEdit, IconBoard, IconDots, IconListCheck, IconFolder, Chevron } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import { resolveStatuses } from '../tasks/tasksApi';
+import apiClient from '../../services/apiClient';
 
 const NO_DELETE_MSG = "You don't have permission to take this action";
 
@@ -62,6 +63,38 @@ export default function SpacesMenu({ collapsed }) {
   }, []);
 
   useEffect(() => { loadSpaces(); }, [loadSpaces]);
+
+  // Prefetch each Space's board data in the background as soon as the spaces load
+  // (i.e. right after login), so opening a Space — or any of its Lists — reads
+  // from the API cache instantly instead of firing requests at click time.
+  // All calls are _silent (they must NOT trigger the global loading spinner) and
+  // their URL/param shapes match ProjectDetailsPage / ListBoardPage exactly so
+  // the cache keys line up. Fire-and-forget; errors are ignored.
+  const prefetchedRef = useRef(new Set());
+  useEffect(() => {
+    const silent = { _silent: true };
+    spaces.forEach((sp) => {
+      const sid = sp._id;
+      if (prefetchedRef.current.has(sid)) return;
+      prefetchedRef.current.add(sid);
+      // Space (board) page data.
+      apiClient.get(`/projects/${sid}`, silent).catch(() => {});
+      apiClient.get(`/projects/${sid}/stats`, silent).catch(() => {});
+      apiClient.get(`/projects/${sid}/members`, silent).catch(() => {});
+      apiClient.get('/tasks', { params: { project_id: sid, limit: 200, sort_by: 'created_at', sort_dir: 1 }, _silent: true }).catch(() => {});
+      // Lists of the space → warm the sidebar AND prefetch each List's own page.
+      apiClient.get('/lists', { params: { space_id: sid }, _silent: true })
+        .then((r) => {
+          const lists = r.data || [];
+          setListsBySpace((m) => ({ ...m, [sid]: lists }));
+          lists.forEach((l) => {
+            apiClient.get(`/lists/${l._id}`, silent).catch(() => {});
+            apiClient.get('/tasks', { params: { list_id: l._id, limit: 200, sort_by: 'created_at', sort_dir: 1 }, _silent: true }).catch(() => {});
+          });
+        })
+        .catch(() => {});
+    });
+  }, [spaces]);
 
   // Keep expanded spaces' Lists fresh: refetch when the window regains focus
   // (Lists can change in other views/tabs, so the cache must self-heal).

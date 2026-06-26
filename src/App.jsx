@@ -1,25 +1,35 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { useDispatch } from 'react-redux';
 import { Routes, Route } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout';
 import ProtectedRoute from './routes/ProtectedRoute';
-import LoginPage from './features/auth/LoginPage';
-import DashboardHome from './features/dashboard/DashboardHome';
-import UserManagementPage from './features/users/UserManagementPage';
-import AuditLogPage from './features/audit/AuditLogPage';
-import ProjectListPage from './features/projects/ProjectListPage';
-import ProjectDetailsPage from './features/projects/ProjectDetailsPage';
-import ListBoardPage from './features/lists/ListBoardPage';
-import TasksPage from './features/tasks/TasksPage';
-import TaskDetailsPage from './features/tasks/TaskDetailsPage';
-import TeamActivityPage from './features/daily/TeamActivityPage';
-import RegisterPage from './features/auth/RegisterPage';
-import ForgotPasswordPage from './features/auth/ForgotPasswordPage';
-import ResetPasswordPage from './features/auth/ResetPasswordPage';
-import ProfilePage from './features/profile/ProfilePage';
-import SettingsPage from './features/system/SettingsPage';
 import { NotFoundPage } from './components/ErrorPages';
 import { bootstrap } from './features/auth/authSlice';
+
+// Route-level code splitting: each page becomes its own chunk, fetched on demand.
+// This shrinks the initial bundle and makes navigation load only what's needed.
+const LoginPage = lazy(() => import('./features/auth/LoginPage'));
+const DashboardHome = lazy(() => import('./features/dashboard/DashboardHome'));
+const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'));
+const AuditLogPage = lazy(() => import('./features/audit/AuditLogPage'));
+const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage'));
+const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
+const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
+const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
+const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
+const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
+const RegisterPage = lazy(() => import('./features/auth/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'));
+const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
+const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
+
+// Lightweight fallback shown while a route chunk loads.
+const RouteFallback = () => (
+  <div className="wg-loader-overlay" style={{ background: 'transparent' }}>
+    <span className="wg-spinner" />
+  </div>
+);
 
 /**
  * Root route table. On mount we attempt a silent refresh (bootstrap) so a logged-in
@@ -36,6 +46,7 @@ export default function App() {
   }, [dispatch]);
 
   return (
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -92,5 +103,6 @@ export default function App() {
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </Suspense>
   );
 }
