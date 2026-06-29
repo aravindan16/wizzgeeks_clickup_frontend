@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { login, googleLogin } from './authSlice';
 import { useAuth } from './useAuth';
 import GoogleButton from './GoogleButton';
@@ -8,27 +8,27 @@ import GoogleButton from './GoogleButton';
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const location = useLocation();
   const { error } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const from = location.state?.from?.pathname || '/';
-
+  // Always land on the Dashboard after login. (Don't return to the previous
+  // user's last page — e.g. an admin's /users — which a different user who logs
+  // in next may not have permission to see, causing a 403.)
   const onSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     const result = await dispatch(login({ email, password }));
     setSubmitting(false);
     if (login.fulfilled.match(result)) {
-      navigate(from, { replace: true });
+      navigate('/', { replace: true });
     }
   };
 
   const onGoogle = async (credential) => {
     const result = await dispatch(googleLogin(credential));
-    if (googleLogin.fulfilled.match(result)) navigate(from, { replace: true });
+    if (googleLogin.fulfilled.match(result)) navigate('/', { replace: true });
   };
 
   return (
@@ -74,10 +74,6 @@ export default function LoginPage() {
         </button>
 
         <GoogleButton onCredential={onGoogle} />
-
-        <p style={styles.footer}>
-          Don&apos;t have an account? <Link to="/register" style={styles.link}>Create account</Link>
-        </p>
       </form>
     </div>
   );

@@ -75,7 +75,7 @@ apiClient.interceptors.response.use(
     // login), NOT an expired session — so don't refresh + retry (that's what made
     // a single "Change password" click fire change-password → refresh →
     // change-password again). Only genuine expired-token 401s get refreshed.
-    const noRetry = ['/auth/refresh', '/auth/login', '/auth/register', '/auth/change-password'];
+    const noRetry = ['/auth/refresh', '/auth/login', '/auth/change-password'];
     if (status === 401 && !original._retry && !noRetry.some((p) => original.url?.includes(p))) {
       original._retry = true;
       try {

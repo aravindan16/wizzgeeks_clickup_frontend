@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { projectsApi, PROJECT_ROLES } from './projectsApi';
+import { projectsApi } from './projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
@@ -9,12 +9,10 @@ import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
 import { IconBoard, IconMembers, IconSearch, IconFolder } from '../../components/icons';
-import Select from '../../components/Select';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
 import AddMembersModal from './AddMembersModal';
-import SpaceSummary from './SpaceSummary';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { SkeletonBoard } from '../../components/Skeleton';
@@ -33,7 +31,6 @@ export default function ProjectDetailsPage() {
   const confirm = useConfirm();
   const me = user?._id || user?.id;
   const [project, setProject] = useState(null);
-  const [stats, setStats] = useState(null);
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [error, setError] = useState(null);
@@ -58,16 +55,14 @@ export default function ProjectDetailsPage() {
   const load = useCallback(async () => {
     try {
       // Tasks only need project_id (already in the URL), so fire that request in
-      // the SAME wave as project/stats/members instead of waiting for them. The
-      // board content (heaviest call) no longer queues behind the space metadata,
-      // removing the open-space delay.
-      const [p, st, ms] = await Promise.all([
+      // the SAME wave as project/members instead of waiting for them. The board
+      // content (heaviest call) no longer queues behind the space metadata.
+      const [p, ms] = await Promise.all([
         projectsApi.get(id),
-        projectsApi.stats(id),
         projectsApi.members(id),
         loadTasks(),
       ]);
-      setProject(p); setStats(st); setMembers(ms);
+      setProject(p); setMembers(ms);
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load project');
     }
@@ -116,7 +111,6 @@ export default function ProjectDetailsPage() {
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
 
-  const changeRole = async (uid, role) => { await projectsApi.updateMember(id, uid, { user_id: uid, project_role: role }); load(); };
   const removeMember = async (uid) => { await projectsApi.removeMember(id, uid); load(); };
   const archive = async () => { await projectsApi.archive(id); load(); };
   const del = async () => {
@@ -200,18 +194,12 @@ export default function ProjectDetailsPage() {
           )}
           <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden' }}>
             <table style={s.table}>
-              <thead><tr><Th>Name</Th><Th>Email</Th><Th>Project Role</Th>{canManage && <Th>Actions</Th>}</tr></thead>
+              <thead><tr><Th>Name</Th><Th>Email</Th>{canManage && <Th>Actions</Th>}</tr></thead>
               <tbody>
                 {members.map((m) => (
                   <tr key={m._id} style={{ borderTop: '1px solid #f1f5f9' }}>
                     <Td>{m.full_name || '—'}</Td>
                     <Td>{m.email || '—'}</Td>
-                    <Td>
-                      {canManage ? (
-                        <Select style={{ minWidth: 140 }} value={m.project_role} onChange={(v) => changeRole(m.user_id, v)}
-                          options={PROJECT_ROLES.map((r) => ({ value: r.value, label: r.label }))} />
-                      ) : (PROJECT_ROLES.find((r) => r.value === m.project_role)?.label || m.project_role)}
-                    </Td>
                     {canManage && <Td><button style={s.link} onClick={() => removeMember(m.user_id)}>Remove</button></Td>}
                   </tr>
                 ))}
@@ -233,15 +221,6 @@ export default function ProjectDetailsPage() {
         onSaved={() => { setTaskOpen(false); load(); }} />
       <ProjectModal open={editOpen} mode="edit" project={project}
         onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); load(); }} />
-    </div>
-  );
-}
-
-function Stat({ label, value, color }) {
-  return (
-    <div className="card" style={{ textAlign: 'center', padding: '16px 12px' }}>
-      <div style={{ fontSize: 28, fontWeight: 700, color: color || '#111827' }}>{value}</div>
-      <div style={{ fontSize: 13, color: '#6b7280' }}>{label}</div>
     </div>
   );
 }

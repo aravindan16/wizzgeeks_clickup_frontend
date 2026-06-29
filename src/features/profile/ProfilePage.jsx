@@ -19,18 +19,27 @@ export default function ProfilePage() {
   useEffect(() => { load(); }, []);
 
   if (!profile) return <p>Loading…</p>;
-  const prefs = profile.notification_prefs || {};
 
   const saveProfile = async (e) => {
     e.preventDefault();
+    // Don't hit the API (or refetch) if nothing actually changed.
+    const fields = ['full_name', 'designation', 'department', 'timezone'];
+    const changed = fields.some((k) => (form[k] || '') !== (profile[k] || (k === 'timezone' ? 'UTC' : '')));
+    if (!changed) { toast.info('No changes to save'); return; }
     try { await usersApi.updateMyProfile(form); toast.success('Profile updated'); load(); }
     catch (err) { toast.error(err.response?.data?.error?.message || 'Update failed'); }
   };
 
   const changePassword = async (e) => {
     e.preventDefault();
+    // Validate before calling the API so an empty/invalid submit never hits it.
+    const current = pwd.current_password.trim();
+    const next = pwd.new_password.trim();
+    if (!current || !next) { toast.error('Enter your current and new password'); return; }
+    if (next.length < 8) { toast.error('New password must be at least 8 characters'); return; }
+    if (current === next) { toast.error('New password must be different from the current one'); return; }
     try {
-      await authApi.changePassword(pwd.current_password, pwd.new_password);
+      await authApi.changePassword(current, next);
       setPwd({ current_password: '', new_password: '' });
       toast.success('Password changed');
     } catch (err) { toast.error(err.response?.data?.error?.message || 'Change failed'); }
@@ -41,11 +50,6 @@ export default function ProfilePage() {
     if (!file) return;
     try { await usersApi.uploadAvatar(file); toast.success('Avatar updated'); load(); }
     catch (err) { toast.error(err.response?.data?.error?.message || 'Upload failed'); }
-  };
-
-  const togglePref = async (key) => {
-    try { await usersApi.updatePreferences({ [key]: !prefs[key] }); toast.success('Preferences saved'); load(); }
-    catch { toast.error('Failed to save preferences'); }
   };
 
   return (
@@ -108,4 +112,3 @@ const avatar = { width: 64, height: 64, borderRadius: '50%', background: '#e5e7e
 const inp = { padding: '9px 11px', border: '1px solid #d1d5db', borderRadius: 8 };
 const btn = { marginTop: 6, padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' };
 const linkBtn = { display: 'block', marginTop: 6, background: 'none', border: 'none', color: '#111827', cursor: 'pointer', padding: 0, fontSize: 13 };
-const prefRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #f1f5f9', marginTop: 8 };

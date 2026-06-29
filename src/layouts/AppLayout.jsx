@@ -3,7 +3,6 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
-import NotificationBell from '../features/notifications/NotificationBell';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
@@ -73,7 +72,6 @@ export default function AppLayout() {
         </div>
 
         <div style={s.topRight}>
-          <NotificationBell />
           <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
             onCustomize={() => setCustomizeOpen(true)} />
         </div>

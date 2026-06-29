@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { projectsApi } from './projectsApi';
 import { usersApi } from '../users/usersApi';
 import { useToast } from '../../components/Toast';
@@ -8,39 +8,22 @@ import { useToast } from '../../components/Toast';
  * users, pick selected people as chips, choose a Role (with descriptions), and Add.
  * No external "add from Google/Slack/Microsoft" providers.
  */
-const ROLE_OPTIONS = [
-  { value: 'project_manager', label: 'Project Manager', desc: 'Manages the space, its members, and all work.' },
-  { value: 'team_lead', label: 'Team Lead', desc: 'Leads the team and can assign and manage tasks.' },
-  { value: 'developer', label: 'Member / Developer', desc: 'Part of the team — can add, edit, and work on tasks.' },
-  { value: 'tester', label: 'Tester', desc: 'Tests and verifies tasks, and collaborates on work.' },
-];
-
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
 export default function AddMembersModal({ open, project, projectId, existingMemberIds, onClose, onAdded }) {
   const toast = useToast();
-  const roleRef = useRef(null);
   const [allUsers, setAllUsers] = useState([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState([]); // [{id,name,email}]
-  const [role, setRole] = useState('developer');
-  const [roleOpen, setRoleOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (open) {
-      setQuery(''); setSelected([]); setRole('developer'); setError(null); setRoleOpen(false);
+      setQuery(''); setSelected([]); setError(null);
       usersApi.list({ limit: 500, status: 'active' }).then((d) => setAllUsers(d.items)).catch(() => setAllUsers([]));
     }
   }, [open]);
-
-  useEffect(() => {
-    if (!roleOpen) return undefined;
-    const onDoc = (e) => { if (roleRef.current && !roleRef.current.contains(e.target)) setRoleOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [roleOpen]);
 
   if (!open) return null;
 
@@ -70,16 +53,15 @@ export default function AddMembersModal({ open, project, projectId, existingMemb
     }
   };
 
-  const currentRole = ROLE_OPTIONS.find((r) => r.value === role);
-
   const submit = async () => {
     if (selected.length === 0) { setError('Add at least one person.'); return; }
     setSaving(true); setError(null);
     try {
       for (const person of selected) {
+        // No role chosen here — the backend assigns the default member role.
         const payload = person.id
-          ? { user_id: person.id, project_role: role }
-          : { email: person.email, project_role: role };
+          ? { user_id: person.id }
+          : { email: person.email };
         await projectsApi.addMember(projectId, payload);
       }
       toast.success(`Added ${selected.length} ${selected.length === 1 ? 'person' : 'people'}`);
@@ -141,24 +123,6 @@ export default function AddMembersModal({ open, project, projectId, existingMemb
           )}
         </div>
         <div style={ov.hint}>Search by name, enter an email, or paste a list</div>
-
-        <label style={{ ...ov.label, marginTop: 14 }}>Role <span style={{ color: '#b91c1c' }}>*</span></label>
-        <div ref={roleRef} style={{ position: 'relative' }}>
-          <button style={ov.roleBtn} onClick={() => setRoleOpen((o) => !o)}>
-            <span>{currentRole?.label}</span><span style={{ color: '#9ca3af' }}>⌄</span>
-          </button>
-          {roleOpen && (
-            <div style={ov.roleMenu}>
-              {ROLE_OPTIONS.map((r) => (
-                <button key={r.value} style={{ ...ov.roleOption, ...(r.value === role ? ov.roleOptionActive : {}) }}
-                  onClick={() => { setRole(r.value); setRoleOpen(false); }}>
-                  <div style={{ fontWeight: 600 }}>{r.label}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280' }}>{r.desc}</div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
 
         {error && <p style={{ color: '#991b1b', fontSize: 13, marginTop: 10 }}>{error}</p>}
 
