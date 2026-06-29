@@ -3,7 +3,6 @@ import apiClient from '../../services/apiClient';
 export const projectsApi = {
   list: (params) => apiClient.get('/projects', { params }).then((r) => r.data),
   get: (id) => apiClient.get(`/projects/${id}`).then((r) => r.data),
-  stats: (id) => apiClient.get(`/projects/${id}/stats`).then((r) => r.data),
   activity: (id) => apiClient.get(`/projects/${id}/activity`).then((r) => r.data),
   create: (payload) => apiClient.post('/projects', payload).then((r) => r.data),
   update: (id, payload) => apiClient.patch(`/projects/${id}`, payload).then((r) => r.data),
@@ -17,8 +16,6 @@ export const projectsApi = {
   removeMember: (id, userId) =>
     apiClient.delete(`/projects/${id}/members/${userId}`).then((r) => r.data),
   statusTemplates: () => apiClient.get('/projects/status-templates').then((r) => r.data),
-  saveStatusTemplate: (name, statuses) =>
-    apiClient.post('/projects/status-templates', { name, statuses }).then((r) => r.data),
 };
 
 export const PROJECT_ROLES = [

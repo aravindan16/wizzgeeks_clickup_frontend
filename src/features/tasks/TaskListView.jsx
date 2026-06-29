@@ -31,9 +31,15 @@ export default function TaskListView({ tasks, members, statuses = [], onChanged,
     catch (err) { setError(err.response?.data?.error?.message || 'Could not change status'); }
   };
 
-  // Any of the space's statuses (free movement); include current if it's an orphan.
-  const statusOptions = (task) => (statuses.some((s) => s.key === task.status)
-    ? statuses : [...statuses, { key: task.status, name: task.status }]);
+  // Same status set the Board shows: the space's statuses PLUS any orphan statuses
+  // present on tasks (e.g. NEW_STATUS), so List and Board stay consistent.
+  const allStatuses = useMemo(() => {
+    const cols = [...statuses];
+    (tasks || []).forEach((t) => {
+      if (!cols.some((c) => c.key === t.status)) cols.push({ key: t.status, name: t.status });
+    });
+    return cols;
+  }, [statuses, tasks]);
 
   return (
     <div>
@@ -65,8 +71,8 @@ export default function TaskListView({ tasks, members, statuses = [], onChanged,
                 <Td>
                   {can('task.status.update') ? (
                     <Select style={{ minWidth: 150 }} value={t.status} onChange={(v) => changeStatus(t, v)}
-                      options={statusOptions(t).map((st) => ({ value: st.key, label: st.name }))} />
-                  ) : <span className="badge">{statusLabel(statuses, t.status)}</span>}
+                      options={allStatuses.map((st) => ({ value: st.key, label: st.name }))} />
+                  ) : <span className="badge">{statusLabel(allStatuses, t.status)}</span>}
                 </Td>
               </tr>
             ))}

@@ -19,7 +19,6 @@ const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
-const RegisterPage = lazy(() => import('./features/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
@@ -41,16 +40,20 @@ const RouteFallback = () => (
  */
 // Public auth routes where the user is logged OUT — no session to restore, so we
 // skip the /auth/refresh bootstrap (it would just 401 pointlessly).
-const AUTH_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password'];
+const AUTH_ROUTES = ['/login', '/forgot-password', '/reset-password'];
+
+// Module-level one-shot guard: React StrictMode double-invokes effects in dev,
+// which fired /auth/refresh twice. This ensures bootstrap runs exactly once.
+let didBootstrap = false;
 
 export default function App() {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    // Only attempt a silent session restore when NOT landing on an auth page.
-    if (!AUTH_ROUTES.includes(window.location.pathname)) {
-      dispatch(bootstrap());
-    }
+    // Run the silent session restore once, and not on logged-out auth pages.
+    if (didBootstrap || AUTH_ROUTES.includes(window.location.pathname)) return;
+    didBootstrap = true;
+    dispatch(bootstrap());
   }, [dispatch]);
 
   return (
@@ -59,7 +62,6 @@ export default function App() {
     <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
 

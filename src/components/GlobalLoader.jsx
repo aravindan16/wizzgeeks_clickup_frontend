@@ -11,13 +11,21 @@ export default function GlobalLoader() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    let timer;
+    let showTimer, hideTimer;
     const unsub = subscribeLoading((loading) => {
-      clearTimeout(timer);
-      if (loading) timer = setTimeout(() => setShow(true), 150);
-      else setShow(false);
+      if (loading) {
+        // A request started — cancel any pending hide so a mutation followed by a
+        // refetch keeps ONE continuous loader instead of close→reopen flicker.
+        clearTimeout(hideTimer);
+        showTimer = setTimeout(() => setShow(true), 150);
+      } else {
+        // No requests in flight — wait briefly before hiding; if the next request
+        // (e.g. the post-update refetch) starts within this window, we keep showing.
+        clearTimeout(showTimer);
+        hideTimer = setTimeout(() => setShow(false), 250);
+      }
     });
-    return () => { clearTimeout(timer); unsub(); };
+    return () => { clearTimeout(showTimer); clearTimeout(hideTimer); unsub(); };
   }, []);
 
   if (!show) return null;
