@@ -2,6 +2,7 @@ import { memo, useEffect, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { IconChevronDown, IconCalendar, IconUser, IconEnter } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
@@ -25,6 +26,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const open = onOpenTask || (() => {});
   const { can, user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const me = user?._id || user?.id;
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null); // status key currently hovered while dragging
@@ -69,7 +71,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
       message: 'This task will be permanently deleted. This cannot be undone.',
     });
     if (!ok) return;
-    try { await tasksApi.remove(id); onChanged(); }
+    try { await tasksApi.remove(id); toast.success('Task deleted'); onChanged(); }
     catch (err) { setError(err.response?.data?.error?.message || 'Could not delete task'); }
   };
 

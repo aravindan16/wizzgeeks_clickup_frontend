@@ -15,6 +15,7 @@ import ProjectModal from './ProjectModal';
 import AddMembersModal from './AddMembersModal';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { SkeletonBoard } from '../../components/Skeleton';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
@@ -29,6 +30,7 @@ export default function ProjectDetailsPage() {
   const navigate = useNavigate();
   const { can, user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const me = user?._id || user?.id;
   const [project, setProject] = useState(null);
   const [members, setMembers] = useState([]);
@@ -118,7 +120,7 @@ export default function ProjectDetailsPage() {
       title: `Delete: ${project.name}`,
       message: 'This Space and all of its Lists and tasks will be deleted. This cannot be undone.',
     });
-    if (ok) { await projectsApi.remove(id); navigate('/projects'); }
+    if (ok) { await projectsApi.remove(id); toast.success('Space deleted'); navigate('/projects'); }
   };
 
   return (
