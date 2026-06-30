@@ -106,7 +106,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
   const del = async (f) => {
     setRowMenu(null);
     const ok = await confirm({ title: `Delete: ${f.name}`, message: 'This custom field will be deleted.' });
-    if (ok) { await customFieldsApi.remove(f._id); loadFields(); loadCounts(); }
+    if (ok) { await customFieldsApi.remove(f._id); toast.success('Field deleted'); loadFields(); loadCounts(); }
   };
   const move = async (f, target) => { setRowMenu(null); setMoveFor(null); await customFieldsApi.move(f._id, target); toast.success('Field moved'); loadFields(); loadCounts(); };
   const renameField = async (f) => {

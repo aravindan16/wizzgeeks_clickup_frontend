@@ -45,9 +45,10 @@ export function useToast() {
 }
 
 const styles = {
-  container: { position: 'fixed', top: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 9999 },
-  toast: { padding: '12px 16px', borderRadius: 8, color: '#fff', fontSize: 14, cursor: 'pointer',
-    boxShadow: '0 6px 20px rgba(0,0,0,.18)', maxWidth: 360 },
+  container: { position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, zIndex: 9999, pointerEvents: 'none' },
+  toast: { padding: '12px 18px', borderRadius: 8, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    boxShadow: '0 6px 20px rgba(0,0,0,.18)', maxWidth: 'min(90vw, 420px)', textAlign: 'center', pointerEvents: 'auto' },
   success: { background: '#16a34a' },
   error: { background: '#b91c1c' },
   info: { background: '#111827' },
