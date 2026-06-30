@@ -7,10 +7,12 @@ import CreateListModal from '../lists/CreateListModal';
 import ListStatusModal from '../lists/ListStatusModal';
 import CustomFieldManager from '../customfields/CustomFieldManager';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { useAuth } from '../auth/useAuth';
 import { IconPlus, IconFields, IconTrash, IconEdit, IconBoard, IconDots, IconListCheck, IconFolder, Chevron } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import { resolveStatuses } from '../tasks/tasksApi';
+import apiClient from '../../services/apiClient';
 
 const NO_DELETE_MSG = "You don't have permission to take this action";
 
@@ -24,6 +26,7 @@ export default function SpacesMenu({ collapsed }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user, can } = useAuth();
   const me = user?._id || user?.id;
   // Only the Space's creator (owner) sees the Delete option.
@@ -56,20 +59,48 @@ export default function SpacesMenu({ collapsed }) {
 
   const loadLists = useCallback(async (spaceId) => {
     try {
-      const items = await listsApi.forSpace(spaceId);
-      setListsBySpace((m) => ({ ...m, [spaceId]: items }));
+      // _silent: expanding a Space should never flash the global loader.
+      const r = await apiClient.get('/lists', { params: { space_id: spaceId }, _silent: true });
+      setListsBySpace((m) => ({ ...m, [spaceId]: r.data || [] }));
     } catch { setListsBySpace((m) => ({ ...m, [spaceId]: [] })); }
   }, []);
 
   useEffect(() => { loadSpaces(); }, [loadSpaces]);
 
-  // Keep expanded spaces' Lists fresh: refetch when the window regains focus
-  // (Lists can change in other views/tabs, so the cache must self-heal).
+  // Prefetch ONLY the (lightweight) Lists of each Space right after login, so
+  // expanding a Space shows its Lists instantly instead of waiting on a request.
+  // Tasks are NOT prefetched — those are heavy and load on demand when a Space or
+  // List page is opened. All calls are _silent (no global loader).
+  const prefetchedRef = useRef(new Set());
   useEffect(() => {
-    const refresh = () => expanded.forEach((sid) => loadLists(sid));
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
-  }, [expanded, loadLists]);
+    spaces.forEach((sp) => {
+      if (prefetchedRef.current.has(sp._id)) return;
+      prefetchedRef.current.add(sp._id);
+      apiClient.get('/lists', { params: { space_id: sp._id }, _silent: true })
+        .then((r) => setListsBySpace((m) => ({ ...m, [sp._id]: r.data || [] })))
+        .catch(() => {});
+    });
+  }, [spaces]);
+
+  // Auto-expand the Space you're viewing (or the parent Space of the List you're
+  // viewing) so its Lists are visible in the sidebar when you open a Space.
+  useEffect(() => {
+    let sid = null;
+    const pm = pathname.match(/^\/projects\/([^/]+)/);
+    if (pm) sid = pm[1];
+    else {
+      const lm = pathname.match(/^\/lists\/([^/]+)/);
+      if (lm) sid = Object.keys(listsBySpace).find((k) => (listsBySpace[k] || []).some((l) => l._id === lm[1])) || null;
+    }
+    if (!sid) return;
+    setExpanded((prev) => (prev.has(sid) ? prev : new Set(prev).add(sid)));
+    if (!listsBySpace[sid]) loadLists(sid);
+  }, [pathname, listsBySpace, loadLists]);
+
+  // (Removed the refetch-on-window-focus listener: it fired a /lists request for
+  // every expanded Space on each focus change — a refetch storm when switching
+  // between the page and devtools/other tabs. Lists refresh on expand and after
+  // create/rename/delete, which is enough.)
 
   // Close any open popover on outside click / Escape.
   useEffect(() => {
@@ -114,7 +145,8 @@ export default function SpacesMenu({ collapsed }) {
       message: 'This Space and all of its Lists and tasks will be deleted. This cannot be undone.',
     });
     if (!ok) return;
-    try { await projectsApi.remove(sp._id); } catch { /* backend enforces permission */ }
+    try { await projectsApi.remove(sp._id); toast.success('Space deleted'); }
+    catch { toast.error('Could not delete space'); }
     await loadSpaces();
     navigate('/projects');
   };
@@ -134,7 +166,8 @@ export default function SpacesMenu({ collapsed }) {
       message: <><strong>{l.task_count || 0} task{(l.task_count || 0) === 1 ? '' : 's'}</strong> within this List will be deleted. This cannot be undone.</>,
     });
     if (!ok) return;
-    await listsApi.remove(l._id);
+    try { await listsApi.remove(l._id); toast.success('List deleted'); }
+    catch { toast.error('Could not delete list'); }
     loadLists(l.space_id);
   };
 

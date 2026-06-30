@@ -5,11 +5,17 @@ import { projectsApi } from '../projects/projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
+import TaskTableView from '../tasks/TaskTableView';
+import ViewTabs from '../tasks/ViewTabs';
+import { useViews } from '../tasks/useViews';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconList, IconSearch } from '../../components/icons';
+import { IconSearch } from '../../components/icons';
+import { SkeletonBoard } from '../../components/Skeleton';
+
+const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
 
 /**
  * A List inside a Space: shows only this List's tasks. Reuses the Board / List
@@ -26,10 +32,13 @@ export default function ListBoardPage() {
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState('board');
   const [taskQuery, setTaskQuery] = useState('');
-  const [filters, setFilters] = useState(emptyFilters);
   const [openTaskId, setOpenTaskId] = useState(null);
+
+  // Views (List/Board/Table) — persisted per List in localStorage; filters per view.
+  const vs = useViews(id);
+  const { activeId, updateView, activeView } = vs;
+  const activeFilters = activeView?.filters || EMPTY_FILTERS;
 
   const loadTasks = useCallback(async (listId) => {
     const res = await tasksApi.list({ list_id: listId, limit: 200, sort_by: 'created_at', sort_dir: 1 });
@@ -38,6 +47,11 @@ export default function ListBoardPage() {
 
   const load = useCallback(async () => {
     try {
+      // Tasks only need the list id (already in the URL), so fire that request
+      // immediately — in parallel with the list/space/members chain — instead of
+      // waiting for them. The board content (the heaviest call) no longer queues
+      // behind list → space → members, removing the open-list delay.
+      const tasksP = loadTasks(id);
       const l = await listsApi.get(id);
       setList(l);
       const [sp, ms] = await Promise.all([
@@ -45,7 +59,7 @@ export default function ListBoardPage() {
         projectsApi.members(l.space_id).catch(() => []),
       ]);
       setSpace(sp); setMembers(ms);
-      await loadTasks(id);
+      await tasksP;
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load list');
     }
@@ -62,7 +76,7 @@ export default function ListBoardPage() {
 
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
-  if (!list || !space) return <p>Loading…</p>;
+  if (!list || !space) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
   // A List with custom statuses overrides the Space's workflow.
   const statusSource = (list.status_mode === 'custom' && list.statuses?.length) ? list : space;
@@ -72,14 +86,15 @@ export default function ListBoardPage() {
   const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
     nameOf(t.assignee_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
   const matchesFilters = (t) => {
-    if (filters.assignee.length && !filters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-    if (filters.status.length && !filters.status.includes(t.status)) return false;
-    if (filters.type.length && !filters.type.includes(t.type)) return false;
-    if (filters.label.length && !(t.labels || []).some((l) => filters.label.includes(l))) return false;
+    if (activeFilters.assignee.length && !activeFilters.assignee.includes(t.assignee_id || 'unassigned')) return false;
+    if (activeFilters.status.length && !activeFilters.status.includes(t.status)) return false;
+    if (activeFilters.type.length && !activeFilters.type.includes(t.type)) return false;
+    if ((activeFilters.priority || []).length && !activeFilters.priority.includes(t.priority)) return false;
+    if ((activeFilters.label || []).length && !(t.labels || []).some((l) => activeFilters.label.includes(l))) return false;
     return true;
   };
   const visibleTasks = tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
-  const activeFilterCount = countFilters(filters);
+  const activeFilterCount = countFilters(activeFilters);
 
   return (
     <div style={s.page}>
@@ -98,41 +113,36 @@ export default function ListBoardPage() {
         )}
       </div>
 
-      <div style={s.tabs}>
-        {[['board', 'Board', IconBoard], ['list', 'List', IconList]].map(([key, label, Icon]) => (
-          <button key={key} className={`wg-tab${tab === key ? ' active' : ''}`} onClick={() => setTab(key)}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><Icon size={16} /> {label}</span>
-          </button>
-        ))}
-      </div>
+      <ViewTabs vs={vs} />
 
       <div style={s.searchBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
           <div style={{ position: 'relative', maxWidth: 320, flex: 1 }}>
             <span style={s.searchIcon}><IconSearch size={15} /></span>
-            <input style={s.searchInput} placeholder="Search list" value={taskQuery}
+            <input style={s.searchInput} placeholder={`Search ${activeView?.name?.toLowerCase() || 'tasks'}`} value={taskQuery}
               onChange={(e) => setTaskQuery(e.target.value)} />
           </div>
-          <BoardFilter members={members} tasks={tasks} statuses={statuses} value={filters} onChange={setFilters} />
+          <BoardFilter members={members} tasks={tasks} statuses={statuses} value={activeFilters}
+            onChange={(f) => updateView(activeId, { filters: f })} />
           {activeFilterCount > 0 && (
-            <button style={s.clearFilters} onClick={() => setFilters(emptyFilters())}>Clear filters</button>
+            <button style={s.clearFilters} onClick={() => updateView(activeId, { filters: emptyFilters() })}>Clear filters</button>
           )}
         </div>
         <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
       </div>
 
-      <div style={{ ...s.viewArea, overflow: tab === 'board' ? 'hidden' : 'auto' }}>
-        {tab === 'board' && (
+      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+        {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
             listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId} />
         )}
-        {tab === 'list' && (
-          tasks.length === 0 ? (
-            <div className="wg-empty"><span className="wg-empty-emoji">≡</span>No tasks in this list yet. Use “+ Create” on the board.</div>
-          ) : (
-            <TaskListView tasks={visibleTasks} members={members} statuses={statuses}
-              onChanged={() => loadTasks(id)} onOpenTask={setOpenTaskId} />
-          )
+        {activeView?.type === 'list' && (
+          <TaskListView tasks={visibleTasks} members={members} statuses={statuses}
+            onChanged={() => loadTasks(id)} onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
+        )}
+        {activeView?.type === 'table' && (
+          <TaskTableView tasks={visibleTasks} members={members} statuses={statuses}
+            onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
         )}
       </div>
 

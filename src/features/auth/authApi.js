@@ -3,8 +3,6 @@ import apiClient from '../../services/apiClient';
 export const authApi = {
   login: (email, password) =>
     apiClient.post('/auth/login', { email, password }).then((r) => r.data),
-  register: (payload) => apiClient.post('/auth/register', payload).then((r) => r.data),
-  verifyEmail: (token) => apiClient.post('/auth/verify-email', { token }).then((r) => r.data),
   google: (idToken) => apiClient.post('/auth/google', { id_token: idToken }).then((r) => r.data),
   logout: () => apiClient.post('/auth/logout').then((r) => r.data),
   refresh: () => apiClient.post('/auth/refresh').then((r) => r.data),

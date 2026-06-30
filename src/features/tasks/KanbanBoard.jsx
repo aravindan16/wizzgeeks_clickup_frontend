@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { IconChevronDown, IconCalendar, IconUser, IconEnter } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
@@ -21,10 +22,11 @@ const TYPE_ICON = { story: '🔖', task: '☑️', bug: '🐛', epic: '🏔️',
 const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
-export default function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
+function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
   const open = onOpenTask || (() => {});
   const { can, user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const me = user?._id || user?.id;
   const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null); // status key currently hovered while dragging
@@ -69,7 +71,7 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
       message: 'This task will be permanently deleted. This cannot be undone.',
     });
     if (!ok) return;
-    try { await tasksApi.remove(id); onChanged(); }
+    try { await tasksApi.remove(id); toast.success('Task deleted'); onChanged(); }
     catch (err) { setError(err.response?.data?.error?.message || 'Could not delete task'); }
   };
 
@@ -107,8 +109,11 @@ export default function KanbanBoard({ tasks, onChanged, projectId, listId = null
     setBoard((b) => b.map((t) => (t._id === id ? { ...t, status } : t)));
     try {
       // ClickUp-style: tasks move freely between any of the space's statuses.
-      await tasksApi.changeStatus(id, { to_status: status });
-      onChanged();
+      // _silent so the global loader doesn't flash, and we DON'T refetch — the
+      // optimistic move already reflects the change, so the board never blinks /
+      // re-renders the whole page on drop. (Cache is cleared by the mutation, so
+      // counts self-heal on the next load/navigation.)
+      await tasksApi.changeStatus(id, { to_status: status }, { _silent: true });
     } catch (err) {
       setBoard(prev); // roll back the optimistic move
       setError(err.response?.data?.error?.message || 'Could not move task');
@@ -359,3 +364,7 @@ const s = {
     background: 'none', border: 'none', padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   popEmpty: { padding: '8px 10px', color: 'var(--c-muted)', fontSize: 13 },
 };
+
+// Memoized: the board only re-renders when its props actually change (tasks,
+// members, statuses, handlers), not on every parent state update.
+export default memo(KanbanBoard);

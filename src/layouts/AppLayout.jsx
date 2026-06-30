@@ -3,14 +3,12 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
-import NotificationBell from '../features/notifications/NotificationBell';
-import GlobalLoader from '../components/GlobalLoader';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
-  IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout, IconMoon, IconSun,
+  IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
-import { getTheme, toggleTheme } from '../services/theme';
+import ThemeCustomizer from '../components/ThemeCustomizer';
 
 /**
  * Application shell: a full-width top bar (brand · search · actions) over a
@@ -33,6 +31,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { user, can } = useAuth();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(STORAGE_KEY) === '1');
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const toggle = () => {
     setCollapsed((c) => {
@@ -73,9 +72,8 @@ export default function AppLayout() {
         </div>
 
         <div style={s.topRight}>
-          <NotificationBell />
-          <button style={s.topIconBtn} title="Help"><IconHelp size={18} /></button>
-          <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())} />
+          <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
+            onCustomize={() => setCustomizeOpen(true)} />
         </div>
       </header>
 
@@ -110,20 +108,20 @@ export default function AppLayout() {
                 <span style={s.chipRole}>{role}</span>
               </span>
             )}
-            {!collapsed && <span style={{ color: '#9ca3af' }}><IconChevronDown size={14} /></span>}
           </button>
         </aside>
 
-        <main style={s.main}><GlobalLoader /><Outlet /></main>
+        <main style={s.main}><Outlet /></main>
       </div>
+
+      <ThemeCustomizer open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
     </div>
   );
 }
 
-/** Avatar button → dropdown with user info, Profile, and Log out. */
-function UserMenu({ user, onProfile, onLogout }) {
+/** Avatar button → dropdown with user info, Profile, Customize, and Log out. */
+function UserMenu({ user, onProfile, onLogout, onCustomize }) {
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState(getTheme());
   const ref = useRef(null);
 
   useEffect(() => {
@@ -153,9 +151,8 @@ function UserMenu({ user, onProfile, onLogout }) {
           <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onProfile(); }}>
             <span style={s.menuIcon}><IconUser size={17} /></span> Profile
           </button>
-          <button className="wg-menu-item" style={s.menuItem} onClick={() => setTheme(toggleTheme())}>
-            <span style={s.menuIcon}>{theme === 'dark' ? <IconSun size={17} /> : <IconMoon size={17} />}</span>
-            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onCustomize(); }}>
+            <span style={s.menuIcon}><IconSettings size={17} /></span> Customize
           </button>
           <button className="wg-menu-item" style={{ ...s.menuItem, color: '#ef4444' }} onClick={() => { setOpen(false); onLogout(); }}>
             <span style={s.menuIcon}><IconLogout size={17} /></span> Log out
@@ -223,7 +220,7 @@ const s = {
   menuName: { fontWeight: 700, fontSize: 15, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   menuEmail: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   menuItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
-    padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+    padding: '12px 16px', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   menuIcon: { width: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit' },
   main: { flex: 1, padding: 24, background: 'var(--c-surface-2)', minWidth: 0, overflow: 'auto', position: 'relative' },
 };

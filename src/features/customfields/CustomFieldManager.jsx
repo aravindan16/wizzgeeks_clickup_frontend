@@ -106,7 +106,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
   const del = async (f) => {
     setRowMenu(null);
     const ok = await confirm({ title: `Delete: ${f.name}`, message: 'This custom field will be deleted.' });
-    if (ok) { await customFieldsApi.remove(f._id); loadFields(); loadCounts(); }
+    if (ok) { await customFieldsApi.remove(f._id); toast.success('Field deleted'); loadFields(); loadCounts(); }
   };
   const move = async (f, target) => { setRowMenu(null); setMoveFor(null); await customFieldsApi.move(f._id, target); toast.success('Field moved'); loadFields(); loadCounts(); };
   const renameField = async (f) => {
@@ -551,7 +551,7 @@ const s = {
   count: { color: '#9ca3af', fontSize: 12, fontWeight: 600, flexShrink: 0 },
   spaceRow: { display: 'flex', alignItems: 'center' },
   caret: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 10, width: 18, flexShrink: 0, padding: 0 },
-  spaceBadge: { width: 22, height: 22, borderRadius: 6, background: '#111827', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11, flexShrink: 0 },
+  spaceBadge: { width: 22, height: 22, borderRadius: 6, background: 'var(--c-primary)', color: 'var(--c-on-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11, flexShrink: 0 },
   listIcon: { color: '#64748b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, flexShrink: 0 },
 
   main: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: '20px 24px', overflow: 'hidden' },
@@ -560,7 +560,7 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, opacity: .6 },
   search: { width: '100%', boxSizing: 'border-box', padding: '9px 11px 9px 32px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 14 },
   filterBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#374151', whiteSpace: 'nowrap' },
-  createBtn: { padding: '9px 16px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' },
+  createBtn: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' },
   createScrim: { position: 'fixed', inset: 0, zIndex: 19 },
   typeMenu: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.18)', zIndex: 21, padding: 6, width: 300 },
   typeMenuTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' },
@@ -616,9 +616,9 @@ const d = {
   radioOn: { borderColor: '#111827' },
   radioDot: { width: 9, height: 9, borderRadius: '50%', background: '#111827' },
   toggleRow: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, fontSize: 14 },
-  switch: { width: 38, height: 22, borderRadius: 999, border: 'none', background: '#cbd5e1', cursor: 'pointer', padding: 2, display: 'inline-flex' },
-  switchOn: { background: '#111827' },
-  knob: { width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'transform .15s' },
+  switch: { width: 38, height: 22, borderRadius: 999, border: 'none', background: 'var(--c-border)', cursor: 'pointer', padding: 2, display: 'inline-flex' },
+  switchOn: { background: 'var(--c-primary)' },
+  knob: { width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'transform .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' },
   knobOn: { transform: 'translateX(16px)' },
   optHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 8px' },
   lbl2: { fontSize: 13, fontWeight: 600, color: '#374151' },

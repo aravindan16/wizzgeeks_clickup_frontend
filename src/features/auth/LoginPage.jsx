@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { login, googleLogin } from './authSlice';
 import { useAuth } from './useAuth';
 import GoogleButton from './GoogleButton';
@@ -8,37 +8,39 @@ import GoogleButton from './GoogleButton';
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const location = useLocation();
   const { error } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const from = location.state?.from?.pathname || '/';
-
+  // Always land on the Dashboard after login. (Don't return to the previous
+  // user's last page — e.g. an admin's /users — which a different user who logs
+  // in next may not have permission to see, causing a 403.)
   const onSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     const result = await dispatch(login({ email, password }));
     setSubmitting(false);
     if (login.fulfilled.match(result)) {
-      navigate(from, { replace: true });
+      navigate('/', { replace: true });
     }
   };
 
   const onGoogle = async (credential) => {
     const result = await dispatch(googleLogin(credential));
-    if (googleLogin.fulfilled.match(result)) navigate(from, { replace: true });
+    if (googleLogin.fulfilled.match(result)) navigate('/', { replace: true });
   };
 
   return (
     <div style={styles.wrap}>
-      <form onSubmit={onSubmit} className="card" style={styles.card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <img src="/logo.png" alt="Wizzgeeks" style={{ width: 34, height: 34, objectFit: 'contain' }} />
-          <h2 style={{ margin: 0 }}>Wizzgeeks</h2>
+      <form onSubmit={onSubmit} style={styles.card}>
+        <div style={styles.brand}>
+          <div style={styles.logoBadge}>
+            <img src="/logo.png" alt="Wizzgeeks" style={{ width: 30, height: 30, objectFit: 'contain' }} />
+          </div>
+          <h1 style={styles.title}>Welcome back</h1>
+          <p style={styles.sub}>Sign in to your Wizzgeeks workspace</p>
         </div>
-        <p style={styles.muted}>Sign in to continue</p>
 
         <label style={styles.label}>Email</label>
         <input
@@ -47,51 +49,84 @@ export default function LoginPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@company.com"
+          autoComplete="email"
           required
         />
 
-        <label style={styles.label}>Password</label>
+        <div style={styles.labelRow}>
+          <label style={{ ...styles.label, marginBottom: 0 }}>Password</label>
+          <Link to="/forgot-password" style={styles.linkSm}>Forgot?</Link>
+        </div>
         <input
           style={styles.input}
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••"
+          autoComplete="current-password"
           required
         />
 
         {error && <p style={styles.error}>{error}</p>}
 
-        <button style={styles.button} type="submit" disabled={submitting}>
+        <button style={{ ...styles.button, ...(submitting ? styles.buttonBusy : {}) }} type="submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
 
         <GoogleButton onCredential={onGoogle} />
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 13 }}>
-          <Link to="/forgot-password">Forgot password?</Link>
-          <Link to="/register">Create account</Link>
-        </div>
       </form>
     </div>
   );
 }
 
 const styles = {
-  wrap: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '70vh' },
-  card: { width: 360, display: 'flex', flexDirection: 'column', gap: 8 },
-  muted: { color: '#6b7280', marginTop: -8 },
-  label: { fontSize: 13, fontWeight: 600, marginTop: 8 },
-  input: { padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
-  button: {
-    marginTop: 16,
-    padding: '10px 12px',
-    background: '#111827',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontWeight: 600,
-    cursor: 'pointer',
+  wrap: {
+    minHeight: '100dvh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    boxSizing: 'border-box',
+    background: 'radial-gradient(1100px 520px at 50% -8%, color-mix(in srgb, var(--c-primary) 12%, transparent), transparent), var(--c-bg)',
   },
-  error: { color: '#991b1b', fontSize: 13, marginTop: 8 },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    boxSizing: 'border-box',
+    background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)',
+    borderRadius: 16,
+    padding: '32px 30px',
+    boxShadow: 'var(--sh-lg)',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  brand: { textAlign: 'center', marginBottom: 20 },
+  logoBadge: {
+    width: 54, height: 54, borderRadius: 15, marginBottom: 14,
+    background: 'var(--c-surface-2)', border: '1px solid var(--c-border)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  },
+  title: { margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--c-text-strong)' },
+  sub: { margin: '6px 0 0', color: 'var(--c-muted)', fontSize: 14 },
+  label: { fontSize: 13, fontWeight: 600, color: 'var(--c-text)', marginBottom: 6, display: 'block' },
+  labelRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 6 },
+  linkSm: { fontSize: 12.5, color: 'var(--c-primary)', textDecoration: 'none', fontWeight: 600 },
+  input: {
+    width: '100%', boxSizing: 'border-box', padding: '11px 13px',
+    border: '1px solid var(--c-border)', borderRadius: 10, fontSize: 14,
+    background: 'var(--c-surface)', color: 'var(--c-text)', marginBottom: 4,
+  },
+  button: {
+    marginTop: 18, padding: '12px', background: 'var(--c-primary)', color: 'var(--c-on-primary)',
+    border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer',
+    transition: 'filter .12s',
+  },
+  buttonBusy: { opacity: 0.7, cursor: 'progress' },
+  error: {
+    color: '#ef4444', fontSize: 13, marginTop: 12, marginBottom: 0,
+    background: 'color-mix(in srgb, #ef4444 12%, transparent)', padding: '9px 11px', borderRadius: 8,
+  },
+  footer: { textAlign: 'center', marginTop: 18, fontSize: 13.5, color: 'var(--c-muted)' },
+  link: { color: 'var(--c-primary)', fontWeight: 600, textDecoration: 'none' },
 };
