@@ -23,24 +23,11 @@ export default function ChartCard({ card, onRemove, onEdit }) {
 function Calculation({ data }) {
   return (
     <div style={s.calcWrap}>
-      <div style={s.calcMain}>
-        <div style={s.calcNum}>{data.total.toLocaleString()}</div>
-        <div style={s.calcLabel}>Total tasks</div>
-      </div>
-      <div style={s.calcRow}>
-        <Stat n={data.done} label="Done" color="#16a34a" />
-        <Stat n={data.total - data.done} label="Open" color="var(--c-text-strong)" />
-        <Stat n={data.due} label="Overdue" color="#ef4444" />
-      </div>
+      <div style={s.calcNum}>{data.total.toLocaleString()}</div>
+      <div style={s.calcLabel}>Total tasks</div>
     </div>
   );
 }
-const Stat = ({ n, label, color }) => (
-  <div style={s.stat}>
-    <span style={{ ...s.statNum, color }}>{n.toLocaleString()}</span>
-    <span style={s.statLabel}>{label}</span>
-  </div>
-);
 
 /* ------------------------------------------------------------------- Pie */
 function Pie({ data }) {
@@ -153,10 +140,10 @@ function donutArc(cx, cy, R, r, a0, a1) {
 const s = {
   msg: { padding: 28, textAlign: 'center', color: 'var(--c-muted)', fontSize: 14 },
 
-  calcWrap: { padding: '24px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22 },
-  calcMain: { textAlign: 'center' },
-  calcNum: { fontSize: 48, fontWeight: 800, color: 'var(--c-text-strong)', lineHeight: 1 },
-  calcLabel: { fontSize: 13, color: 'var(--c-muted)', marginTop: 6 },
+  calcWrap: { padding: '32px 16px', minHeight: 140, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', gap: 4 },
+  calcNum: { fontSize: 56, fontWeight: 800, color: 'var(--c-text-strong)', lineHeight: 1 },
+  calcLabel: { fontSize: 13, color: 'var(--c-muted)', marginTop: 8 },
   calcRow: { display: 'flex', gap: 28 },
   stat: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 },
   statNum: { fontSize: 22, fontWeight: 700 },
