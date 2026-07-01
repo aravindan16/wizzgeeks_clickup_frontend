@@ -25,7 +25,7 @@ export default function CardFrame({ title, onRemove, onEdit, fill = false, child
   return (
     <>
       <div style={{ ...s.card, ...(fill ? s.cardFill : {}) }}>
-        <div style={s.head}>
+        <div className="wg-card-head" style={s.head}>
           <span style={s.titleWrap}>
             <span className="wg-card-grip" style={s.grip} title="Drag to move"><IconGrip size={16} /></span>
             <span style={s.title}>{title}</span>

@@ -423,9 +423,22 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 .wg-dash-grid .react-grid-item.react-grid-placeholder { background: var(--c-primary); opacity: 0.12; border-radius: 12px; }
 .wg-dash-grid .react-grid-item.react-draggable-dragging,
 .wg-dash-grid .react-grid-item.resizing { z-index: 5; transition: none; }
-.wg-dash-grid .react-resizable-handle { z-index: 6; }
+/* ClickUp-style: NO visible resize markers — only the resize cursor on hover.
+   !important because react-resizable's CSS loads after this and re-adds the arrows. */
+.wg-dash-grid .react-resizable-handle { z-index: 6; background: none !important; background-image: none !important; }
+.wg-dash-grid .react-resizable-handle::after { display: none !important; }
+.wg-dash-grid .react-resizable-handle-e, .wg-dash-grid .react-resizable-handle-w { top: 8px; bottom: 8px; height: auto; margin-top: 0; width: 12px; }
+.wg-dash-grid .react-resizable-handle-s { left: 8px; right: 8px; width: auto; margin-left: 0; height: 12px; }
+.wg-dash-grid .react-grid-item:hover > .react-resizable-handle-se::before {
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 7px; height: 7px;
+  border-right: 2px solid var(--c-faint); border-bottom: 2px solid var(--c-faint); border-radius: 1px;
+}
 .wg-card-grip { cursor: grab; }
 .wg-card-grip:active { cursor: grabbing; }
+/* The whole card header is the drag handle (ClickUp-style) */
+.wg-card-head { cursor: grab; }
+.wg-card-head:active { cursor: grabbing; }
+.wg-card-head button { cursor: pointer; }
 
 /* --- Global interactive feedback: every button highlights + zooms on hover/press --- */
 button { transition: filter var(--t-fast), transform var(--t-fast), background var(--t-fast), box-shadow var(--t-fast); }

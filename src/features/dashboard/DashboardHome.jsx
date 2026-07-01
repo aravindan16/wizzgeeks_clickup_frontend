@@ -8,10 +8,11 @@ import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { loadLegacyDashboards, clearLegacyDashboards } from './dashboardStore';
 import { dashboardsApi } from './dashboardsApi';
+import { beginSilent, endSilent } from '../../services/apiClient';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
 import DashboardShareModal from './DashboardShareModal';
-import { IconPlus, IconEdit, IconTrash, IconMembers, Chevron } from '../../components/icons';
+import { IconPlus, IconEdit, IconTrash, IconMembers, IconGrip, Chevron } from '../../components/icons';
 
 const Grid = WidthProvider(GridLayout);
 // Default grid placement for a card with no saved layout yet (2-up, half width).
@@ -72,11 +73,17 @@ export default function DashboardHome() {
   };
 
   // Optimistic local update + background save (rename, card add/remove/edit).
-  const updateDashboard = (d) => {
+  // opts.silent → drag/resize layout saves: no global loader, no sidebar refetch.
+  const updateDashboard = (d, opts = {}) => {
     setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
-    dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
-      .then(notifyChanged)
-      .catch(() => toast.error('Could not save changes'));
+    if (opts.silent) {
+      beginSilent();
+      dashboardsApi.update(d.id, { name: d.name, cards: d.cards }).catch(() => {}).finally(endSilent);
+    } else {
+      dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
+        .then(notifyChanged)
+        .catch(() => toast.error('Could not save changes'));
+    }
   };
 
   const removeDashboard = async (d) => {
@@ -210,7 +217,43 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
       const l = byId[c.id];
       return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
     });
-    if (JSON.stringify(next) !== JSON.stringify(cards)) setCards(next);
+    // Silent save — no page loader / no refetch when you drag or resize a card.
+    if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
+  };
+
+  // Drop a card ONTO another → the two swap places (no pushing to the next row).
+  // Drop into empty space → the card just moves there.
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const onDragStopSwap = (nextLayout, oldItem, newItem) => {
+    const draggedId = newItem.i;
+    const dragged = layout.find((l) => l.i === draggedId);
+    const target = layout.find((l) => l.i !== draggedId && overlaps(newItem, l));
+    let next;
+    if (target) {
+      next = cards.map((c) => {
+        if (c.id === draggedId) return { ...c, x: target.x, y: target.y };
+        if (c.id === target.i) return { ...c, x: dragged.x, y: dragged.y };
+        return c;
+      });
+    } else {
+      next = cards.map((c) => (c.id === draggedId ? { ...c, x: newItem.x, y: newItem.y } : c));
+    }
+    if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
+  };
+
+  // Pack cards left-to-right into rows using each card's width (like ClickUp),
+  // so narrow cards sit 2–3 per row instead of stacking one per row.
+  const autoArrange = () => {
+    let cx = 0, cy = 0, rowH = 0;
+    const next = cards.map((c, i) => {
+      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
+      const h = c.h ?? defaultLayout(c, i).h;
+      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
+      const placed = { ...c, x: cx, y: cy, w, h };
+      cx += w; rowH = Math.max(rowH, h);
+      return placed;
+    });
+    onChange({ ...dashboard, cards: next }, { silent: true });
   };
 
   const saveCard = (card) => {
@@ -240,6 +283,9 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {cards.length > 0 && (
+          <button style={s.shareBtn} title="Pack cards into rows by size" onClick={autoArrange}><IconGrip size={16} /> Auto-arrange</button>
+        )}
         <button style={s.shareBtn} onClick={() => setSharing(true)}><IconMembers size={16} /> Share</button>
         <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>
       </div>
@@ -259,10 +305,12 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           rowHeight={40}
           margin={[16, 16]}
           layout={layout}
-          draggableHandle=".wg-card-grip"
-          onDragStop={persistLayout}
+          draggableHandle=".wg-card-head"
+          compactType={null}
+          allowOverlap
+          resizeHandles={['s', 'e', 'w', 'se', 'sw']}
+          onDragStop={onDragStopSwap}
           onResizeStop={persistLayout}
-          isBounded
         >
           {cards.map((c) => (
             <div key={c.id}>
