@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
@@ -27,7 +27,7 @@ export default function DashboardHome() {
   // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const load = async () => {
       try {
         let { items } = await dashboardsApi.list();
         if (items.length === 0) {
@@ -44,14 +44,21 @@ export default function DashboardHome() {
       } catch {
         if (alive) setDashboards([]);
       }
-    })();
-    return () => { alive = false; };
+    };
+    load();
+    // Stay in sync with the sidebar (create from there) and other tabs.
+    const onChange = () => load();
+    window.addEventListener('wg-dashboards-changed', onChange);
+    return () => { alive = false; window.removeEventListener('wg-dashboards-changed', onChange); };
   }, [uid]);
+
+  const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
 
   const createDashboard = async () => {
     try {
       const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
       setDashboards((cur) => [...(cur || []), d]);
+      notifyChanged();
       navigate(`/dashboard/${d.id}`); // jump straight into the new (empty) dashboard
     } catch { toast.error('Could not create dashboard'); }
   };
@@ -59,13 +66,15 @@ export default function DashboardHome() {
   // Optimistic local update + background save (rename, card add/remove/edit).
   const updateDashboard = (d) => {
     setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
-    dashboardsApi.update(d.id, { name: d.name, cards: d.cards }).catch(() => toast.error('Could not save changes'));
+    dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
+      .then(notifyChanged)
+      .catch(() => toast.error('Could not save changes'));
   };
 
   const removeDashboard = async (d) => {
     if (!(await confirm({ title: 'Delete dashboard', message: `Delete "${d.name}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
     setDashboards((cur) => (cur || []).filter((x) => x.id !== d.id));
-    try { await dashboardsApi.remove(d.id); toast.success(`Dashboard "${d.name}" deleted`); }
+    try { await dashboardsApi.remove(d.id); notifyChanged(); toast.success(`Dashboard "${d.name}" deleted`); }
     catch { toast.error('Could not delete dashboard'); }
   };
 
@@ -163,6 +172,17 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
   const [editing, setEditing] = useState(null); // card being edited
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(dashboard.name);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Sidebar "Add card" navigates here with ?add=1 → open the Add-card modal.
+  useEffect(() => {
+    if (searchParams.get('add') === '1') {
+      setAdding(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('add');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const cards = dashboard.cards || [];
   const setCards = (next) => onChange({ ...dashboard, cards: next });

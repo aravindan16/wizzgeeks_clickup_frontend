@@ -4,6 +4,7 @@ import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
 import SpacesMenu from '../features/spaces/SpacesMenu';
+import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
   IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
@@ -15,7 +16,6 @@ import ThemeCustomizer from '../components/ThemeCustomizer';
  * collapsible, permission-aware left sidebar + main content. Light ClickUp-style.
  */
 const NAV = [
-  { to: '/dashboard', label: 'Dashboard', Icon: IconDashboard, end: false },
   { to: '/team-activity', label: 'Team Activity', Icon: IconMembers, permission: 'dailyupdate.read.team' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/audit', label: 'Audit Log', Icon: IconReports, permission: 'audit.read' },
@@ -82,6 +82,7 @@ export default function AppLayout() {
         <aside style={{ ...s.sidebar, width }}>
           <div style={s.navScroll}>
             <nav style={s.nav}>
+              <DashboardsMenu collapsed={collapsed} />
               {NAV.filter((n) => !n.permission || can(n.permission)).map((n) => (
                 <NavLink key={n.to} to={n.to} end={n.end} title={n.label}
                   className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}

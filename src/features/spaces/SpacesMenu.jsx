@@ -36,6 +36,7 @@ export default function SpacesMenu({ collapsed }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const [listsBySpace, setListsBySpace] = useState({});
 
+  const [sectionOpen, setSectionOpen] = useState(true);   // collapse/expand the whole Spaces list
   const [topMenu, setTopMenu] = useState(false);          // section "+ Create Space" menu
   const [spaceSetupOpen, setSpaceSetupOpen] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(null);       // spaceId with open ⋯ menu
@@ -215,8 +216,18 @@ export default function SpacesMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div style={s.header}>
-        <button style={s.heading} onClick={() => navigate('/projects')} title="All spaces">Spaces</button>
+      <div className="wg-sb-row" style={s.header}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <button type="button" style={s.sectionCaret} onClick={() => setSectionOpen((o) => !o)}
+            title={sectionOpen ? 'Collapse' : 'Expand'}>
+            <Chevron open={sectionOpen} size={13} />
+          </button>
+          <div style={{ ...s.headInner, ...(pathname === '/projects' ? s.headingActive : {}) }}
+            onClick={() => navigate('/projects')} title="All spaces">
+            <span style={s.sectionIcon}><IconFolder size={18} /></span>
+            <span style={s.heading}>Spaces</span>
+          </div>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, position: 'relative' }}>
           <button className="icon-btn" style={s.iconBtn} title="Space actions" onClick={() => { setSpaceMenu(null); setListMenu(null); setTopMenu((o) => !o); }}><IconDots size={16} /></button>
           <button className="icon-btn" style={s.iconBtn} title="Create space" onClick={() => setSpaceSetupOpen(true)}><IconPlus size={16} /></button>
@@ -230,6 +241,7 @@ export default function SpacesMenu({ collapsed }) {
         </div>
       </div>
 
+      {sectionOpen && (
       <div style={s.list}>
         {spaces.length === 0 && <div style={s.empty}>No spaces yet</div>}
         {spaces.map((sp) => {
@@ -316,6 +328,7 @@ export default function SpacesMenu({ collapsed }) {
           <span style={s.newSpaceIcon}><IconPlus size={15} /></span> New Space
         </button>
       </div>
+      )}
 
       {modals}
     </div>
@@ -324,8 +337,12 @@ export default function SpacesMenu({ collapsed }) {
 
 const s = {
   section: { marginTop: 10 },
-  header: { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 4px 12px' },
-  heading: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', padding: 0 },
+  header: { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 6px 9px 0', borderRadius: 8 },
+  headInner: { display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 8, minWidth: 0, cursor: 'pointer', color: 'var(--c-muted)' },
+  heading: { fontSize: 14, fontWeight: 500, color: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  headingActive: { color: 'var(--c-text-strong)', fontWeight: 600 },
+  sectionCaret: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-muted)', display: 'inline-flex', padding: 4, flexShrink: 0 },
+  sectionIcon: { width: 20, color: 'inherit', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   iconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4, borderRadius: 6 },
   dropdown: { position: 'absolute', top: 'calc(100% + 2px)', right: 6, background: '#fff', color: '#111827', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.25)', zIndex: 300, padding: 4, minWidth: 180 },
   dropItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5, color: '#111827' },
