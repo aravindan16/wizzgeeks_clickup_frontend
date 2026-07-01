@@ -6,30 +6,33 @@ import { IconTrash, IconSettings, IconGrip, IconExpand, IconClose } from '../../
  * fullscreen / settings / remove actions. `children` is the card body
  * (a pure element, so it can be rendered in both the card and the overlay).
  */
-export default function CardFrame({ title, onRemove, onEdit, children }) {
+export default function CardFrame({ title, onRemove, onEdit, fill = false, children }) {
   const [full, setFull] = useState(false);
 
   const actions = (
     <span style={s.actions}>
-      <button className="icon-btn" style={s.btn} title={full ? 'Exit full screen' : 'Full screen'} onClick={() => setFull((f) => !f)}>
+      <button className="icon-btn" style={s.btn} title={full ? 'Exit full screen' : 'Full screen'}
+        onMouseDown={(e) => e.stopPropagation()} onClick={() => setFull((f) => !f)}>
         {full ? <IconClose size={16} /> : <IconExpand size={15} />}
       </button>
-      {onEdit && <button className="icon-btn" style={s.btn} title="Settings" onClick={onEdit}><IconSettings size={15} /></button>}
-      {onRemove && <button className="icon-btn" style={s.btn} title="Remove card" onClick={onRemove}><IconTrash size={15} /></button>}
+      {onEdit && <button className="icon-btn" style={s.btn} title="Settings"
+        onMouseDown={(e) => e.stopPropagation()} onClick={onEdit}><IconSettings size={15} /></button>}
+      {onRemove && <button className="icon-btn" style={s.btn} title="Remove card"
+        onMouseDown={(e) => e.stopPropagation()} onClick={onRemove}><IconTrash size={15} /></button>}
     </span>
   );
 
   return (
     <>
-      <div style={s.card}>
+      <div style={{ ...s.card, ...(fill ? s.cardFill : {}) }}>
         <div style={s.head}>
           <span style={s.titleWrap}>
-            <span style={s.grip} title="Drag to reorder"><IconGrip size={16} /></span>
+            <span className="wg-card-grip" style={s.grip} title="Drag to move"><IconGrip size={16} /></span>
             <span style={s.title}>{title}</span>
           </span>
           {actions}
         </div>
-        {children}
+        <div style={fill ? s.bodyFill : undefined}>{children}</div>
       </div>
 
       {full && (
@@ -46,6 +49,8 @@ export default function CardFrame({ title, onRemove, onEdit, children }) {
 
 const s = {
   card: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  cardFill: { height: '100%', display: 'flex', flexDirection: 'column' },
+  bodyFill: { flex: 1, minHeight: 0, overflow: 'auto' },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--c-border-2)' },
   titleWrap: { display: 'inline-flex', alignItems: 'center', gap: 6 },
   grip: { color: 'var(--c-faint)', display: 'inline-flex', cursor: 'grab' },

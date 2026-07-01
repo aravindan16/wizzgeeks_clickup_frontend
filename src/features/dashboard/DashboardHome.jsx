@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import GridLayout, { WidthProvider } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
@@ -7,7 +10,12 @@ import { loadLegacyDashboards, clearLegacyDashboards } from './dashboardStore';
 import { dashboardsApi } from './dashboardsApi';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
-import { IconPlus, IconEdit, IconTrash, Chevron } from '../../components/icons';
+import DashboardShareModal from './DashboardShareModal';
+import { IconPlus, IconEdit, IconTrash, IconMembers, Chevron } from '../../components/icons';
+
+const Grid = WidthProvider(GridLayout);
+// Default grid placement for a card with no saved layout yet (2-up, half width).
+const defaultLayout = (card, i) => ({ x: (i % 2) * 6, y: Math.floor(i / 2) * 9, w: 6, h: 9 });
 
 /**
  * ClickUp-style dashboards:
@@ -27,7 +35,7 @@ export default function DashboardHome() {
   // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const load = async () => {
       try {
         let { items } = await dashboardsApi.list();
         if (items.length === 0) {
@@ -44,14 +52,21 @@ export default function DashboardHome() {
       } catch {
         if (alive) setDashboards([]);
       }
-    })();
-    return () => { alive = false; };
+    };
+    load();
+    // Stay in sync with the sidebar (create from there) and other tabs.
+    const onChange = () => load();
+    window.addEventListener('wg-dashboards-changed', onChange);
+    return () => { alive = false; window.removeEventListener('wg-dashboards-changed', onChange); };
   }, [uid]);
+
+  const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
 
   const createDashboard = async () => {
     try {
       const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
       setDashboards((cur) => [...(cur || []), d]);
+      notifyChanged();
       navigate(`/dashboard/${d.id}`); // jump straight into the new (empty) dashboard
     } catch { toast.error('Could not create dashboard'); }
   };
@@ -59,13 +74,15 @@ export default function DashboardHome() {
   // Optimistic local update + background save (rename, card add/remove/edit).
   const updateDashboard = (d) => {
     setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
-    dashboardsApi.update(d.id, { name: d.name, cards: d.cards }).catch(() => toast.error('Could not save changes'));
+    dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
+      .then(notifyChanged)
+      .catch(() => toast.error('Could not save changes'));
   };
 
   const removeDashboard = async (d) => {
     if (!(await confirm({ title: 'Delete dashboard', message: `Delete "${d.name}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
     setDashboards((cur) => (cur || []).filter((x) => x.id !== d.id));
-    try { await dashboardsApi.remove(d.id); toast.success(`Dashboard "${d.name}" deleted`); }
+    try { await dashboardsApi.remove(d.id); notifyChanged(); toast.success(`Dashboard "${d.name}" deleted`); }
     catch { toast.error('Could not delete dashboard'); }
   };
 
@@ -163,9 +180,38 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
   const [editing, setEditing] = useState(null); // card being edited
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(dashboard.name);
+  const [sharing, setSharing] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Sidebar actions navigate here with ?add=1 / ?share=1 → open the right modal.
+  useEffect(() => {
+    const add = searchParams.get('add') === '1';
+    const share = searchParams.get('share') === '1';
+    if (!add && !share) return;
+    if (add) setAdding(true);
+    if (share) setSharing(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('add'); next.delete('share');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const cards = dashboard.cards || [];
   const setCards = (next) => onChange({ ...dashboard, cards: next });
+
+  // Grid layout: derive from each card's saved x/y/w/h (or a default), and
+  // write positions/sizes back onto the cards when the user drags/resizes.
+  const layout = cards.map((c, i) => {
+    const d = defaultLayout(c, i);
+    return { i: c.id, x: c.x ?? d.x, y: c.y ?? d.y, w: c.w ?? d.w, h: c.h ?? d.h, minW: 3, minH: 4 };
+  });
+  const persistLayout = (nextLayout) => {
+    const byId = Object.fromEntries(nextLayout.map((l) => [l.i, l]));
+    const next = cards.map((c) => {
+      const l = byId[c.id];
+      return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
+    });
+    if (JSON.stringify(next) !== JSON.stringify(cards)) setCards(next);
+  };
 
   const saveCard = (card) => {
     setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
@@ -194,6 +240,7 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        <button style={s.shareBtn} onClick={() => setSharing(true)}><IconMembers size={16} /> Share</button>
         <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>
       </div>
 
@@ -206,15 +253,28 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </button>
         </div>
       ) : (
-        <div style={s.cards}>
+        <Grid
+          className="wg-dash-grid"
+          cols={12}
+          rowHeight={40}
+          margin={[16, 16]}
+          layout={layout}
+          draggableHandle=".wg-card-grip"
+          onDragStop={persistLayout}
+          onResizeStop={persistLayout}
+          isBounded
+        >
           {cards.map((c) => (
-            <DashboardCard key={c.id} card={c} onRemove={() => removeCard(c.id)} onEdit={() => setEditing(c)} />
+            <div key={c.id}>
+              <DashboardCard card={c} onRemove={() => removeCard(c.id)} onEdit={() => setEditing(c)} fill />
+            </div>
           ))}
-        </div>
+        </Grid>
       )}
 
       <AddCardModal open={adding || !!editing} editCard={editing}
         onClose={() => { setAdding(false); setEditing(null); }} onAdd={saveCard} />
+      <DashboardShareModal open={sharing} dashboardId={dashboard.id} onClose={() => setSharing(false)} />
     </div>
   );
 }
@@ -225,6 +285,8 @@ const s = {
   title: { margin: 0, color: 'var(--c-text-strong)' },
   addBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-primary)',
     color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  shareBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-surface)',
+    color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
 
   // list view
   listCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },

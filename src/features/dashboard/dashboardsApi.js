@@ -7,4 +7,8 @@ export const dashboardsApi = {
   create: (payload) => apiClient.post('/user-dashboards', payload).then((r) => r.data),
   update: (id, payload) => apiClient.patch(`/user-dashboards/${id}`, payload).then((r) => r.data),
   remove: (id) => apiClient.delete(`/user-dashboards/${id}`).then((r) => r.data),
+  searchUsers: (q) => apiClient.get('/user-dashboards/users/search', { params: { q } }).then((r) => r.data),
+  members: (id) => apiClient.get(`/user-dashboards/${id}/members`).then((r) => r.data),
+  addMember: (id, userId) => apiClient.post(`/user-dashboards/${id}/members`, { user_id: userId }).then((r) => r.data),
+  removeMember: (id, userId) => apiClient.delete(`/user-dashboards/${id}/members/${userId}`).then((r) => r.data),
 };

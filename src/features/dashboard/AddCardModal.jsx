@@ -20,7 +20,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
   const [cardType, setCardType] = useState(null);
   const [spaces, setSpaces] = useState([]);
   const [listsBySpace, setListsBySpace] = useState({});
-  const [source, setSource] = useState('lists'); // 'lists' | 'tasks'(=related)
+  const source = 'lists'; // Lists mode only (Related Lists removed)
   const [selected, setSelected] = useState({}); // listId -> meta (lists mode)
   const [selectedRelated, setSelectedRelated] = useState({}); // listId -> meta (related mode)
   const [relatedByList, setRelatedByList] = useState({}); // listId -> available related-list names
@@ -50,7 +50,6 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
       const sel = {}; const selR = {}; const opens = {}; const rBy = {};
       (editCard.lists || []).forEach((l) => { sel[l.id] = l; opens[l.spaceId] = true; });
       (editCard.tasks || []).forEach((m) => { selR[m.id] = m; opens[m.spaceId] = true; rBy[m.id] = m.lists || []; });
-      setSource(editCard.source || 'lists');
       setSelected(sel);
       setSelectedRelated(selR);
       setRelatedByList(rBy);
@@ -60,7 +59,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
       setStep('config');
       loadData();
     } else {
-      setStep('picker'); setSource('lists'); setSelected({}); setSelectedRelated({});
+      setStep('picker'); setSelected({}); setSelectedRelated({});
       setRelatedByList({}); setOpenSpaces({}); setCardType(null); setCardName('');
     }
   }, [open, editCard]);
@@ -171,18 +170,8 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
                   : <DashboardCard card={previewCard} />}
               </div>
               <div style={s.rightPane}>
-                <div style={s.dsLabel}>Track</div>
-                <div style={s.segmented}>
-                  <button type="button" style={{ ...s.segBtn, ...(source === 'lists' ? s.segOn : {}) }}
-                    onClick={() => setSource('lists')}>Lists</button>
-                  <button type="button" style={{ ...s.segBtn, ...(source === 'tasks' ? s.segOn : {}) }}
-                    onClick={() => setSource('tasks')}>Related Lists</button>
-                </div>
-                <div style={s.dsHint}>
-                  {source === 'lists'
-                    ? 'Track whole Lists — progress over each List’s tasks.'
-                    : 'Pick a List, then its related Lists — progress over the related tasks.'}
-                </div>
+                <div style={s.dsLabel}>Data source · Lists</div>
+                <div style={s.dsHint}>Track whole Lists — progress over each List’s tasks.</div>
                 {loading ? <p style={{ color: 'var(--c-muted)' }}>Loading…</p> : (
                   <div style={s.tree}>
                     {spaces.length === 0 && <p style={{ color: 'var(--c-muted)' }}>No spaces yet.</p>}
