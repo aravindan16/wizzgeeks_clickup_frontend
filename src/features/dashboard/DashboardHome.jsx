@@ -7,7 +7,8 @@ import { loadLegacyDashboards, clearLegacyDashboards } from './dashboardStore';
 import { dashboardsApi } from './dashboardsApi';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
-import { IconPlus, IconEdit, IconTrash, Chevron } from '../../components/icons';
+import DashboardShareModal from './DashboardShareModal';
+import { IconPlus, IconEdit, IconTrash, IconMembers, Chevron } from '../../components/icons';
 
 /**
  * ClickUp-style dashboards:
@@ -172,16 +173,19 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
   const [editing, setEditing] = useState(null); // card being edited
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(dashboard.name);
+  const [sharing, setSharing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Sidebar "Add card" navigates here with ?add=1 → open the Add-card modal.
+  // Sidebar actions navigate here with ?add=1 / ?share=1 → open the right modal.
   useEffect(() => {
-    if (searchParams.get('add') === '1') {
-      setAdding(true);
-      const next = new URLSearchParams(searchParams);
-      next.delete('add');
-      setSearchParams(next, { replace: true });
-    }
+    const add = searchParams.get('add') === '1';
+    const share = searchParams.get('share') === '1';
+    if (!add && !share) return;
+    if (add) setAdding(true);
+    if (share) setSharing(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('add'); next.delete('share');
+    setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
   const cards = dashboard.cards || [];
@@ -214,6 +218,7 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        <button style={s.shareBtn} onClick={() => setSharing(true)}><IconMembers size={16} /> Share</button>
         <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>
       </div>
 
@@ -235,6 +240,7 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
 
       <AddCardModal open={adding || !!editing} editCard={editing}
         onClose={() => { setAdding(false); setEditing(null); }} onAdd={saveCard} />
+      <DashboardShareModal open={sharing} dashboardId={dashboard.id} onClose={() => setSharing(false)} />
     </div>
   );
 }
@@ -245,6 +251,8 @@ const s = {
   title: { margin: 0, color: 'var(--c-text-strong)' },
   addBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-primary)',
     color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  shareBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-surface)',
+    color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
 
   // list view
   listCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },

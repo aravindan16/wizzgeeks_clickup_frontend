@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { dashboardsApi } from './dashboardsApi';
 import { useConfirm } from '../../components/ConfirmDialog';
-import { IconDashboard, IconPlus, IconDots, IconTrash, Chevron } from '../../components/icons';
+import { IconDashboard, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
 
 /**
  * Sidebar "Dashboard" section (ClickUp-style, mirrors SpacesMenu): the Dashboard
@@ -48,6 +48,7 @@ export default function DashboardsMenu({ collapsed }) {
   };
 
   const addCard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
+  const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
 
   const deleteDashboard = async (d) => {
     setRowMenu(null);
@@ -112,6 +113,9 @@ export default function DashboardsMenu({ collapsed }) {
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => addCard(d)}>
                         <span style={s.dropIcon}><IconPlus size={15} /></span> Create card
+                      </button>
+                      <button className="wg-menu-item" style={s.dropItem} onClick={() => shareDashboard(d)}>
+                        <span style={s.dropIcon}><IconMembers size={15} /></span> Members
                       </button>
                       <div style={s.divider} />
                       <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteDashboard(d)}>
