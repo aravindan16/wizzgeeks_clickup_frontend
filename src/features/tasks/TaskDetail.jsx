@@ -307,7 +307,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 if (f.type === 'relationship') {
                   return (
                     <div key={f._id} style={s.cfRelBlock}>
-                      <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
+                      <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}
+                        {f.location && <span style={s.cfLoc} title={`List: ${f.location}`}>{f.location}</span>}
+                      </span>
                       <div style={{ marginTop: 8 }}>
                         <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
                           spaceId={task.project_id} onOpenTask={onOpenTask} />
@@ -317,7 +319,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 }
                 return (
                   <div key={f._id} style={s.cfRow}>
-                    <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}</span>
+                    <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}
+                        {f.location && <span style={s.cfLoc} title={`List: ${f.location}`}>{f.location}</span>}
+                      </span>
                     <div style={{ flex: 1 }} />
                     <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
                       spaceId={task.project_id} onOpenTask={onOpenTask} />
@@ -613,6 +617,8 @@ const s = {
   cfRelBlock: { padding: '12px 0', borderTop: '1px solid var(--c-border)' },
   cfName: { display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 500, color: 'var(--c-text-strong)' },
   cfIcon: { color: 'var(--c-muted)', display: 'inline-flex' },
+  cfLoc: { fontSize: 11, fontWeight: 600, color: 'var(--c-muted)', background: 'var(--c-surface-3)',
+    borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' },
   cfInput: { minWidth: 150, maxWidth: 220, padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 7, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
 
   // activity

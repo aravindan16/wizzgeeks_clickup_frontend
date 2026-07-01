@@ -15,7 +15,7 @@ import ThemeCustomizer from '../components/ThemeCustomizer';
  * collapsible, permission-aware left sidebar + main content. Light ClickUp-style.
  */
 const NAV = [
-  { to: '/', label: 'Dashboard', Icon: IconDashboard, end: true },
+  { to: '/dashboard', label: 'Dashboard', Icon: IconDashboard, end: false },
   { to: '/team-activity', label: 'Team Activity', Icon: IconMembers, permission: 'dailyupdate.read.team' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/audit', label: 'Audit Log', Icon: IconReports, permission: 'audit.read' },

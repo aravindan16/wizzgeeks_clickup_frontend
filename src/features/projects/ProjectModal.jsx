@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { projectsApi, PROJECT_STATUSES } from './projectsApi';
 import Select from '../../components/Select';
+import { IconClose } from '../../components/icons';
 
 const EMPTY = { key: '', name: '', description: '', start_date: '', end_date: '' };
 
@@ -61,7 +62,10 @@ export default function ProjectModal({ open, mode, project, onClose, onSaved }) 
   return (
     <div style={ov.backdrop} onClick={onClose}>
       <div style={ov.modal} onClick={(e) => e.stopPropagation()}>
-        <h3>{mode === 'edit' ? 'Edit Space' : 'Create Space'}</h3>
+        <div style={ov.head}>
+          <h3 style={{ margin: 0 }}>{mode === 'edit' ? 'Edit Space' : 'Create Space'}</h3>
+          <button type="button" className="icon-btn" style={ov.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+        </div>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 10 }}>
             <Field label="Key">
@@ -122,6 +126,8 @@ const ov = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 },
   modal: { background: '#fff', borderRadius: 12, padding: 24, width: 500, maxWidth: '90vw' },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  close: { color: 'var(--c-muted)', cursor: 'pointer' },
   input: { padding: '9px 11px', border: '1px solid #d1d5db', borderRadius: 8, width: '100%' },
   btn: { padding: '9px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none',
     borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
