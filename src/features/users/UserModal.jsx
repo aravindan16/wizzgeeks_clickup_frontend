@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { usersApi } from './usersApi';
+import { IconClose } from '../../components/icons';
 
 /**
  * Create/Edit user modal. In edit mode the password field is hidden (password
@@ -77,7 +78,10 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
   return (
     <div style={ov.backdrop} onClick={onClose}>
       <div style={ov.modal} onClick={(e) => e.stopPropagation()}>
-        <h3>{mode === 'edit' ? 'Edit User' : 'Create User'}</h3>
+        <div style={ov.head}>
+          <h3 style={{ margin: 0 }}>{mode === 'edit' ? 'Edit User' : 'Create User'}</h3>
+          <button type="button" className="icon-btn" style={ov.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+        </div>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Field label="Full name">
             <input style={ov.input} value={form.full_name}
@@ -148,6 +152,8 @@ const ov = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
   },
   modal: { background: '#fff', borderRadius: 12, padding: 24, width: 480, maxWidth: '90vw' },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  close: { color: 'var(--c-muted)', cursor: 'pointer' },
   input: { padding: '9px 11px', border: '1px solid #d1d5db', borderRadius: 8, width: '100%' },
   role: { fontSize: 14, display: 'flex', alignItems: 'center', gap: 4,
     border: '1px solid #e5e7eb', padding: '4px 10px', borderRadius: 999 },

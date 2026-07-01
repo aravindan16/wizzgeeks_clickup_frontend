@@ -4,7 +4,7 @@ import { projectsApi } from './projectsApi';
 import { DEFAULT_SPACE_STATUSES } from '../tasks/tasksApi';
 import { useToast } from '../../components/Toast';
 import StatusEditor from './StatusEditor';
-import { Chevron } from '../../components/icons';
+import { Chevron, IconClose } from '../../components/icons';
 
 /**
  * "Let's set up your space" — Jira-style create flow. Space name is the primary
@@ -73,7 +73,10 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
   return (
     <div style={ov.backdrop} onClick={onClose}>
       <div style={ov.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: '0 0 4px' }}>Let’s set up your space</h2>
+        <div style={ov.head}>
+          <h2 style={{ margin: 0 }}>Let’s set up your space</h2>
+          <button type="button" className="icon-btn" style={ov.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+        </div>
         <p style={{ color: 'var(--c-muted)', marginTop: 0 }}>
           These form the building blocks of your space. You can change these settings later.
         </p>
@@ -163,6 +166,8 @@ const ov = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 },
   modal: { background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw',
     maxHeight: '92vh', overflowY: 'auto' },
+  head: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  close: { color: 'var(--c-muted)', cursor: 'pointer' },
   input: { padding: '10px 12px', border: '1px solid var(--c-border)', borderRadius: 8, width: '100%', boxSizing: 'border-box',
     background: 'var(--c-surface)', color: 'var(--c-text)' },
   block: { border: '1px solid var(--c-border)', borderRadius: 10, marginBottom: 10 },

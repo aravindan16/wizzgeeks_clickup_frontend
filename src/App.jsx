@@ -1,6 +1,6 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { useDispatch } from 'react-redux';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout';
 import ProtectedRoute from './routes/ProtectedRoute';
 import GlobalLoader from './components/GlobalLoader';
@@ -67,7 +67,9 @@ export default function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route index element={<DashboardHome />} />
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardHome />} />
+          <Route path="/dashboard/:id" element={<DashboardHome />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
       </Route>

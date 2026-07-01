@@ -222,7 +222,7 @@ export default function SpacesMenu({ collapsed }) {
           <button className="icon-btn" style={s.iconBtn} title="Create space" onClick={() => setSpaceSetupOpen(true)}><IconPlus size={16} /></button>
           {topMenu && (
             <div style={s.dropdown} role="menu">
-              <button style={s.dropItem} onClick={() => { setTopMenu(false); setSpaceSetupOpen(true); }}>
+              <button className="wg-menu-item" style={s.dropItem} onClick={() => { setTopMenu(false); setSpaceSetupOpen(true); }}>
                 <span style={s.dropIcon}><IconPlus size={16} /></span> Create Space
               </button>
             </div>
@@ -253,15 +253,15 @@ export default function SpacesMenu({ collapsed }) {
                 </span>
                 {spaceMenu === sp._id && (
                   <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 6 }} role="menu">
-                    <button style={s.dropItem} onClick={() => openCreateList(sp._id)}>
+                    <button className="wg-menu-item" style={s.dropItem} onClick={() => openCreateList(sp._id)}>
                       <span style={s.dropIcon}><IconPlus size={16} /></span> Create List
                     </button>
-                    <button style={s.dropItem} onClick={() => openSpaceFields(sp)}>
+                    <button className="wg-menu-item" style={s.dropItem} onClick={() => openSpaceFields(sp)}>
                       <span style={s.dropIcon}><IconFields size={16} /></span> Custom Fields
                     </button>
                     <div style={s.divider} />
                     {canDeleteSpace(sp) ? (
-                      <button style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteSpace(sp)}>
+                      <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteSpace(sp)}>
                         <span style={s.dropIcon}><IconTrash size={16} /></span> Delete Space
                       </button>
                     ) : (
@@ -294,11 +294,11 @@ export default function SpacesMenu({ collapsed }) {
                       </span>
                       {listMenu?.id === l._id && (
                         <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
-                          <button style={s.dropItem} onClick={() => renameList(l)}><span style={s.dropIcon}><IconEdit size={16} /></span> Rename</button>
-                          <button style={s.dropItem} onClick={() => openListStatuses(sp, l)}><span style={s.dropIcon}><IconBoard size={16} /></span> Task statuses</button>
-                          <button style={s.dropItem} onClick={() => openListFields(sp, l)}><span style={s.dropIcon}><IconFields size={16} /></span> Custom Fields</button>
+                          <button className="wg-menu-item" style={s.dropItem} onClick={() => renameList(l)}><span style={s.dropIcon}><IconEdit size={16} /></span> Rename</button>
+                          <button className="wg-menu-item" style={s.dropItem} onClick={() => openListStatuses(sp, l)}><span style={s.dropIcon}><IconBoard size={16} /></span> Task statuses</button>
+                          <button className="wg-menu-item" style={s.dropItem} onClick={() => openListFields(sp, l)}><span style={s.dropIcon}><IconFields size={16} /></span> Custom Fields</button>
                           <div style={s.divider} />
-                          <button style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteList(l)}><span style={s.dropIcon}><IconTrash size={16} /></span> Delete</button>
+                          <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteList(l)}><span style={s.dropIcon}><IconTrash size={16} /></span> Delete</button>
                         </div>
                       )}
                     </div>
@@ -328,7 +328,7 @@ const s = {
   heading: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', padding: 0 },
   iconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4, borderRadius: 6 },
   dropdown: { position: 'absolute', top: 'calc(100% + 2px)', right: 6, background: '#fff', color: '#111827', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.25)', zIndex: 300, padding: 4, minWidth: 180 },
-  dropItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5, color: '#111827' },
+  dropItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5, color: '#111827' },
   dropIcon: { width: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit', flexShrink: 0 },
   divider: { height: 1, background: '#f1f5f9', margin: '4px 0' },
   subMenu: { borderTop: '1px solid #f1f5f9', marginTop: 2, paddingTop: 2, maxHeight: 180, overflowY: 'auto' },
