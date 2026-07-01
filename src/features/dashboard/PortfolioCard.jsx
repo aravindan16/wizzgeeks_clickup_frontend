@@ -11,7 +11,9 @@ export default function PortfolioCard({ card, onRemove, onEdit, fill = false }) 
   const rows = data?.rows || null;
 
   const table = (
-    <div style={{ overflowX: 'auto' }}>
+    // In grid (fill) mode the card body scrolls, so the x-scrollbar sits at the
+    // card bottom. Only add an inner x-scroll when not filling (e.g. preview).
+    <div style={fill ? undefined : { overflowX: 'auto' }}>
       <table style={s.table}>
         <thead>
           <tr>
