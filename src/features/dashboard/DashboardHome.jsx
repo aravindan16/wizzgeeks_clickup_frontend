@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import GridLayout, { WidthProvider } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
@@ -9,6 +12,10 @@ import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
 import DashboardShareModal from './DashboardShareModal';
 import { IconPlus, IconEdit, IconTrash, IconMembers, Chevron } from '../../components/icons';
+
+const Grid = WidthProvider(GridLayout);
+// Default grid placement for a card with no saved layout yet (2-up, half width).
+const defaultLayout = (card, i) => ({ x: (i % 2) * 6, y: Math.floor(i / 2) * 9, w: 6, h: 9 });
 
 /**
  * ClickUp-style dashboards:
@@ -191,6 +198,21 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
   const cards = dashboard.cards || [];
   const setCards = (next) => onChange({ ...dashboard, cards: next });
 
+  // Grid layout: derive from each card's saved x/y/w/h (or a default), and
+  // write positions/sizes back onto the cards when the user drags/resizes.
+  const layout = cards.map((c, i) => {
+    const d = defaultLayout(c, i);
+    return { i: c.id, x: c.x ?? d.x, y: c.y ?? d.y, w: c.w ?? d.w, h: c.h ?? d.h, minW: 3, minH: 4 };
+  });
+  const persistLayout = (nextLayout) => {
+    const byId = Object.fromEntries(nextLayout.map((l) => [l.i, l]));
+    const next = cards.map((c) => {
+      const l = byId[c.id];
+      return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
+    });
+    if (JSON.stringify(next) !== JSON.stringify(cards)) setCards(next);
+  };
+
   const saveCard = (card) => {
     setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
     setAdding(false); setEditing(null);
@@ -231,11 +253,23 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </button>
         </div>
       ) : (
-        <div style={s.cards}>
+        <Grid
+          className="wg-dash-grid"
+          cols={12}
+          rowHeight={40}
+          margin={[16, 16]}
+          layout={layout}
+          draggableHandle=".wg-card-grip"
+          onDragStop={persistLayout}
+          onResizeStop={persistLayout}
+          isBounded
+        >
           {cards.map((c) => (
-            <DashboardCard key={c.id} card={c} onRemove={() => removeCard(c.id)} onEdit={() => setEditing(c)} />
+            <div key={c.id}>
+              <DashboardCard card={c} onRemove={() => removeCard(c.id)} onEdit={() => setEditing(c)} fill />
+            </div>
           ))}
-        </div>
+        </Grid>
       )}
 
       <AddCardModal open={adding || !!editing} editCard={editing}

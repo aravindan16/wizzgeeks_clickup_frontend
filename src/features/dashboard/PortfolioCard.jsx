@@ -6,7 +6,7 @@ import { IconListCheck } from '../../components/icons';
  * Portfolio card: for each tracked List/EPIC, a progress bar (done / total),
  * the Done count, and the # of overdue (Due) tasks.
  */
-export default function PortfolioCard({ card, onRemove, onEdit }) {
+export default function PortfolioCard({ card, onRemove, onEdit, fill = false }) {
   const data = useCardData(card);
   const rows = data?.rows || null;
 
@@ -53,7 +53,7 @@ export default function PortfolioCard({ card, onRemove, onEdit }) {
     </div>
   );
 
-  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit}>{table}</CardFrame>;
+  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit} fill={fill}>{table}</CardFrame>;
 }
 
 const s = {

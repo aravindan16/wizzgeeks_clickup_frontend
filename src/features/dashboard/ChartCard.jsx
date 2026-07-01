@@ -5,7 +5,7 @@ import CardFrame from './CardFrame';
  * Chart cards (Line / Bar / Pie / Calculation) over the selected Lists' tasks.
  * Dependency-free — every chart is hand-rendered SVG.
  */
-export default function ChartCard({ card, onRemove, onEdit }) {
+export default function ChartCard({ card, onRemove, onEdit, fill = false }) {
   const data = useCardData(card);
   let body;
   if (!data) body = <div style={s.msg}>Loading…</div>;
@@ -16,7 +16,7 @@ export default function ChartCard({ card, onRemove, onEdit }) {
   else if (card.type === 'line') body = <Line data={data} />;
   else body = <div style={s.msg}>Unknown card type.</div>;
 
-  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit}>{body}</CardFrame>;
+  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit} fill={fill}>{body}</CardFrame>;
 }
 
 /* ----------------------------------------------------------- Calculation */

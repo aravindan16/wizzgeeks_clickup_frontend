@@ -418,6 +418,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 }
 .icon-btn:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
 
+/* --- Dashboard grid (react-grid-layout) --- */
+.wg-dash-grid .react-grid-item { transition: transform 180ms ease, width 180ms ease, height 180ms ease; }
+.wg-dash-grid .react-grid-item.react-grid-placeholder { background: var(--c-primary); opacity: 0.12; border-radius: 12px; }
+.wg-dash-grid .react-grid-item.react-draggable-dragging,
+.wg-dash-grid .react-grid-item.resizing { z-index: 5; transition: none; }
+.wg-dash-grid .react-resizable-handle { z-index: 6; }
+.wg-card-grip { cursor: grab; }
+.wg-card-grip:active { cursor: grabbing; }
+
 /* --- Global interactive feedback: every button highlights + zooms on hover/press --- */
 button { transition: filter var(--t-fast), transform var(--t-fast), background var(--t-fast), box-shadow var(--t-fast); }
 button:not(:disabled):not([aria-disabled="true"]):hover { filter: brightness(0.95); transform: translateY(-1px); }
