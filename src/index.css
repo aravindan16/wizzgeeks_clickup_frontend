@@ -435,6 +435,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 }
 .wg-card-grip { cursor: grab; }
 .wg-card-grip:active { cursor: grabbing; }
+/* Card action icons (expand/settings/delete): show only on hover, like ClickUp. */
+.wg-card-actions { opacity: 0; transition: opacity var(--t-fast); }
+.wg-dash-grid .react-grid-item:hover .wg-card-actions,
+.wg-dash-grid .react-grid-item:focus-within .wg-card-actions { opacity: 1; }
 /* The whole card header is the drag handle (ClickUp-style) */
 .wg-card-head { cursor: grab; }
 .wg-card-head:active { cursor: grabbing; }

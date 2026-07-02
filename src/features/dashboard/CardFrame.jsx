@@ -1,49 +1,27 @@
-import { useState } from 'react';
-import { IconTrash, IconSettings, IconGrip, IconExpand, IconClose } from '../../components/icons';
+import { IconTrash, IconSettings, IconGrip, IconExpand } from '../../components/icons';
 
 /**
  * Chrome shared by every dashboard card: title + grip, and the
- * fullscreen / settings / remove actions. `children` is the card body
- * (a pure element, so it can be rendered in both the card and the overlay).
+ * fullscreen / settings / remove actions. Fullscreen + settings both open the
+ * single card modal (AddCardModal) — see DashboardHome.
  */
-export default function CardFrame({ title, onRemove, onEdit, fill = false, children }) {
-  const [full, setFull] = useState(false);
-
-  const actions = (
-    <span style={s.actions}>
-      <button className="icon-btn" style={s.btn} title={full ? 'Exit full screen' : 'Full screen'}
-        onMouseDown={(e) => e.stopPropagation()} onClick={() => setFull((f) => !f)}>
-        {full ? <IconClose size={16} /> : <IconExpand size={15} />}
-      </button>
-      {onEdit && <button className="icon-btn" style={s.btn} title="Settings"
-        onMouseDown={(e) => e.stopPropagation()} onClick={onEdit}><IconSettings size={15} /></button>}
-      {onRemove && <button className="icon-btn" style={s.btn} title="Remove card"
-        onMouseDown={(e) => e.stopPropagation()} onClick={onRemove}><IconTrash size={15} /></button>}
-    </span>
-  );
-
+export default function CardFrame({ title, onRemove, onEdit, onExpand, fill = false, children }) {
+  const stop = (e) => e.stopPropagation();
   return (
-    <>
-      <div style={{ ...s.card, ...(fill ? s.cardFill : {}) }}>
-        <div className="wg-card-head" style={s.head}>
-          <span style={s.titleWrap}>
-            <span className="wg-card-grip" style={s.grip} title="Drag to move"><IconGrip size={16} /></span>
-            <span style={s.title}>{title}</span>
-          </span>
-          {actions}
-        </div>
-        <div style={fill ? s.bodyFill : undefined}>{children}</div>
+    <div style={{ ...s.card, ...(fill ? s.cardFill : {}) }}>
+      <div className="wg-card-head" style={s.head}>
+        <span style={s.titleWrap}>
+          <span className="wg-card-grip" style={s.grip} title="Drag to move"><IconGrip size={16} /></span>
+          <span style={s.title}>{title}</span>
+        </span>
+        <span className="wg-card-actions" style={s.actions}>
+          {onExpand && <button className="icon-btn" style={s.btn} title="Full screen" onMouseDown={stop} onClick={onExpand}><IconExpand size={15} /></button>}
+          {onEdit && <button className="icon-btn" style={s.btn} title="Settings" onMouseDown={stop} onClick={onEdit}><IconSettings size={15} /></button>}
+          {onRemove && <button className="icon-btn" style={s.btn} title="Remove card" onMouseDown={stop} onClick={onRemove}><IconTrash size={15} /></button>}
+        </span>
       </div>
-
-      {full && (
-        <div style={s.fsBackdrop} onClick={() => setFull(false)}>
-          <div style={s.fsPanel} onClick={(e) => e.stopPropagation()}>
-            <div style={s.head}><span style={s.title}>{title}</span>{actions}</div>
-            <div style={{ flex: 1, overflow: 'auto' }}>{children}</div>
-          </div>
-        </div>
-      )}
-    </>
+      <div style={fill ? s.bodyFill : undefined}>{children}</div>
+    </div>
   );
 }
 
@@ -57,7 +35,4 @@ const s = {
   title: { fontWeight: 700, fontSize: 15, color: 'var(--c-text-strong)' },
   actions: { display: 'inline-flex', alignItems: 'center', gap: 4 },
   btn: { border: 'none', color: 'var(--c-faint)', cursor: 'pointer', display: 'inline-flex' },
-  fsBackdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  fsPanel: { background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 14, width: '95vw', height: '92vh',
-    display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,.3)' },
 };

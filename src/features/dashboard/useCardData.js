@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor } from '../tasks/tasksApi';
+import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor, PRIORITY_COLOR, STATUS_GROUPS } from '../tasks/tasksApi';
+
+const GROUP_COLOR = { not_started: '#9ca3af', active: '#3b82f6', done: '#22c55e', closed: '#16a34a' };
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
@@ -104,6 +106,21 @@ export function useCardData(card) {
           .map(([key, count]) => ({ key, count, label: statusLabel(mergedSts, key), color: statusColor(mergedSts, key) }))
           .sort((a, b) => b.count - a.count);
 
+        const priCount = {};
+        rows.forEach((r) => r.tasks.forEach((t) => { const p = t.priority || 'none'; priCount[p] = (priCount[p] || 0) + 1; }));
+        const PRI_ORDER = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
+        const byPriority = Object.entries(priCount)
+          .map(([key, count]) => ({ key, count, label: key === 'none' ? 'No priority' : key, color: PRIORITY_COLOR[key] || '#94a3b8' }))
+          .sort((a, b) => (PRI_ORDER[a.key] ?? 9) - (PRI_ORDER[b.key] ?? 9));
+
+        // Group tasks by status GROUP (Not started / Active / Done / Closed).
+        const grpCount = {};
+        rows.forEach((r) => r.tasks.forEach((t) => {
+          const g = r.sts.find((s) => s.key === t.status)?.group || 'active';
+          grpCount[g] = (grpCount[g] || 0) + 1;
+        }));
+        const byStatusGroup = STATUS_GROUPS.map((g) => ({ key: g.key, label: g.label, count: grpCount[g.key] || 0, color: GROUP_COLOR[g.key] }));
+
         const total = rows.reduce((s, r) => s + r.total, 0);
         const done = rows.reduce((s, r) => s + r.done, 0);
         const due = rows.reduce((s, r) => s + r.due, 0);
@@ -121,6 +138,8 @@ export function useCardData(card) {
         if (alive) setData({
           rows,
           byStatus,
+          byStatusGroup,
+          byPriority,
           byList: rows.map((r) => ({ name: r.name, total: r.total, done: r.done })),
           total, done, due, timeline,
         });

@@ -312,7 +312,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                       </span>
                       <div style={{ marginTop: 8 }}>
                         <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
-                          spaceId={task.project_id} onOpenTask={onOpenTask} />
+                          spaceId={task.project_id} onOpenTask={onOpenTask} currentListId={task.list_id} />
                       </div>
                     </div>
                   );
@@ -324,7 +324,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                       </span>
                     <div style={{ flex: 1 }} />
                     <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
-                      spaceId={task.project_id} onOpenTask={onOpenTask} />
+                      spaceId={task.project_id} onOpenTask={onOpenTask} currentListId={task.list_id} />
                   </div>
                 );
               })}

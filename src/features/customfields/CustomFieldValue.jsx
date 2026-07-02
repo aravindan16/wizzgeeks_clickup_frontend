@@ -11,10 +11,10 @@ const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month:
  *  - dropdown     → colored chip(s) + options popover (single or multiple)
  *  - relationship → linked-task chips + task search popover (link/unlink/open)
  */
-export default function CustomFieldValue({ field, value, onChange, spaceId, onOpenTask }) {
+export default function CustomFieldValue({ field, value, onChange, spaceId, onOpenTask, currentListId }) {
   if (field.type === 'text') return <TextValue field={field} value={value} onChange={onChange} />;
   if (field.type === 'dropdown') return <DropdownValue field={field} value={value} onChange={onChange} />;
-  if (field.type === 'relationship') return <RelationshipValue field={field} value={value} onChange={onChange} spaceId={spaceId} onOpenTask={onOpenTask} />;
+  if (field.type === 'relationship') return <RelationshipValue field={field} value={value} onChange={onChange} spaceId={spaceId} onOpenTask={onOpenTask} currentListId={currentListId} />;
   return <span style={{ color: '#9ca3af', fontSize: 13 }}>—</span>;
 }
 
@@ -78,7 +78,7 @@ function DropdownValue({ field, value, onChange }) {
   );
 }
 
-function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
+function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, currentListId }) {
   const ids = Array.isArray(value) ? value : (value ? [value] : []);
   const [meta, setMeta] = useState({}); // id -> {key,title}
   const [sts, setSts] = useState([]);   // resolved Space statuses (to detect "done")
@@ -108,13 +108,20 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
   }, [value]); // eslint-disable-line
 
   // Search candidates within the field's scope (whole Space, or a specific List).
-  const scope = field.config?.related_to === 'list' && field.config?.list_id
-    ? { list_id: field.config.list_id } : { project_id: spaceId };
+  // Reverse case: when the current task itself lives in the field's target List
+  // (e.g. an EPICS task on the "Epic" field scoped to EPICS), searching that List
+  // would only offer sibling epics. Instead search the rest of the Space and offer
+  // the OTHER lists' tasks — linking one records the child→epic relation.
+  const targetList = field.config?.related_to === 'list' && field.config?.list_id
+    ? String(field.config.list_id) : null;
+  const onTargetList = !!(targetList && currentListId && String(currentListId) === targetList);
+  const scope = (targetList && !onTargetList) ? { list_id: targetList } : { project_id: spaceId };
   useEffect(() => {
     if (!open) return undefined;
     const h = setTimeout(() => {
       tasksApi.list({ ...scope, search: query, limit: 20 })
-        .then((r) => setResults((r.items || []).filter((x) => !ids.includes(x._id))))
+        .then((r) => setResults((r.items || []).filter((x) =>
+          !ids.includes(x._id) && (!onTargetList || String(x.list_id) !== targetList))))
         .catch(() => setResults([]));
     }, 180);
     return () => clearTimeout(h);
