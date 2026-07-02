@@ -28,6 +28,7 @@
   --c-muted: #6b7280;
   --c-faint: #9ca3af;
   --c-hover: #f3f4f6;         /* row / item hover */
+  --c-hover-strong: #e2e6ec;  /* stronger hover for icon buttons / menu items */
   --c-primary: #111827;       /* primary action bg */
   --c-on-primary: #ffffff;    /* text on primary */
   --c-primary-weak: #f1f2f4;  /* selected / soft accent bg */
@@ -62,6 +63,7 @@
   --c-muted: #9aa3b2;
   --c-faint: #6b7280;
   --c-hover: #232833;
+  --c-hover-strong: #313845;  /* stronger hover for icon buttons / menu items */
   --c-primary: #f3f4f6;       /* light button on dark */
   --c-on-primary: #111827;
   --c-primary-weak: #232833;
@@ -348,7 +350,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
 /* --- User dropdown menu items --- */
 .wg-menu-item { background: none; border: none; transition: background var(--t-fast); }
-.wg-menu-item:hover { background: var(--c-hover); }
+.wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
 
 /* --- Global API loading: centered circular spinner over the viewport --- */
 .wg-loader-overlay {
@@ -414,7 +416,38 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   border: none; background: none; cursor: pointer; color: var(--c-muted);
   border-radius: var(--r-sm); padding: 6px; transition: background var(--t-fast), color var(--t-fast);
 }
-.icon-btn:hover { background: #f1f5f9; color: var(--c-text); }
+.icon-btn:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
+
+/* --- Dashboard grid (react-grid-layout) --- */
+.wg-dash-grid .react-grid-item { transition: transform 180ms ease, width 180ms ease, height 180ms ease; }
+.wg-dash-grid .react-grid-item.react-grid-placeholder { background: var(--c-primary); opacity: 0.12; border-radius: 12px; }
+.wg-dash-grid .react-grid-item.react-draggable-dragging,
+.wg-dash-grid .react-grid-item.resizing { z-index: 5; transition: none; }
+/* ClickUp-style: NO visible resize markers — only the resize cursor on hover.
+   !important because react-resizable's CSS loads after this and re-adds the arrows. */
+.wg-dash-grid .react-resizable-handle { z-index: 6; background: none !important; background-image: none !important; }
+.wg-dash-grid .react-resizable-handle::after { display: none !important; }
+.wg-dash-grid .react-resizable-handle-e, .wg-dash-grid .react-resizable-handle-w { top: 8px; bottom: 8px; height: auto; margin-top: 0; width: 12px; }
+.wg-dash-grid .react-resizable-handle-s { left: 8px; right: 8px; width: auto; margin-left: 0; height: 12px; }
+.wg-dash-grid .react-grid-item:hover > .react-resizable-handle-se::before {
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 7px; height: 7px;
+  border-right: 2px solid var(--c-faint); border-bottom: 2px solid var(--c-faint); border-radius: 1px;
+}
+.wg-card-grip { cursor: grab; }
+.wg-card-grip:active { cursor: grabbing; }
+/* Card action icons (expand/settings/delete): show only on hover, like ClickUp. */
+.wg-card-actions { opacity: 0; transition: opacity var(--t-fast); }
+.wg-dash-grid .react-grid-item:hover .wg-card-actions,
+.wg-dash-grid .react-grid-item:focus-within .wg-card-actions { opacity: 1; }
+/* The whole card header is the drag handle (ClickUp-style) */
+.wg-card-head { cursor: grab; }
+.wg-card-head:active { cursor: grabbing; }
+.wg-card-head button { cursor: pointer; }
+
+/* --- Global interactive feedback: every button highlights + zooms on hover/press --- */
+button { transition: filter var(--t-fast), transform var(--t-fast), background var(--t-fast), box-shadow var(--t-fast); }
+button:not(:disabled):not([aria-disabled="true"]):hover { filter: brightness(0.95); transform: translateY(-1px); }
+button:not(:disabled):not([aria-disabled="true"]):active { transform: scale(0.96); }
 
 /* Empty-state helper */
 .wg-empty { text-align: center; color: var(--c-muted); padding: var(--sp-6) var(--sp-4); animation: wg-fade var(--t-med); }

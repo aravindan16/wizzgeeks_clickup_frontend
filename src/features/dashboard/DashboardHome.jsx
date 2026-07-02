@@ -1,233 +1,385 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { dashboardApi } from './dashboardApi';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import GridLayout, { WidthProvider } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { useAuth } from '../auth/useAuth';
-import BarChart from '../../components/charts/BarChart';
-import { STATUS_LABELS } from '../tasks/tasksApi';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
+import { loadLegacyDashboards, clearLegacyDashboards } from './dashboardStore';
+import { dashboardsApi } from './dashboardsApi';
+import { beginSilent, endSilent } from '../../services/apiClient';
+import AddCardModal from './AddCardModal';
+import DashboardCard from './DashboardCard';
+import DashboardShareModal from './DashboardShareModal';
+import { IconPlus, IconEdit, IconTrash, IconMembers, IconGrip, Chevron } from '../../components/icons';
+
+const Grid = WidthProvider(GridLayout);
+// Default grid placement for a card with no saved layout yet (2-up, half width).
+const defaultLayout = (card, i) => ({ x: (i % 2) * 6, y: Math.floor(i / 2) * 9, w: 6, h: 9 });
 
 /**
- * Role-aware dashboard. Tabs are filtered by the user's permissions; each tab
- * lazy-loads its own analytics endpoint and renders cards + charts.
+ * ClickUp-style dashboards:
+ *   - list view  → all of the user's dashboards; click one to open it
+ *   - detail view → the cards (Portfolio, …) that live inside one dashboard
+ * Everything persists per user in localStorage.
  */
 export default function DashboardHome() {
-  const { user, can } = useAuth();
+  const { user } = useAuth();
+  const uid = user?._id || user?.id;
+  const confirm = useConfirm();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const { id: openId } = useParams(); // /dashboard/:id — the open dashboard, if any
+  const [dashboards, setDashboards] = useState(null); // null = loading
 
-  const tabs = useMemo(() => {
-    const t = [{ id: 'my', label: 'My Dashboard' }];
-    if (can('dashboard.view.team')) t.push({ id: 'team', label: 'Team' });
-    if (can('report.view.all')) t.push({ id: 'manager', label: 'Manager' });
-    if (can('dashboard.view.admin')) t.push({ id: 'admin', label: 'Admin' });
-    return t;
-  }, [can]);
-
-  const [tab, setTab] = useState('my');
-
-  return (
-    <div>
-      <h2>Welcome, {user?.full_name}</h2>
-      <div style={s.tabs}>
-        {tabs.map((t) => (
-          <button key={t.id} style={tab === t.id ? s.tabActive : s.tab} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {tab === 'my' && <EmployeeView />}
-      {tab === 'team' && <TeamView />}
-      {tab === 'manager' && <ManagerView />}
-      {tab === 'admin' && <AdminView />}
-    </div>
-  );
-}
-
-function useFetch(fn, deps = []) {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState(null);
+  // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
-    let live = true;
-    fn().then((d) => live && setData(d)).catch((e) => live && setErr(e.response?.data?.error?.message || 'Error'));
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return [data, err];
-}
+    let alive = true;
+    const load = async () => {
+      try {
+        let { items } = await dashboardsApi.list();
+        if (items.length === 0) {
+          const legacy = loadLegacyDashboards(uid);
+          if (legacy.length) {
+            for (const d of legacy) {
+              await dashboardsApi.create({ name: d.name || 'Dashboard', cards: d.cards || [] }).catch(() => {});
+            }
+            clearLegacyDashboards(uid);
+            items = (await dashboardsApi.list()).items;
+          }
+        }
+        if (alive) setDashboards(items);
+      } catch {
+        if (alive) setDashboards([]);
+      }
+    };
+    load();
+    // Stay in sync with the sidebar (create from there) and other tabs.
+    const onChange = () => load();
+    window.addEventListener('wg-dashboards-changed', onChange);
+    return () => { alive = false; window.removeEventListener('wg-dashboards-changed', onChange); };
+  }, [uid]);
 
-function EmployeeView() {
-  const navigate = useNavigate();
-  const [d] = useFetch(() => dashboardApi.employee());
-  if (!d) return <p>Loading…</p>;
-  const trend = d.activity_trend.map((p) => ({ label: p.date.slice(8), value: p.hours }));
+  const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
+
+  const createDashboard = async () => {
+    try {
+      const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
+      setDashboards((cur) => [...(cur || []), d]);
+      notifyChanged();
+      navigate(`/dashboard/${d.id}`); // jump straight into the new (empty) dashboard
+    } catch { toast.error('Could not create dashboard'); }
+  };
+
+  // Optimistic local update + background save (rename, card add/remove/edit).
+  // opts.silent → drag/resize layout saves: no global loader, no sidebar refetch.
+  const updateDashboard = (d, opts = {}) => {
+    setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
+    if (opts.silent) {
+      beginSilent();
+      dashboardsApi.update(d.id, { name: d.name, cards: d.cards }).catch(() => {}).finally(endSilent);
+    } else {
+      dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
+        .then(notifyChanged)
+        .catch(() => toast.error('Could not save changes'));
+    }
+  };
+
+  const removeDashboard = async (d) => {
+    if (!(await confirm({ title: 'Delete dashboard', message: `Delete "${d.name}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
+    setDashboards((cur) => (cur || []).filter((x) => x.id !== d.id));
+    try { await dashboardsApi.remove(d.id); notifyChanged(); toast.success(`Dashboard "${d.name}" deleted`); }
+    catch { toast.error('Could not delete dashboard'); }
+  };
+
+  if (dashboards === null) return <div style={{ padding: 24, color: 'var(--c-muted)' }}>Loading…</div>;
+
+  const openDash = openId ? dashboards.find((d) => d.id === openId) : null;
+  if (openId && openDash) {
+    return (
+      <DashboardDetail
+        dashboard={openDash}
+        onBack={() => navigate('/dashboard')}
+        onChange={updateDashboard}
+      />
+    );
+  }
+  // Unknown id in the URL → fall back to the list.
+
   return (
-    <div>
-      <div style={s.cards}>
-        <Stat label="Open Tasks" value={d.open_tasks} color="#111827" />
-        <Stat label="Completed" value={d.completed_tasks} color="#166534" />
-        <Stat label="Blocked" value={d.blocked_tasks} color="#b91c1c" />
-        <Stat label="Overdue" value={d.overdue_tasks} color="#b45309" />
-        <Stat label="Hours Today" value={`${d.hours_today}h`} />
-        <Stat label="Weekly Hours" value={`${d.weekly_hours}h`} />
-      </div>
-      <div style={s.row2}>
-        <Panel title="Personal Activity Trend (14 days)">
-          <BarChart data={trend} suffix="h" />
-        </Panel>
-        <Panel title="Today's Tasks">
-          {d.todays_tasks.length === 0 ? <p style={s.muted}>Nothing due. 🎉</p> :
-            d.todays_tasks.map((t) => (
-              <div key={t._id} style={s.taskRow} onClick={() => navigate(`/tasks/${t._id}`)}>
-                <span style={{ color: '#111827', fontWeight: 600 }}>{t.key}</span> {t.title}
-                <span style={s.muted}> · {STATUS_LABELS[t.status] || t.status}</span>
-              </div>
-            ))}
-        </Panel>
-      </div>
-    </div>
+    <DashboardList
+      dashboards={dashboards}
+      onOpen={(id) => navigate(`/dashboard/${id}`)}
+      onCreate={createDashboard}
+      onRename={updateDashboard}
+      onDelete={removeDashboard}
+    />
   );
 }
 
-function TeamView() {
-  const [d] = useFetch(() => dashboardApi.team());
-  if (!d) return <p>Loading…</p>;
-  const dist = d.task_distribution.map((s2) => ({ label: (STATUS_LABELS[s2.status] || s2.status).slice(0, 6), value: s2.count }));
-  const prod = d.team_productivity.map((m) => ({ label: (m.full_name || '').split(' ')[0], value: m.hours }));
+/* ---------------------------------------------------------------- list view */
+function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
+  const [renaming, setRenaming] = useState(null); // dashboard id
+  const [draft, setDraft] = useState('');
+
+  const startRename = (d) => { setRenaming(d.id); setDraft(d.name); };
+  const commitRename = (d) => {
+    const name = (draft || '').trim() || 'Dashboard';
+    onRename({ ...d, name });
+    setRenaming(null);
+  };
+
   return (
-    <div>
-      <div style={s.cards}>
-        <Stat label="Team Members" value={d.team_members.length} />
-        <Stat label="Missing Updates" value={d.missing_updates.length} color="#b45309" />
-        <Stat label="Open Blockers" value={d.open_blockers.length} color="#b91c1c" />
+    <div style={s.wrap}>
+      <div style={s.headRow}>
+        <h2 style={s.title}>Dashboards</h2>
+        {dashboards.length > 0 && (
+          <button style={s.addBtn} onClick={onCreate}><IconPlus size={16} /> New Dashboard</button>
+        )}
       </div>
-      <div style={s.row2}>
-        <Panel title="Team Productivity (week hours)"><BarChart data={prod} suffix="h" color="#166534" /></Panel>
-        <Panel title="Team Task Distribution"><BarChart data={dist} /></Panel>
-      </div>
-      <div style={s.row2}>
-        <Panel title="Team Capacity">
-          {d.team_capacity.map((c) => (
-            <div key={c.user_id} style={s.capRow}>
-              <span>{c.full_name}</span>
-              <span style={s.muted}>{c.open_tasks} open · {c.hours_week}h</span>
+
+      {dashboards.length === 0 ? (
+        <div style={s.emptyGrid}>
+          <button style={s.scratch} onClick={onCreate}>
+            <span style={s.scratchIcon}><IconPlus size={26} /></span>
+            <span style={s.scratchTitle}>Start from scratch</span>
+            <span style={s.scratchDesc}>Create a dashboard, then add cards to it.</span>
+          </button>
+        </div>
+      ) : (
+        <div style={s.listCard}>
+          <div style={s.listHead}>
+            <span style={s.colName}>Name</span>
+            <span style={s.colMeta}>Cards</span>
+            <span style={s.colActions} />
+          </div>
+          {dashboards.map((d) => (
+            <div key={d.id} style={s.listRow}>
+              {renaming === d.id ? (
+                <input style={s.renameInput} value={draft} autoFocus
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={() => commitRename(d)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitRename(d); if (e.key === 'Escape') setRenaming(null); }} />
+              ) : (
+                <button style={s.nameBtn} onClick={() => onOpen(d.id)} title="Open dashboard">
+                  <span style={s.dashIcon}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
+                  <span style={s.dashName}>{d.name}</span>
+                </button>
+              )}
+              <span style={s.colMeta}>{(d.cards || []).length}</span>
+              <span style={s.colActions}>
+                <button className="icon-btn" style={s.iconBtn} title="Rename" onClick={() => startRename(d)}><IconEdit size={15} /></button>
+                <button className="icon-btn" style={s.iconBtn} title="Delete" onClick={() => onDelete(d)}><IconTrash size={15} /></button>
+              </span>
             </div>
           ))}
-        </Panel>
-        <Panel title="Open Blockers">
-          {d.open_blockers.length === 0 ? <p style={s.muted}>None 🎉</p> :
-            d.open_blockers.map((b, i) => (
-              <div key={i} style={{ borderLeft: '3px solid #b91c1c', paddingLeft: 8, marginBottom: 8 }}>
-                <strong>{b.user_name}</strong> <span style={s.muted}>{b.date}</span>
-                <div style={{ color: '#b91c1c', fontSize: 13 }}>{b.blockers}</div>
-              </div>
-            ))}
-        </Panel>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ManagerView() {
-  const navigate = useNavigate();
-  const [d] = useFetch(() => dashboardApi.manager());
-  if (!d) return <p>Loading…</p>;
-  const perf = d.team_performance.map((m) => ({ label: (m.full_name || '').split(' ')[0], value: m.hours }));
+/* -------------------------------------------------------------- detail view */
+function DashboardDetail({ dashboard, onBack, onChange }) {
+  const confirm = useConfirm();
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null); // card open in the modal
+  const [editSidebar, setEditSidebar] = useState(true); // modal opens with the filter panel shown?
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(dashboard.name);
+  const [sharing, setSharing] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Sidebar actions navigate here with ?add=1 / ?share=1 → open the right modal.
+  useEffect(() => {
+    const add = searchParams.get('add') === '1';
+    const share = searchParams.get('share') === '1';
+    if (!add && !share) return;
+    if (add) setAdding(true);
+    if (share) setSharing(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('add'); next.delete('share');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const cards = dashboard.cards || [];
+  const setCards = (next) => onChange({ ...dashboard, cards: next });
+
+  // Grid layout: derive from each card's saved x/y/w/h (or a default), and
+  // write positions/sizes back onto the cards when the user drags/resizes.
+  const layout = cards.map((c, i) => {
+    const d = defaultLayout(c, i);
+    return { i: c.id, x: c.x ?? d.x, y: c.y ?? d.y, w: c.w ?? d.w, h: c.h ?? d.h, minW: 3, minH: 4 };
+  });
+  const persistLayout = (nextLayout) => {
+    const byId = Object.fromEntries(nextLayout.map((l) => [l.i, l]));
+    const next = cards.map((c) => {
+      const l = byId[c.id];
+      return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
+    });
+    // Silent save — no page loader / no refetch when you drag or resize a card.
+    if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
+  };
+
+  // Drop a card ONTO another → the two swap places (no pushing to the next row).
+  // Drop into empty space → the card just moves there.
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const onDragStopSwap = (nextLayout, oldItem, newItem) => {
+    const draggedId = newItem.i;
+    const dragged = layout.find((l) => l.i === draggedId);
+    const target = layout.find((l) => l.i !== draggedId && overlaps(newItem, l));
+    let next;
+    if (target) {
+      next = cards.map((c) => {
+        if (c.id === draggedId) return { ...c, x: target.x, y: target.y };
+        if (c.id === target.i) return { ...c, x: dragged.x, y: dragged.y };
+        return c;
+      });
+    } else {
+      next = cards.map((c) => (c.id === draggedId ? { ...c, x: newItem.x, y: newItem.y } : c));
+    }
+    if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
+  };
+
+  // Pack cards left-to-right into rows using each card's width (like ClickUp),
+  // so narrow cards sit 2–3 per row instead of stacking one per row.
+  const autoArrange = () => {
+    let cx = 0, cy = 0, rowH = 0;
+    const next = cards.map((c, i) => {
+      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
+      const h = c.h ?? defaultLayout(c, i).h;
+      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
+      const placed = { ...c, x: cx, y: cy, w, h };
+      cx += w; rowH = Math.max(rowH, h);
+      return placed;
+    });
+    onChange({ ...dashboard, cards: next }, { silent: true });
+  };
+
+  const saveCard = (card) => {
+    setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
+    setAdding(false); setEditing(null);
+  };
+  const removeCard = async (id) => {
+    const card = cards.find((c) => c.id === id);
+    if (!(await confirm({ title: 'Delete card', message: `Delete "${card?.title || 'this card'}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
+    setCards(cards.filter((c) => c.id !== id));
+  };
+
+  const commitName = () => {
+    const v = (name || '').trim() || 'Dashboard';
+    setName(v); onChange({ ...dashboard, name: v }); setEditingName(false);
+  };
+
   return (
-    <div>
-      <div style={s.cards}>
-        <Stat label="Projects" value={d.project_progress.length} />
-        <Stat label="Delayed Tasks" value={d.delayed_count} color="#b91c1c" />
-        <Stat label="Weekly Hours" value={`${d.weekly_report.total_hours}h`} />
-        <Stat label="Blockers (wk)" value={d.weekly_report.blocker_count} color="#b45309" />
+    <div style={s.wrap}>
+      <div style={s.crumbs}>
+        <button style={s.crumbLink} onClick={onBack}>Dashboards</button>
+        <span style={s.crumbSep}><Chevron open={false} size={12} /></span>
+        {editingName ? (
+          <input style={s.crumbInput} value={name} autoFocus
+            onChange={(e) => setName(e.target.value)} onBlur={commitName}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setName(dashboard.name); setEditingName(false); } }} />
+        ) : (
+          <span style={s.crumbCurrentWrap}>
+            <span style={s.crumbCurrent}>{dashboard.name}</span>
+            <button className="icon-btn" style={s.iconBtn} title="Rename dashboard" onClick={() => setEditingName(true)}><IconEdit size={14} /></button>
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {cards.length > 0 && (
+          <button style={s.shareBtn} title="Pack cards into rows by size" onClick={autoArrange}><IconGrip size={16} /> Auto-arrange</button>
+        )}
+        <button style={s.shareBtn} onClick={() => setSharing(true)}><IconMembers size={16} /> Share</button>
+        <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>
       </div>
-      <div style={s.row2}>
-        <Panel title="Project Progress">
-          {d.project_progress.map((p) => (
-            <div key={p.project_id} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span><strong>{p.key}</strong> {p.name}</span><span>{p.progress}%</span>
-              </div>
-              <div style={s.barOuter}><div style={{ ...s.barInner, width: `${p.progress}%` }} /></div>
+
+      {cards.length === 0 ? (
+        <div style={s.emptyGrid}>
+          <button style={s.scratch} onClick={() => setAdding(true)}>
+            <span style={s.scratchIcon}><IconPlus size={26} /></span>
+            <span style={s.scratchTitle}>Add a card</span>
+            <span style={s.scratchDesc}>Portfolio — more card types coming soon.</span>
+          </button>
+        </div>
+      ) : (
+        <Grid
+          className="wg-dash-grid"
+          cols={12}
+          rowHeight={40}
+          margin={[16, 16]}
+          layout={layout}
+          draggableHandle=".wg-card-head"
+          compactType={null}
+          allowOverlap
+          resizeHandles={['s', 'e', 'w', 'se', 'sw']}
+          onDragStop={onDragStopSwap}
+          onResizeStop={persistLayout}
+        >
+          {cards.map((c) => (
+            <div key={c.id}>
+              <DashboardCard card={c} fill
+                onRemove={() => removeCard(c.id)}
+                onEdit={() => { setEditSidebar(true); setEditing(c); }}
+                onExpand={() => { setEditSidebar(false); setEditing(c); }} />
             </div>
           ))}
-        </Panel>
-        <Panel title="Team Performance (week hours)"><BarChart data={perf} suffix="h" color="#166534" /></Panel>
-      </div>
-      <Panel title={`Delayed Tasks (${d.delayed_count})`}>
-        {d.delayed_tasks.length === 0 ? <p style={s.muted}>None 🎉</p> :
-          d.delayed_tasks.map((t) => (
-            <div key={t._id} style={s.taskRow} onClick={() => navigate(`/tasks/${t._id}`)}>
-              <span style={{ color: '#111827', fontWeight: 600 }}>{t.key}</span> {t.title}
-              <span style={{ color: '#b91c1c' }}> · due {t.due_date}</span>
-            </div>
-          ))}
-      </Panel>
-    </div>
-  );
-}
+        </Grid>
+      )}
 
-function AdminView() {
-  const [d] = useFetch(() => dashboardApi.admin());
-  if (!d) return <p>Loading…</p>;
-  const dist = d.tasks_by_status.map((s2) => ({ label: (STATUS_LABELS[s2.status] || s2.status).slice(0, 6), value: s2.count }));
-  return (
-    <div>
-      <div style={s.cards}>
-        <Stat label="Total Users" value={d.total_users} />
-        <Stat label="Active Users" value={d.active_users} color="#166534" />
-        <Stat label="Projects" value={`${d.active_projects}/${d.total_projects}`} />
-        <Stat label="Tasks" value={d.total_tasks} />
-        <Stat label="Completion" value={`${d.completion_rate}%`} color="#111827" />
-        <Stat label="Prod. Score" value={d.productivity_score} color="#7c3aed" />
-      </div>
-      <div style={s.cards}>
-        <Stat label="Open" value={d.open_tasks} color="#111827" />
-        <Stat label="Blocked" value={d.blocked_tasks} color="#b91c1c" />
-        <Stat label="Overdue" value={d.overdue_tasks} color="#b45309" />
-        <Stat label="Weekly Hours" value={`${d.weekly_hours}h`} />
-        <Stat label="Missing Today" value={d.missing_updates_today} color="#b45309" />
-      </div>
-      <div style={s.row2}>
-        <Panel title="Tasks by Status"><BarChart data={dist} /></Panel>
-        <Panel title="Project Progress">
-          {d.project_progress.map((p) => (
-            <div key={p.project_id} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span><strong>{p.key}</strong></span><span>{p.progress}%</span>
-              </div>
-              <div style={s.barOuter}><div style={{ ...s.barInner, width: `${p.progress}%` }} /></div>
-            </div>
-          ))}
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, color }) {
-  return (
-    <div className="card" style={{ textAlign: 'center', padding: '14px 12px' }}>
-      <div style={{ fontSize: 24, fontWeight: 700, color: color || '#111827' }}>{value ?? '—'}</div>
-      <div style={{ fontSize: 12, color: '#6b7280' }}>{label}</div>
-    </div>
-  );
-}
-
-function Panel({ title, children }) {
-  return (
-    <div className="card" style={{ maxWidth: '100%' }}>
-      <strong style={{ display: 'block', marginBottom: 10 }}>{title}</strong>
-      {children}
+      <AddCardModal open={adding || !!editing} editCard={editing}
+        startWithSidebar={editing ? editSidebar : true}
+        onDelete={() => { const id = editing?.id; setEditing(null); if (id) removeCard(id); }}
+        onClose={() => { setAdding(false); setEditing(null); }} onAdd={saveCard} />
+      <DashboardShareModal open={sharing} dashboardId={dashboard.id} onClose={() => setSharing(false)} />
     </div>
   );
 }
 
 const s = {
-  tabs: { display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #e5e7eb' },
-  tab: { padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' },
-  tabActive: { padding: '8px 16px', background: 'none', border: 'none', borderBottom: '2px solid #111827', cursor: 'pointer', fontWeight: 600 },
-  cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginBottom: 16 },
-  row2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 16 },
-  muted: { color: '#6b7280', fontSize: 13 },
-  taskRow: { padding: '6px 0', borderTop: '1px solid #f1f5f9', cursor: 'pointer', fontSize: 14 },
-  capRow: { display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: '1px solid #f1f5f9', fontSize: 14 },
-  barOuter: { background: '#e5e7eb', borderRadius: 999, height: 8, marginTop: 4, overflow: 'hidden' },
-  barInner: { background: '#111827', height: '100%' },
+  wrap: { padding: '4px 0' },
+  headRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  title: { margin: 0, color: 'var(--c-text-strong)' },
+  addBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-primary)',
+    color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  shareBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-surface)',
+    color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+
+  // list view
+  listCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  listHead: { display: 'flex', alignItems: 'center', padding: '10px 16px', background: 'var(--c-surface-2)',
+    fontSize: 12, fontWeight: 600, color: 'var(--c-muted)' },
+  listRow: { display: 'flex', alignItems: 'center', padding: '6px 16px', borderTop: '1px solid var(--c-border-2)' },
+  colName: { flex: 1 },
+  colMeta: { width: 80, textAlign: 'center', color: 'var(--c-muted)', fontSize: 14 },
+  colActions: { width: 80, display: 'inline-flex', justifyContent: 'flex-end', gap: 4 },
+  nameBtn: { flex: 1, display: 'inline-flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+    cursor: 'pointer', padding: '8px 0', textAlign: 'left', color: 'var(--c-text-strong)' },
+  dashIcon: { width: 26, height: 26, borderRadius: 7, background: 'var(--c-primary-weak)', color: 'var(--c-primary)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 },
+  dashName: { fontWeight: 600, fontSize: 14.5 },
+  renameInput: { flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--c-border)',
+    background: 'var(--c-surface)', color: 'var(--c-text)', fontSize: 14, fontWeight: 600 },
+  iconBtn: { border: 'none', color: 'var(--c-faint)', cursor: 'pointer', display: 'inline-flex', padding: 5, borderRadius: 6 },
+
+  // detail view
+  crumbs: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 18, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', display: 'inline-flex' },
+  crumbCurrentWrap: { display: 'inline-flex', alignItems: 'center', gap: 6 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 18, fontWeight: 700 },
+  crumbInput: { fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 220 },
+
+  // shared empty state
+  emptyGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 320px))', gap: 16 },
+  scratch: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14, minHeight: 200,
+    background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 14, padding: 24, cursor: 'pointer', boxShadow: 'var(--sh-xs)' },
+  scratchIcon: { width: 48, height: 48, borderRadius: '50%', background: 'var(--c-surface-3)', color: 'var(--c-muted)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+  scratchTitle: { fontWeight: 700, fontSize: 17, color: 'var(--c-text-strong)' },
+  scratchDesc: { fontSize: 13, color: 'var(--c-muted)', textAlign: 'left' },
+  cards: { display: 'flex', flexDirection: 'column', gap: 16 },
 };

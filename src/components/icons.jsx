@@ -95,6 +95,16 @@ export const IconTag = ({ size = 18 }) => (
 export const IconClose = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 );
+export const IconGrip = ({ size = 18 }) => (
+  <svg {...base(size)} fill="currentColor" stroke="none">
+    <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+    <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+    <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+  </svg>
+);
+export const IconExpand = ({ size = 18 }) => (
+  <svg {...base(size)}><path d="M8 3H3v5M16 3h5v5M16 21h5v-5M8 21H3v-5" /></svg>
+);
 export const IconLogout = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
 );

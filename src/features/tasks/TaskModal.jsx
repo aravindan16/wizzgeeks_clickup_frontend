@@ -253,7 +253,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
                     <div key={f._id} style={s.fieldRelBlock}>
                       <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
                       <div style={{ marginTop: 8 }}>
-                        <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} />
+                        <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} currentListId={listId} />
                       </div>
                     </div>
                   );
@@ -262,7 +262,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
                   <div key={f._id} style={s.fieldRow}>
                     <span style={s.fieldName}><span style={s.fieldIcon}><Cmp size={14} /></span>{f.name}</span>
                     <div style={{ flex: 1 }} />
-                    <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} />
+                    <CustomFieldValue field={f} value={values[f._id]} onChange={(v) => setVal(f._id, v)} spaceId={spaceId} currentListId={listId} />
                   </div>
                 );
               })}

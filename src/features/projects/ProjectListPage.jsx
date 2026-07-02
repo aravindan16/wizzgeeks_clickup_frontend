@@ -140,14 +140,14 @@ export default function ProjectListPage() {
         <>
           <div style={s.menuBackdrop} onClick={() => setMenu(null)} />
           <div style={{ ...s.menu, top: menu.y + 4, left: menu.x - 168 }}>
-            <button style={s.menuItem} onClick={() => { setMenu(null); navigate(`/projects/${menu.id}`); }}>
+            <button className="wg-menu-item" style={s.menuItem} onClick={() => { setMenu(null); navigate(`/projects/${menu.id}`); }}>
               Open
             </button>
             {canArchive(menuProject) && menuProject.status !== 'archived' && (
-              <button style={s.menuItem} onClick={doArchive}>Archive</button>
+              <button className="wg-menu-item" style={s.menuItem} onClick={doArchive}>Archive</button>
             )}
             {canDelete(menuProject) && (
-              <button style={{ ...s.menuItem, color: '#b91c1c' }} onClick={doDelete}>Delete</button>
+              <button className="wg-menu-item" style={{ ...s.menuItem, color: '#b91c1c' }} onClick={doDelete}>Delete</button>
             )}
           </div>
         </>
@@ -192,7 +192,7 @@ const s = {
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 300 },
   menu: { position: 'fixed', width: 160, background: '#fff', border: '1px solid #e5e7eb',
     borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 301, padding: 4 },
-  menuItem: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+  menuItem: { display: 'block', width: '100%', textAlign: 'left', border: 'none',
     padding: '9px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: '#111827' },
   pager: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 },
   pageBtn: { width: 32, height: 32, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' },

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { tasksApi, PRIORITY_COLOR } from '../tasks/tasksApi';
+import { tasksApi, PRIORITY_COLOR, resolveStatuses, isDoneStatus } from '../tasks/tasksApi';
+import { projectsApi } from '../projects/projectsApi';
 
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 
@@ -10,10 +11,10 @@ const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month:
  *  - dropdown     → colored chip(s) + options popover (single or multiple)
  *  - relationship → linked-task chips + task search popover (link/unlink/open)
  */
-export default function CustomFieldValue({ field, value, onChange, spaceId, onOpenTask }) {
+export default function CustomFieldValue({ field, value, onChange, spaceId, onOpenTask, currentListId }) {
   if (field.type === 'text') return <TextValue field={field} value={value} onChange={onChange} />;
   if (field.type === 'dropdown') return <DropdownValue field={field} value={value} onChange={onChange} />;
-  if (field.type === 'relationship') return <RelationshipValue field={field} value={value} onChange={onChange} spaceId={spaceId} onOpenTask={onOpenTask} />;
+  if (field.type === 'relationship') return <RelationshipValue field={field} value={value} onChange={onChange} spaceId={spaceId} onOpenTask={onOpenTask} currentListId={currentListId} />;
   return <span style={{ color: '#9ca3af', fontSize: 13 }}>—</span>;
 }
 
@@ -77,13 +78,25 @@ function DropdownValue({ field, value, onChange }) {
   );
 }
 
-function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
+function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, currentListId }) {
   const ids = Array.isArray(value) ? value : (value ? [value] : []);
   const [meta, setMeta] = useState({}); // id -> {key,title}
+  const [sts, setSts] = useState([]);   // resolved Space statuses (to detect "done")
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const ref = useRef(null);
+
+  // Resolve the Space's status workflow so we can count completed vs pending.
+  useEffect(() => {
+    if (!spaceId) return;
+    projectsApi.get(spaceId).then((sp) => setSts(resolveStatuses(sp))).catch(() => setSts([]));
+  }, [spaceId]);
+
+  // Completed / pending summary over the linked tasks.
+  const done = ids.filter((id) => meta[id]?.status && isDoneStatus(sts, meta[id].status)).length;
+  const pending = ids.length - done;
+  const pct = ids.length ? Math.round((done / ids.length) * 100) : 0;
 
   // Resolve linked-task details (key, title, priority, due date, status).
   useEffect(() => {
@@ -95,13 +108,20 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
   }, [value]); // eslint-disable-line
 
   // Search candidates within the field's scope (whole Space, or a specific List).
-  const scope = field.config?.related_to === 'list' && field.config?.list_id
-    ? { list_id: field.config.list_id } : { project_id: spaceId };
+  // Reverse case: when the current task itself lives in the field's target List
+  // (e.g. an EPICS task on the "Epic" field scoped to EPICS), searching that List
+  // would only offer sibling epics. Instead search the rest of the Space and offer
+  // the OTHER lists' tasks — linking one records the child→epic relation.
+  const targetList = field.config?.related_to === 'list' && field.config?.list_id
+    ? String(field.config.list_id) : null;
+  const onTargetList = !!(targetList && currentListId && String(currentListId) === targetList);
+  const scope = (targetList && !onTargetList) ? { list_id: targetList } : { project_id: spaceId };
   useEffect(() => {
     if (!open) return undefined;
     const h = setTimeout(() => {
       tasksApi.list({ ...scope, search: query, limit: 20 })
-        .then((r) => setResults((r.items || []).filter((x) => !ids.includes(x._id))))
+        .then((r) => setResults((r.items || []).filter((x) =>
+          !ids.includes(x._id) && (!onTargetList || String(x.list_id) !== targetList))))
         .catch(() => setResults([]));
     }, 180);
     return () => clearTimeout(h);
@@ -120,6 +140,15 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask }) {
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
+      {ids.length > 0 && (
+        <div style={t.relSummary}>
+          <div style={t.relBar}><div style={{ ...t.relBarFill, width: `${pct}%` }} /></div>
+          <span style={t.relSummaryText}>
+            <b style={{ color: '#16a34a' }}>{done}</b> completed · <b style={{ color: '#f59e0b' }}>{pending}</b> pending
+            <span style={{ color: '#9ca3af' }}> · {ids.length} total</span>
+          </span>
+        </div>
+      )}
       {ids.length > 0 && (
         <div style={t.relList}>
           {/* Column header (ClickUp-style related table) */}
@@ -179,6 +208,10 @@ const t = {
   optRow: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: '#374151' },
   dot: { width: 11, height: 11, borderRadius: '50%', flexShrink: 0 },
   // Related-task table (ClickUp-style)
+  relSummary: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 },
+  relBar: { flex: 1, maxWidth: 200, height: 7, borderRadius: 999, background: '#eef0f3', overflow: 'hidden' },
+  relBarFill: { height: '100%', background: '#16a34a', borderRadius: 999, transition: 'width .3s' },
+  relSummaryText: { fontSize: 12.5, color: '#374151', whiteSpace: 'nowrap' },
   relList: { border: '1px solid #eef0f3', borderRadius: 10, overflow: 'hidden', marginBottom: 8 },
   relHead: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', background: '#f9fafb',
     borderBottom: '1px solid #eef0f3', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#9ca3af', letterSpacing: '.03em' },
