@@ -1,11 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { IconTrash, IconHelp } from './icons';
+import { IconTrash, IconHelp, IconEdit } from './icons';
 
 const ConfirmContext = createContext(() => Promise.resolve(false));
+const PromptContext = createContext(() => Promise.resolve(null));
 
 /** useConfirm()(options) → Promise<boolean>. Options: { title, message, confirmLabel, cancelLabel, danger }. */
 export function useConfirm() {
   return useContext(ConfirmContext);
+}
+/** usePrompt()(options) → Promise<string|null>. Options: { title, message, defaultValue, placeholder, confirmLabel }. */
+export function usePrompt() {
+  return useContext(PromptContext);
 }
 
 export function ConfirmProvider({ children }) {
@@ -17,6 +22,11 @@ export function ConfirmProvider({ children }) {
     setOpts({ confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true, ...options });
   }), []);
 
+  const prompt = useCallback((options) => new Promise((resolve) => {
+    resolver.current = resolve;
+    setOpts({ prompt: true, confirmLabel: 'Save', cancelLabel: 'Cancel', danger: false, defaultValue: '', ...options });
+  }), []);
+
   const close = useCallback((result) => {
     resolver.current?.(result);
     resolver.current = null;
@@ -25,25 +35,36 @@ export function ConfirmProvider({ children }) {
 
   return (
     <ConfirmContext.Provider value={confirm}>
-      {children}
-      {opts && <Dialog {...opts} onCancel={() => close(false)} onConfirm={() => close(true)} />}
+      <PromptContext.Provider value={prompt}>
+        {children}
+        {opts && (
+          <Dialog {...opts}
+            onCancel={() => close(opts.prompt ? null : false)}
+            onConfirm={(val) => close(opts.prompt ? val : true)} />
+        )}
+      </PromptContext.Provider>
     </ConfirmContext.Provider>
   );
 }
 
-function Dialog({ title, message, confirmLabel, cancelLabel, danger, onCancel, onConfirm }) {
+function Dialog({ title, message, confirmLabel, cancelLabel, danger, prompt, defaultValue, placeholder, onCancel, onConfirm }) {
   const confirmRef = useRef(null);
+  const inputRef = useRef(null);
+  const [val, setVal] = useState(defaultValue || '');
+  const canConfirm = !prompt || val.trim().length > 0;
 
   useEffect(() => {
-    confirmRef.current?.focus();
+    if (prompt) { inputRef.current?.focus(); inputRef.current?.select(); }
+    else confirmRef.current?.focus();
     const onKey = (e) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter') onConfirm();
+      if (e.key === 'Enter' && !prompt) onConfirm();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel, onConfirm]);
+  }, [onCancel, onConfirm, prompt]);
 
+  const submit = () => { if (canConfirm) onConfirm(prompt ? val.trim() : true); };
   const accent = danger ? '#ef4444' : '#111827';
   const accentBg = danger ? '#fee2e2' : '#f1f2f4';
 
@@ -52,15 +73,21 @@ function Dialog({ title, message, confirmLabel, cancelLabel, danger, onCancel, o
       <div style={s.modal} onMouseDown={(e) => e.stopPropagation()}>
         <div style={s.body}>
           <div style={{ ...s.iconBox, background: accentBg, color: accent }}>
-            {danger ? <IconTrash size={20} /> : <IconHelp size={20} />}
+            {prompt ? <IconEdit size={20} /> : danger ? <IconTrash size={20} /> : <IconHelp size={20} />}
           </div>
           <h3 style={s.title}>{title}</h3>
           {message && <div style={s.message}>{message}</div>}
+          {prompt && (
+            <input ref={inputRef} style={s.input} value={val} placeholder={placeholder || ''}
+              onChange={(e) => setVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }} />
+          )}
         </div>
         <div style={s.footer}>
           <button type="button" style={s.cancel} onClick={onCancel}>{cancelLabel}</button>
-          <button ref={confirmRef} type="button"
-            style={{ ...s.confirm, background: accent }} onClick={onConfirm}>{confirmLabel}</button>
+          <button ref={confirmRef} type="button" disabled={!canConfirm}
+            style={{ ...s.confirm, background: accent, ...(canConfirm ? {} : s.confirmDisabled) }}
+            onClick={submit}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -78,9 +105,12 @@ const s = {
     justifyContent: 'center', fontSize: 20, marginBottom: 14 },
   title: { margin: '0 0 6px', fontSize: 18, fontWeight: 700, color: '#111827' },
   message: { fontSize: 14, color: '#6b7280', lineHeight: 1.55 },
+  input: { width: '100%', boxSizing: 'border-box', marginTop: 14, padding: '11px 13px', fontSize: 14,
+    border: '1px solid #d1d5db', borderRadius: 10, outline: 'none', color: '#111827' },
   footer: { display: 'flex', gap: 10, padding: '14px 24px 20px' },
   cancel: { flex: 1, padding: '11px 14px', background: '#fff', border: '1px solid #e5e7eb',
     borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer', color: '#374151' },
   confirm: { flex: 1.4, padding: '11px 14px', color: '#fff', border: 'none',
     borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' },
+  confirmDisabled: { opacity: 0.5, cursor: 'not-allowed' },
 };

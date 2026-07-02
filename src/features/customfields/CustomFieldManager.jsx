@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { customFieldsApi, FIELD_TYPES, FIELD_TYPE_LABEL } from './customFieldsApi';
 import { listsApi } from '../lists/listsApi';
 import { useToast } from '../../components/Toast';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconSearch, IconTrash, IconPlus, IconEdit, IconFields, IconListCheck, IconFilter } from '../../components/icons';
 import Select from '../../components/Select';
 import { Chevron } from '../../components/icons';
@@ -35,6 +35,7 @@ const uid = () => `o${_seq++}`;
 export default function CustomFieldManager({ open, onClose, scope, spaceId, listId, spaceName, listName }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const prompt = usePrompt();
   const [fields, setFields] = useState([]);
   const [lists, setLists] = useState([]);
   const [query, setQuery] = useState('');
@@ -111,7 +112,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
   const move = async (f, target) => { setRowMenu(null); setMoveFor(null); await customFieldsApi.move(f._id, target); toast.success('Field moved'); loadFields(); loadCounts(); };
   const renameField = async (f) => {
     setRowMenu(null);
-    const name = window.prompt('Rename field', f.name);
+    const name = await prompt({ title: 'Rename field', defaultValue: f.name, placeholder: 'Field name', confirmLabel: 'Rename' });
     if (!name || !name.trim() || name.trim() === f.name) return;
     try { await customFieldsApi.update(f._id, { name: name.trim() }); toast.success('Field renamed'); loadFields(); loadCounts(); }
     catch (e) { toast.error(e.response?.data?.error?.message || 'Could not rename field'); }

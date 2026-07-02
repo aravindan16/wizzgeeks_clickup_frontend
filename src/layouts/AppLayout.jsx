@@ -5,6 +5,7 @@ import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import DashboardsMenu from '../features/dashboard/DashboardsMenu';
+import FiltersMenu from '../features/filters/FiltersMenu';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
   IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
@@ -52,6 +53,20 @@ export default function AppLayout() {
   const width = collapsed ? 68 : 240;
   const role = (user?.roles || [])[0] || 'member';
 
+  // Shared renderer for a top-level sidebar link (used above and below the Spaces tree).
+  const renderNav = (n) => (
+    <NavLink key={n.to} to={n.to} end={n.end} title={n.label}
+      className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+      style={({ isActive }) => ({
+        ...s.navItem,
+        ...(collapsed ? s.navItemCollapsed : {}),
+        ...(isActive ? s.navActive : {}),
+      })}>
+      <span style={s.navIcon}><n.Icon size={18} /></span>
+      {!collapsed && <span style={s.navLabel}>{n.label}</span>}
+    </NavLink>
+  );
+
   return (
     <div style={s.shell}>
 
@@ -83,19 +98,9 @@ export default function AppLayout() {
           <div style={s.navScroll}>
             <nav style={s.nav}>
               <DashboardsMenu collapsed={collapsed} />
-              {NAV.filter((n) => !n.permission || can(n.permission)).map((n) => (
-                <NavLink key={n.to} to={n.to} end={n.end} title={n.label}
-                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                  style={({ isActive }) => ({
-                    ...s.navItem,
-                    ...(collapsed ? s.navItemCollapsed : {}),
-                    ...(isActive ? s.navActive : {}),
-                  })}>
-                  <span style={s.navIcon}><n.Icon size={18} /></span>
-                  {!collapsed && <span style={s.navLabel}>{n.label}</span>}
-                </NavLink>
-              ))}
+              {NAV.filter((n) => !n.permission || can(n.permission)).map(renderNav)}
               {can('project.read') && <SpacesMenu collapsed={collapsed} />}
+              {can('task.read') && <FiltersMenu collapsed={collapsed} />}
             </nav>
           </div>
 
