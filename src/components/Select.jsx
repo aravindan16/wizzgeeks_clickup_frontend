@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { IconChevronDown, IconCheck } from './icons';
 
 /**
@@ -8,11 +9,12 @@ import { IconChevronDown, IconCheck } from './icons';
  * The menu is position:fixed (anchored to the trigger) so it never clips, and
  * flips above the trigger when there isn't room below.
  */
-export default function Select({ value, onChange, options = [], placeholder = 'Select…', disabled, style }) {
+export default function Select({ value, onChange, options = [], placeholder = 'Select…', disabled, style, highlight = false }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const btnRef = useRef(null);
+  const menuRef = useRef(null);
   const selected = options.find((o) => o.value === value);
 
   useEffect(() => {
@@ -32,7 +34,11 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
       });
     };
     place();
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // Menu is portaled to <body>, so treat clicks inside it (via menuRef) as inside too.
+    const onDoc = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     const onEsc = (e) => e.key === 'Escape' && setOpen(false);
     // Capture phase so a parent modal's stopPropagation() can't swallow the outside-click.
     document.addEventListener('mousedown', onDoc, true);
@@ -52,13 +58,13 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
   return (
     <div ref={ref} style={{ position: 'relative', ...style }}>
       <button ref={btnRef} type="button" disabled={disabled} className="wg-select-trigger"
-        style={{ ...s.trigger, ...(open ? s.triggerOpen : {}), ...(disabled ? s.disabled : {}) }}
+        style={{ ...s.trigger, ...(highlight && !open ? s.triggerHighlight : {}), ...(open ? s.triggerOpen : {}), ...(disabled ? s.disabled : {}) }}
         onClick={() => !disabled && setOpen((o) => !o)}>
         <span style={{ ...s.value, color: selected ? '#1f2430' : '#9ca3af' }}>{selected ? selected.label : placeholder}</span>
         <span style={{ ...s.chev, transform: open ? 'rotate(180deg)' : 'none' }}><IconChevronDown size={16} /></span>
       </button>
-      {open && pos && (
-        <div role="listbox"
+      {open && pos && createPortal(
+        <div ref={menuRef} role="listbox"
           style={{ ...s.menu, left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}>
           {options.length === 0 && <div style={s.empty}>No options</div>}
           {options.map((o) => {
@@ -72,7 +78,8 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -87,6 +94,7 @@ const s = {
     textAlign: 'left', transition: 'border-color .12s, box-shadow .12s',
   },
   triggerOpen: { borderColor: '#111827', boxShadow: '0 0 0 3px rgba(17,24,39,.12)' },
+  triggerHighlight: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 2px var(--c-primary-weak)' },
   disabled: { background: '#f3f4f6', color: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
   value: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   chev: { color: '#6b7280', display: 'inline-flex', transition: 'transform .15s', flexShrink: 0 },
