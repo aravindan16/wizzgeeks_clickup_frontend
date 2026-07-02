@@ -5,18 +5,18 @@ import CardFrame from './CardFrame';
  * Chart cards (Line / Bar / Pie / Calculation) over the selected Lists' tasks.
  * Dependency-free — every chart is hand-rendered SVG.
  */
-export default function ChartCard({ card, onRemove, onEdit, fill = false }) {
+export default function ChartCard({ card, onRemove, onEdit, onExpand, fill = false }) {
   const data = useCardData(card);
   let body;
   if (!data) body = <div style={s.msg}>Loading…</div>;
   else if (data.total === 0 && card.type !== 'calculation') body = <div style={s.msg}>No tasks in the selected Lists.</div>;
   else if (card.type === 'calculation') body = <Calculation data={data} />;
-  else if (card.type === 'pie') body = <Pie data={data} />;
-  else if (card.type === 'bar') body = <Bar data={data} />;
+  else if (card.type === 'pie') body = <Pie data={data} xMeasure={card.xMeasure} xShow={card.xShow} />;
+  else if (card.type === 'bar') body = <Bar data={data} xMeasure={card.xMeasure} xShow={card.xShow} />;
   else if (card.type === 'line') body = <Line data={data} />;
   else body = <div style={s.msg}>Unknown card type.</div>;
 
-  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit} fill={fill}>{body}</CardFrame>;
+  return <CardFrame title={card.title} onRemove={onRemove} onEdit={onEdit} onExpand={onExpand} fill={fill}>{body}</CardFrame>;
 }
 
 /* ----------------------------------------------------------- Calculation */
@@ -29,9 +29,27 @@ function Calculation({ data }) {
   );
 }
 
+// Build the chart series [{key,label,count,color}] for the chosen X-axis measure,
+// optionally filtered to the categories in `xShow` (empty/undefined = show all).
+function series(data, xMeasure, xShow) {
+  let arr;
+  if (xMeasure === 'priority') arr = data.byPriority || [];
+  else if (xMeasure === 'list') arr = (data.byList || []).map((l) => ({ key: l.name, label: l.name, count: l.total, color: 'var(--c-primary)' }));
+  else arr = data.byStatusGroup || []; // default: status group (Not started/Active/Done/Closed)
+  if (Array.isArray(xShow) && xShow.length) arr = arr.filter((a) => xShow.includes(a.key));
+  return arr;
+}
+const niceCeil = (v) => {
+  if (v <= 5) return 5;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / p;
+  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return m * p;
+};
+
 /* ------------------------------------------------------------------- Pie */
-function Pie({ data }) {
-  const items = data.byStatus.filter((i) => i.count > 0);
+function Pie({ data, xMeasure, xShow }) {
+  const items = series(data, xMeasure, xShow).filter((i) => i.count > 0);
   const total = items.reduce((s2, i) => s2 + i.count, 0);
   if (!total) return <div style={s.msg}>No tasks to chart.</div>;
 
@@ -74,32 +92,44 @@ function Pie({ data }) {
 }
 
 /* ------------------------------------------------------------------- Bar */
-function Bar({ data }) {
-  const items = data.byList;
-  if (!items.length) return <div style={s.msg}>No lists selected.</div>;
-  const max = Math.max(1, ...items.map((i) => i.total));
-  const H = 150;
+function Bar({ data, xMeasure, xShow }) {
+  const items = series(data, xMeasure, xShow);
+  if (!items.length) return <div style={s.msg}>No data to chart.</div>;
+  const maxV = Math.max(1, ...items.map((i) => i.count));
+  const niceMax = niceCeil(maxV);
+  const W = 560, H = 300, padL = 34, padR = 12, padT = 14, padB = 34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const band = plotW / items.length;
+  const barW = Math.min(56, band * 0.55);
+  const ticks = 5;
+  const yOf = (v) => padT + plotH - (v / niceMax) * plotH;
   return (
     <div style={s.barWrap}>
-      <div style={s.bars}>
-        {items.map((it, i) => {
-          const h = Math.round((it.total / max) * H);
-          const dh = Math.round((it.done / max) * H);
+      <div style={s.axisTitle}>Tasks</div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 360, overflow: 'visible' }}>
+        {Array.from({ length: ticks + 1 }).map((_, i) => {
+          const v = (niceMax * i) / ticks;
+          const yy = yOf(v);
           return (
-            <div key={i} style={s.barCol}>
-              <div style={s.barVal}>{it.total}</div>
-              <div style={{ ...s.barTotal, height: Math.max(h, 3) }} title={`${it.done}/${it.total} done`}>
-                <div style={{ ...s.barDone, height: dh }} />
-              </div>
-              <div style={s.barName} title={it.name}>{it.name}</div>
-            </div>
+            <g key={i}>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="var(--c-border-2)" strokeWidth={1} />
+              <text x={padL - 6} y={yy + 4} textAnchor="end" fontSize={11} fill="var(--c-muted)">{Math.round(v)}</text>
+            </g>
           );
         })}
-      </div>
-      <div style={s.barLegend}>
-        <span style={s.legendRow}><span style={{ ...s.dot, background: 'var(--c-primary)' }} />Done</span>
-        <span style={s.legendRow}><span style={{ ...s.dot, background: 'var(--c-primary-weak)' }} />Remaining</span>
-      </div>
+        {items.map((it, i) => {
+          const cx = padL + band * i + band / 2;
+          const bh = (it.count / niceMax) * plotH;
+          return (
+            <g key={it.key}>
+              <rect x={cx - barW / 2} y={padT + plotH - bh} width={barW} height={Math.max(bh, 0)} rx={4} fill={it.color}>
+                <title>{`${it.label}: ${it.count}`}</title>
+              </rect>
+              <text x={cx} y={H - padB + 16} textAnchor="middle" fontSize={11} fill="var(--c-muted)">{it.label}</text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -158,7 +188,8 @@ const s = {
   legendVal: { color: 'var(--c-muted)', fontSize: 12.5 },
   dot: { width: 10, height: 10, borderRadius: 3, display: 'inline-block', flexShrink: 0 },
 
-  barWrap: { padding: '18px 20px' },
+  barWrap: { padding: '14px 16px' },
+  axisTitle: { fontSize: 11, color: 'var(--c-muted)', marginBottom: 2 },
   bars: { display: 'flex', alignItems: 'flex-end', gap: 18, height: 190, overflowX: 'auto', paddingBottom: 4 },
   barCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 56, height: '100%', justifyContent: 'flex-end' },
   barVal: { fontSize: 12, fontWeight: 700, color: 'var(--c-text-strong)' },

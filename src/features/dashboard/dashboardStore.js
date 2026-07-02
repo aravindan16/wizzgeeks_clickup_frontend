@@ -13,6 +13,8 @@ export function newCard(type, payload, title) {
     source: p.source || 'lists',
     lists: p.lists || [],
     tasks: p.tasks || [],
+    xMeasure: p.xMeasure || 'status', // chart X-axis grouping: status | priority | list
+    xShow: p.xShow || [],             // which X categories to show ([] = all)
   };
 }
 

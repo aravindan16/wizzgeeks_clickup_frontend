@@ -183,8 +183,10 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 
 /* -------------------------------------------------------------- detail view */
 function DashboardDetail({ dashboard, onBack, onChange }) {
+  const confirm = useConfirm();
   const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState(null); // card being edited
+  const [editing, setEditing] = useState(null); // card open in the modal
+  const [editSidebar, setEditSidebar] = useState(true); // modal opens with the filter panel shown?
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(dashboard.name);
   const [sharing, setSharing] = useState(false);
@@ -260,7 +262,11 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
     setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
     setAdding(false); setEditing(null);
   };
-  const removeCard = (id) => setCards(cards.filter((c) => c.id !== id));
+  const removeCard = async (id) => {
+    const card = cards.find((c) => c.id === id);
+    if (!(await confirm({ title: 'Delete card', message: `Delete "${card?.title || 'this card'}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
+    setCards(cards.filter((c) => c.id !== id));
+  };
 
   const commitName = () => {
     const v = (name || '').trim() || 'Dashboard';
@@ -314,13 +320,18 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
         >
           {cards.map((c) => (
             <div key={c.id}>
-              <DashboardCard card={c} onRemove={() => removeCard(c.id)} onEdit={() => setEditing(c)} fill />
+              <DashboardCard card={c} fill
+                onRemove={() => removeCard(c.id)}
+                onEdit={() => { setEditSidebar(true); setEditing(c); }}
+                onExpand={() => { setEditSidebar(false); setEditing(c); }} />
             </div>
           ))}
         </Grid>
       )}
 
       <AddCardModal open={adding || !!editing} editCard={editing}
+        startWithSidebar={editing ? editSidebar : true}
+        onDelete={() => { const id = editing?.id; setEditing(null); if (id) removeCard(id); }}
         onClose={() => { setAdding(false); setEditing(null); }} onAdd={saveCard} />
       <DashboardShareModal open={sharing} dashboardId={dashboard.id} onClose={() => setSharing(false)} />
     </div>

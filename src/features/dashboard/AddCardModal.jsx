@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
 import { newCard } from './dashboardStore';
 import { CARD_TYPES, cardTypeTitle } from './cardTypes';
+import { STATUS_GROUPS, PRIORITIES } from '../tasks/tasksApi';
 import DashboardCard from './DashboardCard';
-import { IconClose, IconListCheck, Chevron } from '../../components/icons';
+import { IconClose, IconListCheck, IconPanel, IconDots, IconTrash, Chevron } from '../../components/icons';
 
 /**
  * Two-step "Add card" flow:
@@ -15,8 +16,21 @@ import { IconClose, IconListCheck, Chevron } from '../../components/icons';
  *        - Related: pick a List, then which of its related Lists (Frontend / Backend …)
  *                   to track — progress over the related tasks (relationship fields).
  */
-export default function AddCardModal({ open, onClose, onAdd, editCard = null }) {
+export default function AddCardModal({ open, onClose, onAdd, editCard = null, startWithSidebar = true, onDelete }) {
   const [step, setStep] = useState('picker');
+  const [showSidebar, setShowSidebar] = useState(true); // data-source filter panel visible?
+  const [hdrMenu, setHdrMenu] = useState(false);         // header ⋯ menu
+  const hdrMenuRef = useRef(null);
+
+  // Close the header ⋯ menu on outside click; Escape closes the menu then the modal.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (hdrMenu && hdrMenuRef.current && !hdrMenuRef.current.contains(e.target)) setHdrMenu(false); };
+    const onKey = (e) => { if (e.key === 'Escape') { if (hdrMenu) setHdrMenu(false); else onClose(); } };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown, true); document.removeEventListener('keydown', onKey); };
+  }, [open, hdrMenu, onClose]);
   const [cardType, setCardType] = useState(null);
   const [spaces, setSpaces] = useState([]);
   const [listsBySpace, setListsBySpace] = useState({});
@@ -26,6 +40,9 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
   const [relatedByList, setRelatedByList] = useState({}); // listId -> available related-list names
   const [openSpaces, setOpenSpaces] = useState({}); // spaceId -> expanded?
   const [cardName, setCardName] = useState('');
+  const [xMeasure, setXMeasure] = useState('status'); // chart X-axis grouping
+  const [xShow, setXShow] = useState([]);             // which X categories to show ([] = all)
+  const [showOpen, setShowOpen] = useState(false);    // "Show" checkbox dropdown open?
   const [loading, setLoading] = useState(false);
 
   const toggleOpen = (sid) => setOpenSpaces((o) => ({ ...o, [sid]: !o[sid] }));
@@ -46,6 +63,8 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
 
   useEffect(() => {
     if (!open) return;
+    setHdrMenu(false);
+    setShowSidebar(editCard ? startWithSidebar : true);
     if (editCard) {
       const sel = {}; const selR = {}; const opens = {}; const rBy = {};
       (editCard.lists || []).forEach((l) => { sel[l.id] = l; opens[l.spaceId] = true; });
@@ -56,13 +75,15 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
       setOpenSpaces(opens);
       setCardType(editCard.type || 'portfolio');
       setCardName(editCard.title || cardTypeTitle(editCard.type));
+      setXMeasure(editCard.xMeasure || 'status');
+      setXShow(editCard.xShow || []); setShowOpen(false);
       setStep('config');
       loadData();
     } else {
       setStep('picker'); setSelected({}); setSelectedRelated({});
-      setRelatedByList({}); setOpenSpaces({}); setCardType(null); setCardName('');
+      setRelatedByList({}); setOpenSpaces({}); setCardType(null); setCardName(''); setXMeasure('status'); setXShow([]); setShowOpen(false);
     }
-  }, [open, editCard]);
+  }, [open, editCard, startWithSidebar]);
 
   const pick = (type) => {
     setCardType(type);
@@ -113,15 +134,24 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
   });
 
   const count = source === 'tasks' ? Object.keys(selectedRelated).length : Object.keys(selected).length;
+  const isChart = cardType === 'bar' || cardType === 'pie';
+  // Categories available for the "Show" filter, derived from the X-axis measure.
+  const xCategories = useMemo(() => {
+    if (xMeasure === 'priority') return PRIORITIES.map((p) => ({ key: p, label: p }));
+    if (xMeasure === 'list') return Object.values(selected).map((l) => ({ key: l.name, label: l.name }));
+    return STATUS_GROUPS.map((g) => ({ key: g.key, label: g.label }));
+  }, [xMeasure, selected]);
+  const toggleShow = (key) => setXShow((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
+
   const previewCard = useMemo(
     () => ({ id: 'preview', type: cardType, title: cardName || cardTypeTitle(cardType),
-      source, lists: Object.values(selected), tasks: Object.values(selectedRelated) }),
-    [selected, selectedRelated, source, cardName, cardType],
+      source, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow }),
+    [selected, selectedRelated, source, cardName, cardType, xMeasure, xShow],
   );
   const add = () => {
     if (!count) return;
     const title = (cardName || '').trim() || cardTypeTitle(cardType);
-    const payload = { source, lists: Object.values(selected), tasks: Object.values(selectedRelated) };
+    const payload = { source, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow };
     onAdd(editCard ? { ...editCard, title, ...payload } : newCard(cardType, payload, title));
   };
 
@@ -155,20 +185,40 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
         ) : (
           <>
             <div style={s.head}>
-              <h3 style={s.title}>{cardTypeTitle(cardType)}</h3>
-              <button style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+              <h3 style={s.title}>{cardName || cardTypeTitle(cardType)}</h3>
+              <span style={s.headActions}>
+                <button className="icon-btn" style={s.hdrBtn} title={showSidebar ? 'Hide filter' : 'Show filter'}
+                  onClick={() => setShowSidebar((v) => !v)}><IconPanel size={17} /></button>
+                {editCard && onDelete && (
+                  <span ref={hdrMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+                    <button className="icon-btn" style={s.hdrBtn} title="More" onClick={() => setHdrMenu((m) => !m)}><IconDots size={17} /></button>
+                    {hdrMenu && (
+                      <div style={s.hdrMenu} onClick={(e) => e.stopPropagation()}>
+                        <button className="wg-menu-item" style={{ ...s.hdrMenuItem, color: '#b91c1c' }}
+                          onClick={() => { setHdrMenu(false); onClose(); onDelete(); }}>
+                          <IconTrash size={15} /> Delete card
+                        </button>
+                      </div>
+                    )}
+                  </span>
+                )}
+                <button className="icon-btn" style={s.hdrBtn} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+              </span>
             </div>
-            <div style={s.nameRow}>
-              <label style={s.nameLabel}>Name</label>
-              <input style={s.nameInput} value={cardName} placeholder={cardTypeTitle(cardType)}
-                onChange={(e) => setCardName(e.target.value)} />
-            </div>
+            {showSidebar && (
+              <div style={s.nameRow}>
+                <label style={s.nameLabel}>Name</label>
+                <input style={s.nameInput} value={cardName} placeholder={cardTypeTitle(cardType)}
+                  onChange={(e) => setCardName(e.target.value)} />
+              </div>
+            )}
             <div style={s.split}>
               <div style={s.leftPane}>
                 {count === 0
                   ? <div style={s.previewEmpty}>Select {source === 'tasks' ? 'a List' : 'Lists'} on the right to preview the {cardTypeTitle(cardType)}.</div>
                   : <DashboardCard card={previewCard} />}
               </div>
+              {showSidebar && (
               <div style={s.rightPane}>
                 <div style={s.dsLabel}>Data source · Lists</div>
                 <div style={s.dsHint}>Track whole Lists — progress over each List’s tasks.</div>
@@ -232,8 +282,53 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
                     })}
                   </div>
                 )}
+                {isChart && (
+                  <div style={s.axisBlock}>
+                    <div style={s.axisDivider} />
+                    <div style={s.dsLabel}>X-axis</div>
+                    <label style={s.axisRow}>
+                      <span style={s.axisLabel}>Measure</span>
+                      <select style={s.axisSelect} value={xMeasure} onChange={(e) => { setXMeasure(e.target.value); setXShow([]); }}>
+                        <option value="status">Status</option>
+                        <option value="priority">Priority</option>
+                        <option value="list">List</option>
+                      </select>
+                    </label>
+                    <div style={s.axisRow}>
+                      <span style={s.axisLabel}>Show</span>
+                      <div style={{ position: 'relative' }}>
+                        <button type="button" style={s.showBtn} onClick={() => setShowOpen((o) => !o)}>
+                          <span style={{ flex: 1, textAlign: 'left' }}>{xShow.length ? `${xShow.length} selected` : 'All'}</span>
+                          <Chevron open={showOpen} size={12} />
+                        </button>
+                        {showOpen && (
+                          <div style={s.showMenu}>
+                            <button type="button" className="wg-menu-item" style={s.showItem} onClick={() => { setXShow([]); }}>
+                              <span style={{ flex: 1 }}>All</span>{xShow.length === 0 ? '✓' : ''}
+                            </button>
+                            <div style={s.axisDivider} />
+                            {xCategories.length === 0 && <div style={s.showEmpty}>Select Lists first</div>}
+                            {xCategories.map((c) => (
+                              <label key={c.key} className="wg-menu-item" style={s.showItem}>
+                                <span style={{ flex: 1, textTransform: 'capitalize' }}>{c.label}</span>
+                                <input type="checkbox" checked={xShow.includes(c.key)} onChange={() => toggleShow(c.key)} />
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ ...s.dsLabel, marginTop: 14 }}>Y-axis</div>
+                    <label style={s.axisRow}>
+                      <span style={s.axisLabel}>Measure</span>
+                      <select style={s.axisSelect} value="count" disabled><option value="count">Number of tasks</option></select>
+                    </label>
+                  </div>
+                )}
               </div>
+              )}
             </div>
+            {showSidebar && (
             <div style={s.footer}>
               <button style={s.ghost} onClick={() => (editCard ? onClose() : setStep('picker'))}>
                 {editCard ? 'Cancel' : 'Back'}
@@ -242,6 +337,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null }) 
                 {editCard ? 'Save' : `Add card${count ? ` (${count})` : ''}`}
               </button>
             </div>
+            )}
           </>
         )}
       </div>
@@ -298,8 +394,14 @@ const s = {
 
   // config
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  title: { margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)' },
+  title: { margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   close: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex' },
+  headActions: { display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 },
+  hdrBtn: { border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex' },
+  hdrMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 160, background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 5, padding: 4 },
+  hdrMenuItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px',
+    border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5 },
   nameRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
   nameLabel: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-muted)' },
   nameInput: { flex: 1, maxWidth: 360, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--c-border)',
@@ -308,6 +410,18 @@ const s = {
   leftPane: { flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 },
   rightPane: { width: 320, flexShrink: 0, borderLeft: '1px solid var(--c-border)', paddingLeft: 20, overflowY: 'auto' },
   dsLabel: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-muted)', marginBottom: 8 },
+  axisBlock: { marginBottom: 8 },
+  axisRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  axisLabel: { fontSize: 13.5, color: 'var(--c-text)' },
+  axisSelect: { minWidth: 150, fontSize: 13 },
+  axisDivider: { height: 1, background: 'var(--c-border-2)', margin: '14px 0' },
+  showBtn: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 150, padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-text)', fontSize: 13, cursor: 'pointer' },
+  showMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 180, background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 6, padding: 4, maxHeight: 240, overflowY: 'auto' },
+  showItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '7px 10px',
+    border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5, color: 'var(--c-text)' },
+  showEmpty: { fontSize: 12.5, color: 'var(--c-faint)', padding: '6px 10px' },
   segmented: { display: 'flex', gap: 4, background: 'var(--c-surface-3)', borderRadius: 8, padding: 3, marginBottom: 8 },
   segBtn: { flex: 1, padding: '6px 8px', borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer',
     fontSize: 12.5, fontWeight: 600, color: 'var(--c-muted)' },
