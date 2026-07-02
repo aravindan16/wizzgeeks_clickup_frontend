@@ -276,14 +276,25 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
                           <td style={s.td}><span style={s.locPill}>{f.location || '—'}</span>{f.inherited && <span style={s.inheritTag}>inherited</span>}</td>
                           <td style={{ ...s.td, position: 'relative' }}>
                             <div style={s.actionsCell}>
-                              {f.inherited && loc.kind === 'list' && (
-                                <span style={s.toggleCell} title={f.enabled === false ? 'Disabled for this list — turn on to use it here' : 'Enabled for this list'}>
-                                  <Switch on={f.enabled !== false} onClick={() => toggleListField(f)} />
-                                  <span style={{ ...s.toggleLabel, color: f.enabled === false ? '#9ca3af' : '#16a34a' }}>
-                                    {f.enabled === false ? 'Disabled' : 'Enabled'}
+                              {f.inherited && loc.kind === 'list' && (() => {
+                                // A relationship field pointing at the List you're currently
+                                // viewing (e.g. "Epic" → EPICS while in EPICS) is always on for
+                                // that List — its toggle is read-only. Fields pointing at other
+                                // Lists (e.g. "Sprint" → SPRINTS) stay freely enable/disable.
+                                const ownList = f.type === 'relationship'
+                                  && f.config?.related_to === 'list'
+                                  && String(f.config?.list_id || '') === String(loc.id || '');
+                                return (
+                                  <span style={s.toggleCell} title={ownList
+                                    ? 'Always enabled — this field pulls tasks from this list'
+                                    : (f.enabled === false ? 'Disabled for this list — turn on to use it here' : 'Enabled for this list')}>
+                                    <Switch on={ownList ? true : f.enabled !== false} onClick={() => toggleListField(f)} disabled={ownList} />
+                                    <span style={{ ...s.toggleLabel, color: (!ownList && f.enabled === false) ? '#9ca3af' : '#16a34a' }}>
+                                      {(!ownList && f.enabled === false) ? 'Disabled' : 'Enabled'}
+                                    </span>
                                   </span>
-                                </span>
-                              )}
+                                );
+                              })()}
                               <button className="icon-btn" style={s.dots} onClick={() => { setRowMenu(rowMenu === f._id ? null : f._id); setMoveFor(null); }}>⋯</button>
                             </div>
                             {rowMenu === f._id && (
@@ -523,8 +534,13 @@ function Radio({ checked, onChange, label }) {
     </button>
   );
 }
-function Switch({ on, onClick }) {
-  return <button type="button" onClick={onClick} style={{ ...d.switch, ...(on ? d.switchOn : {}) }}><span style={{ ...d.knob, ...(on ? d.knobOn : {}) }} /></button>;
+function Switch({ on, onClick, disabled = false }) {
+  return (
+    <button type="button" disabled={disabled} onClick={disabled ? undefined : onClick}
+      style={{ ...d.switch, ...(on ? d.switchOn : {}), ...(disabled ? { cursor: 'default', opacity: 0.7 } : {}) }}>
+      <span style={{ ...d.knob, ...(on ? d.knobOn : {}) }} />
+    </button>
+  );
 }
 function Segmented({ value, options, onChange }) {
   return (

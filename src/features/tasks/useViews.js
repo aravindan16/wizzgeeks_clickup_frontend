@@ -6,15 +6,21 @@ import { loadViews, saveViews, newView, defaultViews, isBuiltinView } from './vi
  * active selection, inline rename, and add/remove (builtin views are protected).
  * Both the Space board and the List board share this so behaviour stays identical.
  */
+// Prefer the Board view when opening a Space/List (ClickUp-style default),
+// falling back to the first available view if there is no board view.
+const boardIdOf = (v) =>
+  (v.find((x) => x.type === 'board') || v.find((x) => x.id === 'board') || v[0] || {}).id || 'board';
+
 export function useViews(scopeId) {
   const [views, setViews] = useState(() => loadViews(scopeId));
-  const [activeId, setActiveId] = useState(() => loadViews(scopeId)[0]?.id || 'board');
+  const [activeId, setActiveId] = useState(() => boardIdOf(loadViews(scopeId)));
   const [renaming, setRenaming] = useState(null);
 
   useEffect(() => {
     const v = loadViews(scopeId);
     setViews(v);
-    setActiveId((cur) => (cur === 'members' || v.some((x) => x.id === cur)) ? cur : (v[0]?.id || 'board'));
+    // Always land on the Board view when navigating into a Space/List.
+    setActiveId(boardIdOf(v));
   }, [scopeId]);
 
   const save = (next) => { setViews(next); saveViews(scopeId, next); };
