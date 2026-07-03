@@ -434,17 +434,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 onChange={(e) => save({ end_date: e.target.value || null, due_date: e.target.value || null })} />
             </Field>
 
-            <Field label="Labels">
-              <input style={s.fieldSelect} value={labelsVal} onChange={(e) => setLabelsVal(e.target.value)}
-                onBlur={() => save({ labels: labelsVal.split(',').map((x) => x.trim()).filter(Boolean) })} placeholder="comma, separated" />
-            </Field>
-
             <Field label="Reporter">
               <span style={s.person}><span style={s.avatarSm}>{initials(nameOf(task.reporter_id))}</span> {nameOf(task.reporter_id) || '—'}</span>
             </Field>
-
-            <Field label="Logged"><span>{task.actual_hours || 0}h logged</span></Field>
-            <Field label="Estimate"><span>{task.estimate_hours ?? '—'} h</span></Field>
           </div>
         </aside>
       </div>

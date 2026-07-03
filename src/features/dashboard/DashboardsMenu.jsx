@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { dashboardsApi } from './dashboardsApi';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { IconDashboard, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
 
 /**
@@ -13,6 +14,8 @@ export default function DashboardsMenu({ collapsed }) {
   const navigate = useNavigate();
   const location = useLocation();
   const confirm = useConfirm();
+  const promptDialog = usePrompt();
+  const toast = useToast();
   const rootRef = useRef(null);
   const [open, setOpen] = useState(true);
   const [items, setItems] = useState([]);
@@ -38,16 +41,18 @@ export default function DashboardsMenu({ collapsed }) {
 
   const createDashboard = async () => {
     setHeaderMenu(false);
+    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    if (!name || !name.trim()) return;
     try {
-      const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
+      const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setItems((cur) => [...cur, d]);
       setOpen(true);
       window.dispatchEvent(new Event('wg-dashboards-changed'));
+      toast.success(`Dashboard "${d.name}" created`);
       navigate(`/dashboard/${d.id}`);
-    } catch { /* ignore */ }
+    } catch { toast.error('Could not create dashboard'); }
   };
 
-  const addCard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
   const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
 
   const deleteDashboard = async (d) => {
@@ -108,12 +113,8 @@ export default function DashboardsMenu({ collapsed }) {
                 <span className="wg-sb-actions" style={{ ...s.rowActions, ...(rowMenu === d.id ? s.actionsOpen : {}) }}>
                   <button className="icon-btn" style={s.iconBtn} title="Dashboard actions"
                     onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === d.id ? null : d.id); }}><IconDots size={16} /></button>
-                  <button className="icon-btn" style={s.iconBtn} title="Add card" onClick={() => addCard(d)}><IconPlus size={16} /></button>
                   {rowMenu === d.id && (
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
-                      <button className="wg-menu-item" style={s.dropItem} onClick={() => addCard(d)}>
-                        <span style={s.dropIcon}><IconPlus size={15} /></span> Create card
-                      </button>
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => shareDashboard(d)}>
                         <span style={s.dropIcon}><IconMembers size={15} /></span> Members
                       </button>

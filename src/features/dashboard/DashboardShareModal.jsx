@@ -56,7 +56,7 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
           <button className="icon-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
         </div>
 
-        <div style={s.searchWrap}>
+        <div className="wg-search-box" style={s.searchWrap}>
           <span style={s.searchIcon}><IconSearch size={16} /></span>
           <input autoFocus style={s.search} placeholder="Search people to add…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>

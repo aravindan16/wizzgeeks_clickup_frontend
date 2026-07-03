@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { savedFiltersApi } from './savedFiltersApi';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { IconFilter, IconPlus, IconTrash, IconMembers } from '../../components/icons';
 import FilterShareModal from './FilterShareModal';
 
@@ -14,6 +15,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: '2-
 export default function FiltersIndex() {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const toast = useToast();
   const [items, setItems] = useState(null);
   const [shareId, setShareId] = useState(null);
 
@@ -30,7 +32,7 @@ export default function FiltersIndex() {
   const del = async (e, sf) => {
     e.stopPropagation();
     if (!(await confirm({ title: 'Delete filter', message: `Delete "${sf.name}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
-    try { await savedFiltersApi.remove(sf.id); } catch { /* ignore */ }
+    try { await savedFiltersApi.remove(sf.id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
     window.dispatchEvent(new Event('wg-saved-filters-changed'));
     load();
   };

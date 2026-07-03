@@ -3,7 +3,7 @@ import { tasksApi, PRIORITY_COLOR } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
-import { IconChevronDown, IconCalendar, IconUser, IconEnter } from '../../components/icons';
+import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
 /**
@@ -162,9 +162,14 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
             onDragOver={(e) => { e.preventDefault(); if (dragOverCol !== st) setDragOverCol(st); }}
             onDrop={() => onDrop(st)}>
             <div className="wg-col-head" style={{ background: bg }}>
-              <span style={{ ...s.statusDot, background: col.color }} />
-              <span style={{ flex: 1, color: col.color }}>{col.name}</span>
-              <span style={s.count}>{byStatus(st).length}</span>
+              <span style={{ ...s.statusPill, background: col.color }}>
+                {['done', 'closed'].includes(col.group)
+                  ? <span style={s.pillGlyph}>✓</span>
+                  : <span style={{ ...s.pillRing, borderColor: 'rgba(255,255,255,.85)' }} />}
+                {col.name}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ ...s.count, color: col.color }}>{byStatus(st).length}</span>
             </div>
             <div className="wg-col-body">
               {byStatus(st).map((t) => {
@@ -252,9 +257,14 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
       {cardMenu && (
         <>
           <div style={s.pickBackdrop} onClick={() => setCardMenu(null)} />
-          <div style={{ ...s.popFixed, top: cardMenu.y, left: cardMenu.x - 150, minWidth: 150 }}>
-            <button style={s.popItem} onClick={() => { const id = cardMenu.id; setCardMenu(null); open(id); }}>Open</button>
-            <button style={{ ...s.popItem, color: '#b91c1c' }} onClick={() => deleteCard(cardMenu.id)}>Delete</button>
+          <div style={{ ...s.popFixed, top: cardMenu.y, left: cardMenu.x - 176, minWidth: 176, borderRadius: 12, padding: 6 }}>
+            <button className="wg-menu-item" style={s.menuItem} onClick={() => { const id = cardMenu.id; setCardMenu(null); open(id); }}>
+              <span style={s.menuIcon}><IconExpand size={15} /></span> Open
+            </button>
+            <div style={s.menuDivider} />
+            <button className="wg-menu-item" style={{ ...s.menuItem, color: '#dc2626' }} onClick={() => deleteCard(cardMenu.id)}>
+              <span style={{ ...s.menuIcon, color: '#dc2626' }}><IconTrash size={15} /></span> Delete
+            </button>
           </div>
         </>
       )}
@@ -314,7 +324,11 @@ const s = {
     color: 'var(--c-faint)', fontSize: 12.5, fontWeight: 600, letterSpacing: '.02em',
     background: 'var(--c-hover)', animation: 'wg-pop 120ms ease' },
   statusDot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 },
-  count: { background: 'var(--c-surface-3)', color: 'var(--c-muted)', borderRadius: 999, padding: '1px 9px', fontWeight: 700, fontSize: 12 },
+  statusPill: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 11px', borderRadius: 6,
+    color: '#fff', fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' },
+  pillGlyph: { fontSize: 11, fontWeight: 900, lineHeight: 1 },
+  pillRing: { width: 10, height: 10, borderRadius: '50%', border: '2px solid', flexShrink: 0 },
+  count: { background: 'transparent', borderRadius: 999, padding: '1px 4px', fontWeight: 800, fontSize: 13 },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
   cardTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: 'var(--c-text)', display: '-webkit-box',
     WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
@@ -333,8 +347,12 @@ const s = {
     color: 'var(--c-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 },
   key: { fontWeight: 700, color: 'var(--c-text-strong)', fontSize: 12, letterSpacing: '.02em' },
   createBtn: { display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
+    padding: '9px 12px', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
     borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', marginTop: 2 },
+  menuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', textAlign: 'left',
+    border: 'none', padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, color: 'var(--c-text)' },
+  menuIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
+  menuDivider: { height: 1, background: 'var(--c-border-2)', margin: '5px 0' },
   composer: { background: 'var(--c-surface)', border: '2px solid var(--c-text-strong)', borderRadius: 10, padding: 10 },
   composerTop: { display: 'flex', justifyContent: 'flex-end', marginBottom: 2 },
   composerClose: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 13, padding: 2 },

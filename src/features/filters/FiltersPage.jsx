@@ -8,6 +8,7 @@ import { customFieldsApi } from '../customfields/customFieldsApi';
 import { savedFiltersApi } from './savedFiltersApi';
 import { useAuth } from '../auth/useAuth';
 import { usePrompt } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
 import { IconFilter, IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser } from '../../components/icons';
 
@@ -536,6 +537,7 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
 const markActiveFilter = (id) => { try { localStorage.setItem('wg_active_filter', id); } catch { /* ignore */ } window.dispatchEvent(new Event('wg-active-filter-changed')); };
 function SavedFilters({ cards, conj }) {
   const promptDialog = usePrompt();
+  const toast = useToast();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState([]);
@@ -560,11 +562,12 @@ function SavedFilters({ cards, conj }) {
     try {
       const created = await savedFiltersApi.create({ name: name.trim(), cards, conj });
       window.dispatchEvent(new Event('wg-saved-filters-changed'));
+      toast.success(`Filter "${created.name}" created`);
       navigate(`/filters/${created.id}`); // give the new filter its own route
-    } catch { /* ignore */ }
+    } catch { toast.error('Could not create filter'); }
   };
   const del = async (id) => {
-    try { await savedFiltersApi.remove(id); } catch { /* ignore */ }
+    try { await savedFiltersApi.remove(id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
     window.dispatchEvent(new Event('wg-saved-filters-changed'));
     load();
   };

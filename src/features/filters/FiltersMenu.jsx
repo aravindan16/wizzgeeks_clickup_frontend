@@ -1,35 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { IconFilter, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
 import { savedFiltersApi } from './savedFiltersApi';
 import FilterShareModal from './FilterShareModal';
+import { useToast } from '../../components/Toast';
 
 /**
  * Sidebar "Filters" section (mirrors DashboardsMenu / SpacesMenu): the Filters row
  * expands to list the user's DB-stored saved filters. Header reveals ⋯ + + on
  * hover to start a new filter; each saved-filter row reveals ⋯ (delete) on hover.
  */
-const ACTIVE_KEY = 'wg_active_filter';
-const loadActive = () => { try { return localStorage.getItem(ACTIVE_KEY) || ''; } catch { return ''; } };
-
 export default function FiltersMenu({ collapsed }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
   const rootRef = useRef(null);
   const [open, setOpen] = useState(true);
   const [saved, setSaved] = useState([]);        // [{id, name, cards, conj, owner_name}]
-  const [active, setActive] = useState(loadActive); // currently-open saved filter id (highlighted)
   const [headerMenu, setHeaderMenu] = useState(false);
   const [rowMenu, setRowMenu] = useState(null);
   const [shareId, setShareId] = useState(null); // saved-filter id being shared
+
+  // Highlight ONLY the filter whose page we're currently on (route-driven), so the
+  // highlight clears when you navigate to a List/Space/anywhere else.
+  const activeId = (location.pathname.match(/^\/filters\/([^/]+)$/) || [])[1] || '';
 
   const load = () => savedFiltersApi.list().then(setSaved).catch(() => setSaved([]));
   useEffect(() => {
     load();
     const onSaved = () => load();
-    const onActive = () => setActive(loadActive());
     window.addEventListener('wg-saved-filters-changed', onSaved);
-    window.addEventListener('wg-active-filter-changed', onActive);
-    return () => { window.removeEventListener('wg-saved-filters-changed', onSaved); window.removeEventListener('wg-active-filter-changed', onActive); };
+    return () => window.removeEventListener('wg-saved-filters-changed', onSaved);
   }, []);
   useEffect(() => {
     const onClick = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) { setHeaderMenu(false); setRowMenu(null); } };
@@ -37,17 +38,12 @@ export default function FiltersMenu({ collapsed }) {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  const markActive = (id) => {
-    try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
-    setActive(id);
-    window.dispatchEvent(new Event('wg-active-filter-changed'));
-  };
-  const newFilter = () => { setHeaderMenu(false); markActive(''); navigate('/filters/new'); };
-  const openSaved = (id) => { setRowMenu(null); markActive(id); navigate(`/filters/${id}`); };
+  const newFilter = () => { setHeaderMenu(false); navigate('/filters/new'); };
+  const openSaved = (id) => { setRowMenu(null); navigate(`/filters/${id}`); };
   const deleteSaved = async (id) => {
     setRowMenu(null);
-    try { await savedFiltersApi.remove(id); } catch { /* ignore */ }
-    if (active === id) markActive('');
+    try { await savedFiltersApi.remove(id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
+    if (activeId === id) navigate('/filters');
     load();
     window.dispatchEvent(new Event('wg-saved-filters-changed'));
   };
@@ -88,7 +84,7 @@ export default function FiltersMenu({ collapsed }) {
         <div style={s.children}>
           {saved.length === 0 && <div style={s.empty}>No saved filters yet</div>}
           {saved.map((sf) => (
-            <div key={sf.id} className="wg-sb-row" style={{ ...s.child, ...(active === sf.id ? s.childActive : {}) }}>
+            <div key={sf.id} className="wg-sb-row" style={{ ...s.child, ...(activeId === sf.id ? s.childActive : {}) }}>
               <div style={s.childMain} onClick={() => openSaved(sf.id)} title={sf.name}>
                 <span style={s.avatar}>{(sf.name || 'F').charAt(0).toUpperCase()}</span>
                 <span style={s.childName}>{sf.name}</span>
