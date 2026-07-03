@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { IconFilter, IconPlus, IconDots, IconTrash, Chevron } from '../../components/icons';
+import { IconFilter, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
 import { savedFiltersApi } from './savedFiltersApi';
+import FilterShareModal from './FilterShareModal';
 
 /**
  * Sidebar "Filters" section (mirrors DashboardsMenu / SpacesMenu): the Filters row
@@ -19,6 +20,7 @@ export default function FiltersMenu({ collapsed }) {
   const [active, setActive] = useState(loadActive); // currently-open saved filter id (highlighted)
   const [headerMenu, setHeaderMenu] = useState(false);
   const [rowMenu, setRowMenu] = useState(null);
+  const [shareId, setShareId] = useState(null); // saved-filter id being shared
 
   const load = () => savedFiltersApi.list().then(setSaved).catch(() => setSaved([]));
   useEffect(() => {
@@ -40,7 +42,7 @@ export default function FiltersMenu({ collapsed }) {
     setActive(id);
     window.dispatchEvent(new Event('wg-active-filter-changed'));
   };
-  const newFilter = () => { setHeaderMenu(false); markActive(''); navigate('/filters?new=1'); };
+  const newFilter = () => { setHeaderMenu(false); markActive(''); navigate('/filters/new'); };
   const openSaved = (id) => { setRowMenu(null); markActive(id); navigate(`/filters/${id}`); };
   const deleteSaved = async (id) => {
     setRowMenu(null);
@@ -96,6 +98,10 @@ export default function FiltersMenu({ collapsed }) {
                   onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === sf.id ? null : sf.id); }}><IconDots size={16} /></button>
                 {rowMenu === sf.id && (
                   <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
+                    <button className="wg-menu-item" style={s.dropItem} onClick={() => { setRowMenu(null); setShareId(sf.id); }}>
+                      <span style={s.dropIcon}><IconMembers size={15} /></span> Members
+                    </button>
+                    <div style={s.divider} />
                     <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteSaved(sf.id)}>
                       <span style={s.dropIcon}><IconTrash size={15} /></span> Delete filter
                     </button>
@@ -106,6 +112,7 @@ export default function FiltersMenu({ collapsed }) {
           ))}
         </div>
       )}
+      <FilterShareModal open={!!shareId} filterId={shareId} onClose={() => setShareId(null)} onChanged={load} />
     </div>
   );
 }
@@ -137,6 +144,7 @@ const s = {
   dropItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px',
     border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5, color: 'var(--c-text)' },
   dropIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
+  divider: { height: 1, background: 'var(--c-border-2)', margin: '4px 0' },
 
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
     padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 },
