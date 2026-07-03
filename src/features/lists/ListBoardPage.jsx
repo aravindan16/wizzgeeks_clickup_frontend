@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import { listsApi } from './listsApi';
 import { projectsApi } from '../projects/projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
@@ -12,7 +14,7 @@ import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconSearch } from '../../components/icons';
+import { IconSearch, IconArrowLeft } from '../../components/icons';
 import { SkeletonBoard } from '../../components/Skeleton';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
@@ -25,6 +27,7 @@ const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label:
 export default function ListBoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const slotEl = useHeaderSlot();
   const { can } = useAuth();
   const [taskOpen, setTaskOpen] = useState(false);
   const [list, setList] = useState(null);
@@ -98,15 +101,19 @@ export default function ListBoardPage() {
 
   return (
     <div style={s.page}>
-      <button style={s.back} onClick={() => navigate(`/projects/${space._id}`)}><span style={s.backChevron}>‹</span> {space.name}</button>
+      {/* Back link (‹ Space name) lives in the shared topbar. */}
+      {slotEl && createPortal(
+        <button style={s.back} onClick={() => navigate(`/projects/${space._id}`)}>
+          <span style={s.backIcon}><IconArrowLeft size={16} /></span>{space.name}
+        </button>,
+        slotEl,
+      )}
 
       <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={s.listIcon}>≡</div>
-          <div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>{list.key || space.key} · List</div>
-            <h2 style={{ margin: '2px 0' }}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</h2>
-          </div>
+          <span style={s.crumbLabel}>{list.key || space.key} · List</span>
+          <h2 style={s.listName}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</h2>
         </div>
         {can('task.create') && (
           <button className="btn btn-primary" onClick={() => setTaskOpen(true)}>+ Task</button>
@@ -158,13 +165,15 @@ export default function ListBoardPage() {
 const s = {
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
-    border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
-  backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
-  listIcon: { width: 44, height: 44, borderRadius: 10, background: '#f1f2f4', color: '#000000',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22, flexShrink: 0 },
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none',
+    border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 16, fontWeight: 700, lineHeight: 1 },
+  backIcon: { display: 'inline-flex', alignItems: 'center', color: 'var(--c-text-strong)' },
+  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 2 },
+  listIcon: { width: 30, height: 30, borderRadius: 8, background: 'var(--c-surface-3)', color: 'var(--c-text)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 },
+  crumbLabel: { color: 'var(--c-muted)', fontSize: 13, whiteSpace: 'nowrap' },
+  listName: { margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   tabs: { display: 'flex', gap: 4, margin: '16px 0', borderBottom: '1px solid #e5e7eb' },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
