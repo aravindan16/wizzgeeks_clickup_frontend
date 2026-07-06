@@ -12,7 +12,7 @@ import { useAuth } from '../auth/useAuth';
 import { usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
-import { IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser, IconEdit, IconMembers, IconBoard } from '../../components/icons';
+import { IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser, IconEdit, IconMembers, IconBoard, IconFilter, IconListCheck } from '../../components/icons';
 import { useConfirm } from '../../components/ConfirmDialog';
 import FilterShareModal from './FilterShareModal';
 
@@ -66,6 +66,18 @@ const removeFromTree = (node, id) => {
 const ruleActive = (r) => (Array.isArray(r.value) ? r.value.length > 0 : (r.value !== '' && r.value != null));
 const nodeActive = (n) => (n.type === 'group' ? n.children.some(nodeActive) : ruleActive(n));
 
+// Result-table columns (defaults; widths/visibility persisted in localStorage).
+const COLS_LS = 'wg_filter_cols';
+const COL_DEFS = [
+  { key: 'key', label: 'Key', width: 96, min: 64 },
+  { key: 'title', label: 'Title', width: 340, min: 140 },
+  { key: 'space', label: 'Space', width: 160, min: 90 },
+  { key: 'status', label: 'Status', width: 140, min: 100 },
+  { key: 'assignee', label: 'Assignee', width: 150, min: 90 },
+  { key: 'due', label: 'Due date', width: 110, min: 80 },
+  { key: 'priority', label: 'Priority', width: 110, min: 80 },
+];
+
 export default function FiltersPage() {
   const navigate = useNavigate();
   const { id: routeId } = useParams();
@@ -78,7 +90,36 @@ export default function FiltersPage() {
   const [tab, setTab] = useState('filters');   // filters | members
   const [mShare, setMShare] = useState(false);  // Add-people modal
   const [mReload, setMReload] = useState(0);    // bump to refresh members table
+  const [showBuilder, setShowBuilder] = useState(false); // filter builder card hidden by default
   const toast = useToast();
+
+  // Result-table column widths + visibility (persisted in localStorage).
+  const [colState, setColState] = useState(() => {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(COLS_LS) || '{}'); } catch { /* ignore */ }
+    const widths = {}, visible = {};
+    COL_DEFS.forEach((c) => { widths[c.key] = saved.widths?.[c.key] || c.width; visible[c.key] = saved.visible?.[c.key] !== false; });
+    return { widths, visible };
+  });
+  const persistCols = (st) => { try { localStorage.setItem(COLS_LS, JSON.stringify(st)); } catch { /* ignore */ } };
+  const toggleColumn = (key) => setColState((st) => {
+    const visible = { ...st.visible, [key]: !st.visible[key] };
+    if (!Object.values(visible).some(Boolean)) return st; // keep at least one column
+    const next = { ...st, visible }; persistCols(next); return next;
+  });
+  const startColResize = (e, key) => {
+    e.preventDefault(); e.stopPropagation();
+    const col = COL_DEFS.find((c) => c.key === key);
+    const startX = e.clientX; const startW = colState.widths[key];
+    const move = (ev) => setColState((st) => ({ ...st, widths: { ...st.widths, [key]: Math.max(col.min || 60, startW + (ev.clientX - startX)) } }));
+    const up = () => {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      document.body.style.userSelect = '';
+      setColState((st) => { persistCols(st); return st; });
+    };
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  };
   const [projects, setProjects] = useState([]);
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
@@ -255,6 +296,64 @@ export default function FiltersPage() {
 
   const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks };
 
+  // Active rule count (for the "Filter" toggle badge).
+  const activeCount = useMemo(() => {
+    let n = 0;
+    const scan = (node) => { if (node.type === 'group') node.children.forEach(scan); else if (ruleActive(node)) n += 1; };
+    cards.forEach(scan);
+    return n;
+  }, [cards]);
+
+  // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
+  const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
+  const RENDERERS = {
+    key: (t) => <span style={s.key}>{t.key}</span>,
+    title: (t) => <span style={s.name}>{t.title}</span>,
+    space: (t) => <span style={s.muted}>{spaceName(t.project_id)}</span>,
+    status: (t) => { const sts = stsForTask(t); return <span style={{ ...s.chip, color: statusColor(sts, t.status), borderColor: statusColor(sts, t.status) }}>{statusLabel(sts, t.status)}</span>; },
+    assignee: (t) => <span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span>,
+    due: (t) => <span style={s.muted}>{shortDate(t.end_date || t.due_date)}</span>,
+    priority: (t) => <span style={{ color: PRIORITY_COLOR[t.priority] || 'var(--c-muted)', fontWeight: 600, textTransform: 'capitalize' }}>{t.priority || '—'}</span>,
+  };
+  const columns = COL_DEFS.map((c) => ({ ...c, render: RENDERERS[c.key] }));
+
+  // The filter builder card (shown inside the View tab only when "Filter" is toggled on).
+  const builderCard = (
+    <div style={s.builder}>
+      {cards.map((card, ci) => (
+        <div key={card.id} style={s.cardBlock}>
+          {ci > 0 && (
+            <div style={s.cardDivider}>
+              {ci === 1
+                ? <div style={{ width: 84 }}><Select value={cardsConj} onChange={setCardsConj} options={AND_OR} /></div>
+                : <span style={s.cardDividerText}>{cardsConj}</span>}
+            </div>
+          )}
+          <FilterGroup node={card} setNode={setNode} removeNode={removeNode} onValue={setValue}
+            addRule={addRule} addNested={addNested} options={options} usedFields={collectFields(card)} isRoot />
+        </div>
+      ))}
+      <div style={s.builderFooter}>
+        <button type="button" className="btn" style={g.addFilter} onClick={addCard}>
+          <IconPlus size={14} /> Add filter
+        </button>
+        <div style={s.footerRight}>
+          <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
+          <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
+        </div>
+      </div>
+    </div>
+  );
+
+  const filterToggle = (
+    <button type="button" className="btn" style={{ ...s.filterToggle, ...(showBuilder ? s.filterToggleActive : {}) }}
+      onClick={() => setShowBuilder((v) => !v)}>
+      <IconFilter size={15} /> Filter
+      {activeCount > 0 && <span style={s.filterBadge}>{activeCount}</span>}
+      <span style={{ display: 'inline-flex', transform: showBuilder ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><IconChevronDown size={13} /></span>
+    </button>
+  );
+
   return (
     <div>
       {/* Breadcrumb ("Filters › <saved filter name>") lives in the shared topbar. */}
@@ -290,39 +389,33 @@ export default function FiltersPage() {
               <IconMembers size={15} /> Members
             </button>
           </div>
-          {tab === 'members' && (
+          {/* Right corner: Add people on Members, Filter + count + Columns on View. */}
+          {tab === 'members' ? (
             <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+          ) : (
+            <div style={s.tabsRight}>
+              {filterToggle}
+              <ColumnsMenu columns={columns} colState={colState} onToggle={toggleColumn} />
+            </div>
           )}
         </div>
       )}
 
       {isSaved && tab === 'members' ? (
         <FilterMembers filterId={routeId} reloadKey={mReload} />
+      ) : isSaved ? (
+        // Saved filter View tab: builder (when toggled) then the results table.
+        <>
+          {showBuilder && builderCard}
+          {/* Only show tasks once a filter is actually applied; otherwise the empty
+              "No tasks found" state (avoids dumping every task with no filter). */}
+          <ResultsTable columns={columns} rows={activeCount > 0 ? filtered : []} loading={loading}
+            colState={colState} onResizeStart={startColResize}
+            onOpenTask={(id) => navigate(`/tasks/${id}`)} />
+        </>
       ) : (
-        <div style={s.builder}>
-          {cards.map((card, ci) => (
-            <div key={card.id} style={s.cardBlock}>
-              {ci > 0 && (
-                <div style={s.cardDivider}>
-                  {ci === 1
-                    ? <div style={{ width: 84 }}><Select value={cardsConj} onChange={setCardsConj} options={AND_OR} /></div>
-                    : <span style={s.cardDividerText}>{cardsConj}</span>}
-                </div>
-              )}
-              <FilterGroup node={card} setNode={setNode} removeNode={removeNode} onValue={setValue}
-                addRule={addRule} addNested={addNested} options={options} usedFields={collectFields(card)} isRoot />
-            </div>
-          ))}
-          <div style={s.builderFooter}>
-            <button type="button" className="btn" style={g.addFilter} onClick={addCard}>
-              <IconPlus size={14} /> Add filter
-            </button>
-            <div style={s.footerRight}>
-              <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
-              <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
-            </div>
-          </div>
-        </div>
+        // Brand-new (unsaved) filter: just the builder so you can create + save it.
+        builderCard
       )}
 
       <FilterShareModal open={mShare} filterId={routeId}
@@ -367,6 +460,67 @@ function FilterMembers({ filterId, reloadKey }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* ------------------------------- Columns show/hide menu (in the tab bar corner) */
+function ColumnsMenu({ columns, colState, onToggle }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" className="btn" style={s.colBtn} onClick={() => setOpen((o) => !o)}>
+        <IconListCheck size={15} /> Columns <IconChevronDown size={13} />
+      </button>
+      {open && (
+        <div style={s.colMenu} role="menu">
+          {columns.map((c) => (
+            <button key={c.key} type="button" className="wg-menu-item" style={s.colMenuItem} onClick={() => onToggle(c.key)}>
+              <span style={{ ...s.colCheck, ...(colState.visible[c.key] ? s.colCheckOn : {}) }}>{colState.visible[c.key] ? '✓' : ''}</span>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------- Results table (resizable columns) */
+function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
+  const shown = columns.filter((c) => colState.visible[c.key]);
+  return (
+    <div style={s.rCard}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={s.rTable}>
+          <colgroup>{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
+          <thead>
+            <tr>
+              {shown.map((c, i) => (
+                <th key={c.key} style={s.rTh}>
+                  <span style={s.rThLabel}>{c.label}</span>
+                  {i < shown.length - 1 && <span style={s.rResize} onMouseDown={(e) => onResizeStart(e, c.key)} title="Drag to resize" />}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {!loading && rows.length === 0 && <tr><td colSpan={shown.length} style={s.empty}>No tasks found</td></tr>}
+            {rows.map((t) => (
+              <tr key={t._id} className="wg-rel-row" style={s.rRow} onClick={() => onOpenTask(t._id)}>
+                {shown.map((c) => <td key={c.key} style={s.rTd}><div style={s.rClip}>{c.render(t)}</div></td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -724,6 +878,29 @@ const s = {
   mEmpty: { padding: 28, textAlign: 'center', color: 'var(--c-muted)' },
   ownerTag: { fontSize: 12, fontWeight: 600, color: 'var(--c-muted)', background: 'var(--c-surface-2)', padding: '3px 10px', borderRadius: 999 },
   removeLink: { border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
+  // Right-corner controls in the View/Members tab bar
+  tabsRight: { display: 'inline-flex', alignItems: 'center', gap: 12 },
+  rCount: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
+  filterToggle: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 600 },
+  filterToggleActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)' },
+  filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
+    borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
+  colBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 600 },
+  colMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 40, minWidth: 180, background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(16,24,40,.16)', padding: 6 },
+  colMenuItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  colCheck: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },
+  colCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
+  // Results table (fixed layout so column widths apply; resize handles on headers)
+  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  rTable: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
+  rTh: { position: 'relative', textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase',
+    letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  rThLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  rResize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
+  rRow: { borderTop: '1px solid var(--c-border-2)', cursor: 'pointer' },
+  rTd: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
+  rClip: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   cardBlock: { marginBottom: 10 },
   cardDivider: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' },
   cardDividerText: { fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: 'var(--c-muted)', paddingLeft: 8 },

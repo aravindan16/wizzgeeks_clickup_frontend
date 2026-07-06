@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usersApi } from '../users/usersApi';
 import { authApi } from '../auth/authApi';
 import { useToast } from '../../components/Toast';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import PasswordInput from '../../components/PasswordInput';
 
 export default function ProfilePage() {
   const toast = useToast();
+  const slotEl = useHeaderSlot();
   const fileRef = useRef(null);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
@@ -55,7 +58,7 @@ export default function ProfilePage() {
 
   return (
     <div>
-      <h2>My Profile</h2>
+      {slotEl && createPortal(<span style={{ fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' }}>My Profile</span>, slotEl)}
       <div style={grid}>
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
