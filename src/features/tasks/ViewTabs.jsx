@@ -12,7 +12,7 @@ const viewIcon = (type) =>
  * disabled for the builtin views), a "+ View" picker, and any extra tabs
  * (e.g. Members) passed in.
  */
-export default function ViewTabs({ vs, extraTabs = [] }) {
+export default function ViewTabs({ vs, extraTabs = [], rightSlot = null }) {
   const { views, activeId, setActiveId, renaming, setRenaming, updateView, addView, removeView } = vs;
   const [addOpen, setAddOpen] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
@@ -53,9 +53,11 @@ export default function ViewTabs({ vs, extraTabs = [] }) {
       ))}
 
       <span style={{ position: 'relative' }}>
-        <button style={s.addViewBtn} onClick={() => setAddOpen((o) => !o)}>+ View</button>
+        <button className="wg-addview-btn" style={s.addViewBtn} onClick={() => setAddOpen((o) => !o)}>+ View</button>
         <AddViewMenu open={addOpen} onClose={() => setAddOpen(false)} onPick={addView} />
       </span>
+
+      {rightSlot && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center' }}>{rightSlot}</span>}
 
       {menu && (() => {
         const v = views.find((x) => x.id === menu.id);
@@ -86,12 +88,12 @@ export default function ViewTabs({ vs, extraTabs = [] }) {
 }
 
 const s = {
-  tabs: { display: 'flex', alignItems: 'center', gap: 4, margin: '16px 0', borderBottom: '1px solid var(--c-border)', flexWrap: 'wrap' },
+  tabs: { display: 'flex', alignItems: 'center', gap: 4, margin: '2px 0 14px', borderBottom: '1px solid var(--c-border)', flexWrap: 'wrap' },
   tabWrap: { display: 'inline-flex', alignItems: 'center' },
   tabInner: { display: 'inline-flex', alignItems: 'center', gap: 7 },
   renameInput: { font: 'inherit', fontSize: 14, fontWeight: 600, padding: '6px 8px', border: '1px solid var(--c-primary)',
     borderRadius: 7, background: 'var(--c-surface)', color: 'var(--c-text)', width: 130, outline: 'none' },
-  addViewBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--c-muted)',
+  addViewBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, border: 'none', color: 'var(--c-muted)',
     cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '8px 10px' },
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
   viewMenu: { position: 'fixed', zIndex: 401, minWidth: 180, background: 'var(--c-surface)', color: 'var(--c-text)',

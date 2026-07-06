@@ -59,11 +59,12 @@ export default function FiltersMenu({ collapsed }) {
   return (
     <div style={s.section} ref={rootRef}>
       <div className="wg-sb-row" style={s.row}>
-        <button type="button" style={s.caret} onClick={() => setOpen((o) => !o)} title={open ? 'Collapse' : 'Expand'}>
-          <Chevron open={open} size={13} />
-        </button>
         <NavLink to="/filters" end style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
-          <span style={s.navIcon}><IconFilter size={18} /></span>
+          <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}>
+            <span className="wg-nav-icon"><IconFilter size={18} /></span>
+            <span className="wg-nav-caret"><Chevron open={open} size={13} /></span>
+          </button>
           <span style={s.label}>Filters</span>
         </NavLink>
         <span style={s.headerActions}>
@@ -114,7 +115,7 @@ export default function FiltersMenu({ collapsed }) {
 }
 
 const s = {
-  section: { marginBottom: 2, position: 'relative' },
+  section: { position: 'relative' },
   row: { display: 'flex', alignItems: 'center', gap: 2, borderRadius: 8, position: 'relative', paddingRight: 6 },
   caret: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-muted)', display: 'inline-flex', padding: 4, flexShrink: 0 },
   navMain: { display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: '9px 8px', borderRadius: 8,

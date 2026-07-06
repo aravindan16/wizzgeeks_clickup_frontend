@@ -249,13 +249,20 @@ export default function SpacesMenu({ collapsed }) {
       ),
     });
     if (!ok) return;
+    // Optimistically drop it from the sidebar so it disappears immediately.
+    setListsBySpace((m) => ({
+      ...m,
+      [l.space_id]: (m[l.space_id] || []).filter((x) => x._id !== l._id),
+    }));
+    // If we're currently viewing this List, leave the (now-gone) page.
+    if (pathname === `/lists/${l._id}`) navigate(`/projects/${l.space_id}`);
     try {
       await listsApi.remove(l._id);
       toast.success("List deleted");
     } catch {
       toast.error("Could not delete list");
+      loadLists(l.space_id); // restore from server on failure
     }
-    loadLists(l.space_id);
   };
 
   const modals = (
@@ -345,29 +352,23 @@ export default function SpacesMenu({ collapsed }) {
     <div style={s.section} ref={rootRef}>
       <div className="wg-sb-row" style={s.header}>
         <div
-          style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}
+          style={{
+            ...s.headInner,
+            ...(pathname === "/projects" ? s.headingActive : {}),
+          }}
+          onClick={() => navigate("/projects")}
+          title="All spaces"
         >
           <button
             type="button"
-            style={s.sectionCaret}
-            onClick={() => setSectionOpen((o) => !o)}
+            className="wg-nav-toggle"
             title={sectionOpen ? "Collapse" : "Expand"}
+            onClick={(e) => { e.stopPropagation(); setSectionOpen((o) => !o); }}
           >
-            <Chevron open={sectionOpen} size={13} />
+            <span className="wg-nav-icon"><IconFolder size={18} /></span>
+            <span className="wg-nav-caret"><Chevron open={sectionOpen} size={13} /></span>
           </button>
-          <div
-            style={{
-              ...s.headInner,
-              ...(pathname === "/projects" ? s.headingActive : {}),
-            }}
-            onClick={() => navigate("/projects")}
-            title="All spaces"
-          >
-            <span style={s.sectionIcon}>
-              <IconFolder size={18} />
-            </span>
-            <span style={s.heading}>Spaces</span>
-          </div>
+          <span style={s.heading}>Spaces</span>
         </div>
         <div
           style={{
@@ -433,11 +434,16 @@ export default function SpacesMenu({ collapsed }) {
                   className="wg-sb-row"
                 >
                   <button
-                    style={s.caret}
-                    onClick={() => toggleExpand(sp._id)}
+                    type="button"
+                    className="wg-nav-toggle"
+                    style={s.spaceToggle}
+                    onClick={(e) => { e.stopPropagation(); toggleExpand(sp._id); }}
                     title={isOpen ? "Collapse" : "Expand"}
                   >
-                    <Chevron open={isOpen} size={13} />
+                    <span className="wg-nav-icon" style={s.badgeVisual}>
+                      {(sp.key || sp.name || "?")[0].toUpperCase()}
+                    </span>
+                    <span className="wg-nav-caret"><Chevron open={isOpen} size={13} /></span>
                   </button>
                   <NavLink
                     to={`/projects/${sp._id}`}
@@ -447,9 +453,6 @@ export default function SpacesMenu({ collapsed }) {
                       ...(isActive ? s.activeText : {}),
                     })}
                   >
-                    <span style={s.keyBadge}>
-                      {(sp.key || sp.name || "?")[0].toUpperCase()}
-                    </span>
                     <span style={s.rowName}>{sp.name}</span>
                   </NavLink>
                   <span className="wg-sb-actions" style={s.rowActions}>
@@ -682,7 +685,7 @@ export default function SpacesMenu({ collapsed }) {
 }
 
 const s = {
-  section: { marginTop: 2 },
+  section: { position: 'relative' },
   header: {
     position: "relative",
     display: "flex",
@@ -799,7 +802,7 @@ const s = {
     display: "flex",
     alignItems: "center",
     gap: 9,
-    padding: "7px 6px",
+    padding: "7px 6px 7px 9px",
     borderRadius: 8,
     color: "#475569",
     textDecoration: "none",
@@ -807,6 +810,8 @@ const s = {
     flex: 1,
     minWidth: 0,
   },
+  spaceToggle: { width: 22, height: 22, marginLeft: 8, flexShrink: 0 },
+  badgeVisual: { width: 22, height: 22, borderRadius: 6, background: "#111827", color: "#ffffff", fontWeight: 700, fontSize: 11, flexShrink: 0 },
   activeRow: { background: "#f1f5f9", color: "#111827" },
   activeText: { color: "#111827", fontWeight: 600 },
   rowName: {

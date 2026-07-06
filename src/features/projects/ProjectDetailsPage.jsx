@@ -10,7 +10,7 @@ import TaskTableView from '../tasks/TaskTableView';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconMembers, IconSearch, IconFolder, IconArrowLeft } from '../../components/icons';
+import { IconBoard, IconMembers, IconSearch } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
@@ -133,34 +133,27 @@ export default function ProjectDetailsPage() {
 
   return (
     <div style={s.page}>
-      {/* Back link ("‹ Spaces") lives in the shared topbar. */}
+      {/* Breadcrumb ("Spaces › Space name") lives in the shared topbar. */}
       {slotEl && createPortal(
-        <button style={s.back} onClick={() => navigate('/projects')}>
-          <span style={s.backIcon}><IconArrowLeft size={16} /></span>Spaces
-        </button>,
+        <span style={s.crumbs}>
+          <button style={s.crumbLink} onClick={() => navigate('/projects')}>Spaces</button>
+          <span style={s.crumbSep}>›</span>
+          <span style={s.crumbCurrent}>{project.name}</span>
+        </span>,
         slotEl,
       )}
 
-      {/* Space header — title + Create Task, tight to the top */}
-      <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={s.spaceIcon}>{project.key?.[0]?.toUpperCase() || <IconFolder size={16} />}</div>
-          <h2 style={s.spaceName}>{project.name}</h2>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {isMembersTab
-            ? (canManage && <button style={s.primary} onClick={() => setAddPeopleOpen(true)}>+ Add people</button>)
-            : (can('task.create') && project.status !== 'archived' &&
-                <button style={s.primary} onClick={() => setTaskOpen(true)}>+ Create Task</button>)}
-        </div>
-      </div>
-
-      {/* View tabs (List / Board / Table) + Members + "+ View". Double-click or
-          right-click a tab to rename/delete; filters persist per view. */}
+      {/* View tabs (List / Board / Table) + Members + "+ View". The primary action
+          (Create Task, or Add people on the Members tab) sits at the right corner.
+          Double-click or right-click a tab to rename/delete; filters persist per view. */}
       <ViewTabs vs={vs} extraTabs={[{
         id: 'members', label: 'Members', icon: <IconMembers size={16} />,
         active: isMembersTab, onClick: () => setActiveId('members'),
-      }]} />
+      }]} rightSlot={isMembersTab
+        ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
+        : (can('task.create') && project.status !== 'archived'
+            ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Create Task</button>
+            : null)} />
 
       {/* Common search + filter toolbar for any task view. */}
       {!isMembersTab && (
@@ -243,13 +236,11 @@ const s = {
   // horizontal scrollbar sits at the very bottom of the viewport.
   page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none',
-    border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 16, fontWeight: 700, lineHeight: 1 },
-  backIcon: { display: 'inline-flex', alignItems: 'center', color: 'var(--c-text-strong)' },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 2 },
-  spaceName: { margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  spaceIcon: { width: 30, height: 30, borderRadius: 8, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 },
+  crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  taskBtn: { padding: '7px 13px', fontSize: 13 },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },

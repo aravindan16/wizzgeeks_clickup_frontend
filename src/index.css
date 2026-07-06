@@ -344,6 +344,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* --- Sidebar rows (Spaces / Lists) --- */
 .wg-sb-row { transition: background var(--t-fast); }
 .wg-sb-row:hover { background: var(--c-hover); }
+/* Toggle icon: show the item's icon by default, swap to the expand/collapse
+   chevron in the SAME spot on hover (ClickUp-style). */
+.wg-nav-toggle { position: relative; width: 20px; height: 20px; display: inline-flex;
+  align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 0; color: inherit; flex-shrink: 0; }
+.wg-nav-toggle .wg-nav-icon { display: inline-flex; align-items: center; justify-content: center; }
+.wg-nav-toggle .wg-nav-caret { display: none; align-items: center; justify-content: center; }
+.wg-sb-row:hover .wg-nav-toggle .wg-nav-icon { display: none; }
+.wg-sb-row:hover .wg-nav-toggle .wg-nav-caret { display: inline-flex; }
 /* Count and hover-actions share one right-edge slot (in flow), so the row name
    shrinks to make room instead of being overlapped. Only one shows at a time. */
 .wg-sb-actions { display: none; align-items: center; flex-shrink: 0; }
@@ -408,6 +416,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   transition: color var(--t-fast), background var(--t-fast);
 }
 .wg-tab:hover { color: var(--c-text); background: var(--c-hover); }
+.wg-addview-btn { background: none; border-radius: var(--r-sm); transition: color var(--t-fast), background var(--t-fast); }
+.wg-addview-btn:hover { color: var(--c-text); background: var(--c-hover); }
 .wg-tab.active { color: var(--c-text); font-weight: 600; }
 .wg-tab.active::after {
   content: '';
