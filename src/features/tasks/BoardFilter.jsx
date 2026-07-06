@@ -134,8 +134,8 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
             </div>
 
             <div style={st.footRow}>
-              <button style={st.footLink} onClick={clearAll} disabled={active === 0}>Clear all</button>
-              <button style={{ ...st.footLink, marginLeft: 'auto' }} onClick={clearCat} disabled={(v[cat] || []).length === 0}>Clear</button>
+              <button className="wg-foot-link" style={st.footLink} onClick={clearAll} disabled={active === 0}>Clear all</button>
+              <button className="wg-foot-link" style={{ ...st.footLink, marginLeft: 'auto' }} onClick={clearCat} disabled={(v[cat] || []).length === 0}>Clear</button>
               <span style={{ color: 'var(--c-faint)', fontSize: 12 }}>{shown.length} of {all.length}</span>
             </div>
           </div>
@@ -174,5 +174,5 @@ const st = {
   statusChip: { flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--c-primary)', background: 'var(--c-primary-weak)', borderRadius: 4,
     padding: '2px 6px', width: 'fit-content', display: 'inline-block' },
   footRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderTop: '1px solid var(--c-border)' },
-  footLink: { background: 'none', border: 'none', color: 'var(--c-primary)', cursor: 'pointer', fontSize: 13, padding: 0 },
+  footLink: { border: 'none', color: 'var(--c-primary)', cursor: 'pointer', fontSize: 13, padding: '5px 9px', borderRadius: 7 },
 };

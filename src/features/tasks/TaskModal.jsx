@@ -107,13 +107,14 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
     setSaving(true); setError(null);
     const cf = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && v.length === 0)));
     try {
+      let created = task;
       if (mode === 'edit') {
         await tasksApi.update(task._id, { title: form.title, description: form.description, type: form.type,
           priority: form.priority || 'medium', start_date: form.start_date || null, end_date: form.end_date || null,
           due_date: form.end_date || null, labels: form.labels, custom_fields: cf });
         if (form.status !== task.status) await tasksApi.changeStatus(task._id, { to_status: form.status });
       } else {
-        const created = await tasksApi.create({ project_id: spaceId, list_id: listId, title: form.title.trim(),
+        created = await tasksApi.create({ project_id: spaceId, list_id: listId, title: form.title.trim(),
           description: form.description || null, type: form.type, priority: form.priority || 'medium',
           assignee_id: form.assignee_id || null, start_date: form.start_date || null, end_date: form.end_date || null,
           due_date: form.end_date || null, labels: form.labels, status: form.status, custom_fields: cf });
@@ -122,7 +123,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
           await tasksApi.create({ project_id: spaceId, list_id: listId, title, type: 'subtask', parent_id: created._id }).catch(() => {});
         }
       }
-      onSaved();
+      onSaved(created);
     } catch (err) { setError(err.response?.data?.error?.message || 'Could not save task'); }
     finally { setSaving(false); }
   };
@@ -147,7 +148,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
         <div style={s.body}>
           {/* List + Type */}
           <div style={s.topRow}>
-            <span style={s.selPill}><IconList size={14} /> {listName || 'List'} <IconChevronDown size={14} /></span>
+            <span style={{ ...s.selPill, cursor: 'default' }}><IconList size={14} /> {listName || 'List'}</span>
             <span data-pill style={s.selPill} onClick={() => setPop(pop === 'type' ? null : 'type')}>
               <IconBoard size={14} /> {form.type === 'bug' ? 'Bug' : 'Task'} <IconChevronDown size={14} />
               {pop === 'type' && (

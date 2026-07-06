@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR, resolveStatuses, isDoneStatus } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
+import { listsApi } from '../lists/listsApi';
+import TaskModal from '../tasks/TaskModal';
 
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 
@@ -85,12 +87,18 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [scopeLabel, setScopeLabel] = useState('Tasks'); // e.g. the List/Space name shown in the picker header
+  const [space, setSpace] = useState(null); // full Space object (for the Create-Task modal)
+  const [targetListObj, setTargetListObj] = useState(null); // the field's target List (may have custom statuses)
+  const [createOpen, setCreateOpen] = useState(false);
   const ref = useRef(null);
+  const inputRef = useRef(null);
 
   // Resolve the Space's status workflow so we can count completed vs pending.
   useEffect(() => {
     if (!spaceId) return;
-    projectsApi.get(spaceId).then((sp) => setSts(resolveStatuses(sp))).catch(() => setSts([]));
+    projectsApi.get(spaceId).then((sp) => { setSpace(sp); setSts(resolveStatuses(sp)); setScopeLabel((cur) => (cur === 'Tasks' ? (sp.name || 'Tasks') : cur)); }).catch(() => setSts([]));
   }, [spaceId]);
 
   // Completed / pending summary over the linked tasks.
@@ -116,16 +124,36 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
     ? String(field.config.list_id) : null;
   const onTargetList = !!(targetList && currentListId && String(currentListId) === targetList);
   const scope = (targetList && !onTargetList) ? { list_id: targetList } : { project_id: spaceId };
+  // When the field targets a specific List, show that List's name in the header and
+  // keep the List object — new tasks land in this List, whose custom statuses (if any)
+  // override the Space's, so the Create-Task modal must use the List's workflow.
+  useEffect(() => {
+    if (targetList && !onTargetList) listsApi.get(targetList)
+      .then((l) => { setScopeLabel(l.name || 'Tasks'); setTargetListObj(l); }).catch(() => {});
+  }, [targetList, onTargetList]);
+
+  // Statuses valid for a task created in the field's scope: the target List's own
+  // workflow when it has custom statuses, otherwise the Space's.
+  const createListId = (targetList && !onTargetList) ? targetList : (currentListId || null);
+  const modalStatuses = (targetListObj?.status_mode === 'custom' && targetListObj.statuses?.length)
+    ? resolveStatuses(targetListObj) : sts;
+  // Load the scope's candidate tasks ONCE when the picker opens (unfiltered). We
+  // filter them client-side as you type so the existing tasks stay visible even
+  // while typing a brand-new name — the query never empties the list.
   useEffect(() => {
     if (!open) return undefined;
-    const h = setTimeout(() => {
-      tasksApi.list({ ...scope, search: query, limit: 20 })
-        .then((r) => setResults((r.items || []).filter((x) =>
-          !ids.includes(x._id) && (!onTargetList || String(x.list_id) !== targetList))))
-        .catch(() => setResults([]));
-    }, 180);
-    return () => clearTimeout(h);
-  }, [open, query]); // eslint-disable-line
+    tasksApi.list({ ...scope, limit: 50, sort_by: 'created_at', sort_dir: -1 })
+      .then((r) => setResults((r.items || []).filter((x) =>
+        !ids.includes(x._id) && (!onTargetList || String(x.list_id) !== targetList))))
+      .catch(() => setResults([]));
+  }, [open]); // eslint-disable-line
+
+  // Client-side substring filter; if nothing matches, keep showing all candidates.
+  // Exclude tasks already linked (ids change as you link, without a refetch).
+  const q = query.trim().toLowerCase();
+  const candidates = results.filter((r) => !ids.includes(r._id));
+  const matched = q ? candidates.filter((r) => `${r.title} ${r.key}`.toLowerCase().includes(q)) : candidates;
+  const shown = matched.length ? matched : candidates;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -137,6 +165,28 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
 
   const link = (tk) => { onChange([...ids, tk._id]); setQuery(''); };
   const unlink = (id) => onChange(ids.filter((x) => x !== id));
+
+  // Create a brand-new task in the field's scope (its target List, or the current
+  // List / Space) and immediately link it — so you don't have to leave the picker.
+  // `openAfter` opens the new task's detail so an un-named ("New task") placeholder
+  // can be filled in right away.
+  const createAndLink = async (openAfter = false) => {
+    if (creating) return;
+    const typed = query.trim();
+    const title = typed || 'New task';
+    setCreating(true);
+    try {
+      const payload = { project_id: spaceId, title };
+      if (modalStatuses[0]?.key) payload.status = modalStatuses[0].key;
+      if (createListId) payload.list_id = createListId;
+      const created = await tasksApi.create(payload);
+      onChange([...ids, created._id]);
+      setQuery(''); setOpen(false);
+      // Open the new task when it was created blank so the user can rename it.
+      if (openAfter && !typed) onOpenTask?.(created._id);
+    } catch { /* surfaced by apiClient toast */ }
+    finally { setCreating(false); }
+  };
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
@@ -181,16 +231,43 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
       <button style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add</button>
       {open && (
         <div style={t.relPop}>
-          <input autoFocus style={t.relSearch} placeholder="Search tasks…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 6 }}>
-            {results.length === 0 && <div style={t.relEmpty}>No tasks found</div>}
-            {results.map((r) => (
+          <input ref={inputRef} autoFocus style={t.relSearch} placeholder="Search…" value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !results.some((r) => r.title.toLowerCase() === q)) createAndLink(); }} />
+
+          {/* Scope header — the List/Space name + a "+" that creates a task here (always visible, ClickUp-style) */}
+          <div style={t.relScopeHead}>
+            <span style={t.relScopeName}>{scopeLabel}</span>
+            <button className="icon-btn" style={t.relScopePlus} title={`Create task in ${scopeLabel}`} onClick={() => { setOpen(false); setCreateOpen(true); }}>＋</button>
+          </div>
+
+          <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 2 }}>
+            {/* When you type a name, offer to create it explicitly. */}
+            {query.trim() && (
+              <button style={t.relCreate} onClick={() => createAndLink(false)} disabled={creating}>
+                <span style={t.relCreatePlus}>＋</span>
+                <span style={{ flex: 1, textAlign: 'left' }}>
+                  {creating ? 'Creating…' : <>Create task “<b>{query.trim()}</b>”</>}
+                </span>
+              </button>
+            )}
+            {shown.length === 0 && !query.trim() && <div style={t.relEmpty}>No tasks yet — type a name to create one</div>}
+            {shown.map((r) => (
               <button key={r._id} style={t.relResult} onClick={() => link(r)}>
                 <span style={t.relKey}>{r.key}</span><span style={{ flex: 1, textAlign: 'left' }}>{r.title}</span>
               </button>
             ))}
           </div>
         </div>
+      )}
+
+      {/* Full Create-Task modal scoped to the related List — opened by the header "+".
+          On save, the created task is linked to this field automatically. */}
+      {createOpen && space && (!targetList || onTargetList || targetListObj) && (
+        <TaskModal open={createOpen} mode="create" projects={[space]} defaultProjectId={spaceId}
+          listId={createListId} listName={scopeLabel} statuses={modalStatuses}
+          onClose={() => setCreateOpen(false)}
+          onSaved={(created) => { setCreateOpen(false); if (created?._id) onChange([...ids, created._id]); }} />
       )}
     </div>
   );
@@ -228,4 +305,14 @@ const t = {
   relSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
   relEmpty: { padding: '10px', color: '#9ca3af', fontSize: 13, textAlign: 'center' },
   relResult: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14 },
+  relScopeHead: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px 4px', marginTop: 4,
+    borderTop: '1px solid #f3f4f6' },
+  relScopeName: { flex: 1, fontSize: 12, fontWeight: 600, color: '#9ca3af', textTransform: 'none',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  relScopePlus: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22,
+    borderRadius: 6, border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 16, flexShrink: 0 },
+  relCreate: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', marginBottom: 2,
+    background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: '#4f46e5' },
+  relCreatePlus: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18,
+    borderRadius: 5, background: '#eef2ff', color: '#4f46e5', fontSize: 13, fontWeight: 700, flexShrink: 0 },
 };

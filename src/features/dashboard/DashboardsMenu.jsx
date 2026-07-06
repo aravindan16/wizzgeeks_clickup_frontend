@@ -121,7 +121,7 @@ export default function DashboardsMenu({ collapsed }) {
                       </button>
                       <div style={s.divider} />
                       <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteDashboard(d)}>
-                        <span style={s.dropIcon}><IconTrash size={15} /></span> Delete dashboard
+                        <span style={{ ...s.dropIcon, color: '#b91c1c' }}><IconTrash size={15} /></span> Delete dashboard
                       </button>
                     </div>
                   )}

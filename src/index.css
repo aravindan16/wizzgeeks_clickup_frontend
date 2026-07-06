@@ -376,7 +376,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
 /* --- User dropdown menu items --- */
 .wg-menu-item { background: none; border: none; transition: background var(--t-fast); }
-.wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
+.wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); transform: none !important; filter: none !important; }
 
 /* --- Global API loading: centered circular spinner over the viewport --- */
 .wg-loader-overlay {
@@ -418,6 +418,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 .wg-tab:hover { color: var(--c-text); background: var(--c-hover); }
 .wg-addview-btn { background: none; border-radius: var(--r-sm); transition: color var(--t-fast), background var(--t-fast); }
 .wg-addview-btn:hover { color: var(--c-text); background: var(--c-hover); }
+.wg-foot-link { background: none; transition: background var(--t-fast); }
+.wg-foot-link:hover:not(:disabled) { background: var(--c-hover); }
 .wg-tab.active { color: var(--c-text); font-weight: 600; }
 .wg-tab.active::after {
   content: '';
