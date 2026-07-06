@@ -4,9 +4,11 @@ import { tasksApi, resolveStatuses, statusLabel, statusColor, PRIORITY_COLOR } f
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
 import { savedFiltersApi } from './savedFiltersApi';
 import { useAuth } from '../auth/useAuth';
 import { usePrompt } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
 import { IconFilter, IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser } from '../../components/icons';
 
@@ -102,10 +104,10 @@ export default function FiltersPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // Route-driven: /filters/:id loads that saved filter; /filters (optionally ?new=1)
-  // is a fresh builder. Each saved filter has its OWN url so they don't collide.
+  // Route-driven: /filters/:id loads that saved filter; /filters/new is a fresh
+  // builder. Each saved filter has its OWN url so they don't collide.
   useEffect(() => {
-    if (routeId) {
+    if (routeId && routeId !== 'new') {
       savedFiltersApi.get(routeId).then((sf) => {
         setCards(sf.cards?.length ? sf.cards : [newGroup()]);
         setCardsConj(sf.conj || 'AND');
@@ -130,6 +132,25 @@ export default function FiltersPage() {
     cards.forEach(scan);
     return sid;
   }, [cards, lists]);
+
+  // First selected List (for loading List-scoped custom fields).
+  const contextListId = useMemo(() => {
+    let lid = '';
+    const scan = (n) => { if (lid) return; if (n.type === 'group') n.children.forEach(scan); else if (n.field === 'list' && Array.isArray(n.value) && n.value.length) lid = String(n.value[0]); };
+    cards.forEach(scan);
+    return lid;
+  }, [cards]);
+
+  // Custom fields (dropdown/text/relationship) of the chosen Space — filterable too.
+  const [customFields, setCustomFields] = useState([]);
+  useEffect(() => {
+    if (!contextSpaceId) { setCustomFields([]); return; }
+    customFieldsApi.list(contextSpaceId, contextListId || undefined, undefined, { _silent: true })
+      .then((fs) => setCustomFields((fs || [])
+        .filter((f) => ['dropdown', 'text', 'relationship'].includes(f.type))
+        .map((f) => ({ key: `cf:${f._id}`, id: f._id, label: f.name, type: f.type, config: f.config || {} }))))
+      .catch(() => setCustomFields([]));
+  }, [contextSpaceId, contextListId]);
 
   const stsBySpace = useMemo(() => { const m = {}; projects.forEach((p) => { m[p._id] = resolveStatuses(p); }); return m; }, [projects]);
   // A List can have its own custom status set; otherwise it inherits its Space's.
@@ -205,7 +226,7 @@ export default function FiltersPage() {
   }));
   const clearAll = () => { setCards([newGroup()]); setCardsConj('AND'); markActiveFilter(''); };
 
-  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId };
+  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks };
 
   return (
     <div>
@@ -281,6 +302,18 @@ function evalNode(node, t, ctx) {
   if (!ruleActive(node)) return true;
   const neg = node.op === 'is_not';
   let m = true;
+  // Custom field: compare against the value stored on task.custom_fields[<id>].
+  if (node.field.startsWith('cf:')) {
+    const cfId = node.field.slice(3);
+    const tv = (t.custom_fields || {})[cfId];
+    if (Array.isArray(node.value)) { // dropdown (labels) / relationship (ids)
+      const tvArr = Array.isArray(tv) ? tv.map(String) : (tv != null && tv !== '' ? [String(tv)] : []);
+      m = node.value.map(String).some((v) => tvArr.includes(v));
+    } else { // text — contains
+      m = String(tv ?? '').toLowerCase().includes(String(node.value).toLowerCase());
+    }
+    return neg ? !m : m;
+  }
   const vals = Array.isArray(node.value) ? node.value.map(String) : [String(node.value)];
   switch (node.field) {
     case 'space': m = String(t.project_id) === String(node.value); break;
@@ -344,13 +377,20 @@ function FilterGroup({ node, setNode, removeNode, onValue, addRule, addNested, o
 function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
   const set = (patch) => setNode(rule.id, (n) => ({ ...n, ...patch }));
   const setVal = (v) => onValue(rule.id, rule.field, v); // cascades Space→List/Status, List→Status
-  // Offer this rule's own field plus any field not already used elsewhere in the card.
-  const fieldOpts = FIELDS.filter((f) => f.key === rule.field || !usedFields?.has(f.key))
-    .map((f) => ({ value: f.key, label: f.label }));
+  const cfDefs = options.customFields || [];
+  // Built-in fields + the chosen Space's custom fields; hide fields already used in the card.
+  const allFields = [...FIELDS.map((f) => ({ value: f.key, label: f.label })),
+    ...cfDefs.map((c) => ({ value: c.key, label: c.label }))];
+  const fieldOpts = allFields.filter((f) => f.value === rule.field || !usedFields?.has(f.value));
+  // Empty value for a field: text/single = ''; everything multi = [].
+  const emptyFor = (v) => {
+    if (v.startsWith('cf:')) return (cfDefs.find((c) => c.key === v)?.type === 'text') ? '' : [];
+    return emptyValue(v);
+  };
   return (
     <>
       <div style={g.fieldCol}>
-        <Select value={rule.field} onChange={(v) => set({ field: v, value: emptyValue(v) })}
+        <Select value={rule.field} onChange={(v) => set({ field: v, value: emptyFor(v) })}
           options={fieldOpts} />
       </div>
       <div style={g.opCol}>
@@ -367,6 +407,24 @@ function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
 function ValueEditor({ rule, setVal, options }) {
   const active = ruleActive(rule); // a set value gets a highlighted control
   const arr = Array.isArray(rule.value) ? rule.value : [];
+  // --- Custom field value editors (dropdown / text / relationship) ---
+  if (rule.field.startsWith('cf:')) {
+    const cf = (options.customFields || []).find((c) => c.key === rule.field);
+    if (!cf) return <Select placeholder="Select option" value="" onChange={() => {}} options={[]} disabled />;
+    if (cf.type === 'text')
+      return <TextFilter value={rule.value} onChange={setVal} active={active} />;
+    if (cf.type === 'dropdown') {
+      const opts = (cf.config?.options || []).map((o) => ({ value: o.label, label: o.label }));
+      return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select options" />;
+    }
+    // relationship: pick from the tasks in the related List (fall back to all loaded tasks)
+    const relList = cf.config?.related_to === 'list' && cf.config?.list_id ? String(cf.config.list_id) : null;
+    const opts = (options.tasks || [])
+      .filter((t) => !relList || String(t.list_id) === relList)
+      .slice(0, 300)
+      .map((t) => ({ value: t._id, label: `${t.key ? t.key + ' · ' : ''}${t.title || ''}` }));
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" />;
+  }
   if (rule.field === 'space')
     return <Select placeholder="Select option" highlight={active} value={rule.value} onChange={setVal}
       options={options.projects.map((p) => ({ value: p._id, label: p.name || p.key }))} />;
@@ -379,6 +437,14 @@ function ValueEditor({ rule, setVal, options }) {
   // assignee / reporter — multi-select people
   return <UserPicker active={active} value={arr} onChange={setVal} users={options.users}
     myId={options.myId} allowUnassigned={rule.field === 'assignee'} />;
+}
+
+// Free-text value editor for a text custom field (matches "contains").
+function TextFilter({ value, onChange, active }) {
+  return (
+    <input value={value || ''} placeholder="Contains text…" onChange={(e) => onChange(e.target.value)}
+      style={{ ...g.trigger, ...(active ? g.triggerActive : {}), cursor: 'text' }} />
+  );
 }
 
 /* --------------------------------------------------------------- MultiSelect */
@@ -471,6 +537,7 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
 const markActiveFilter = (id) => { try { localStorage.setItem('wg_active_filter', id); } catch { /* ignore */ } window.dispatchEvent(new Event('wg-active-filter-changed')); };
 function SavedFilters({ cards, conj }) {
   const promptDialog = usePrompt();
+  const toast = useToast();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState([]);
@@ -495,11 +562,12 @@ function SavedFilters({ cards, conj }) {
     try {
       const created = await savedFiltersApi.create({ name: name.trim(), cards, conj });
       window.dispatchEvent(new Event('wg-saved-filters-changed'));
+      toast.success(`Filter "${created.name}" created`);
       navigate(`/filters/${created.id}`); // give the new filter its own route
-    } catch { /* ignore */ }
+    } catch { toast.error('Could not create filter'); }
   };
   const del = async (id) => {
-    try { await savedFiltersApi.remove(id); } catch { /* ignore */ }
+    try { await savedFiltersApi.remove(id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
     window.dispatchEvent(new Event('wg-saved-filters-changed'));
     load();
   };

@@ -61,7 +61,6 @@ export default function TaskTableView({ tasks, members, statuses = [], onCreate,
           })}
         </tbody>
       </table>
-      {onCreate && <button style={s.addRow} onClick={onCreate}>+ New task</button>}
     </div>
   );
 }

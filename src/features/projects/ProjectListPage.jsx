@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { projectsApi, PROJECT_STATUSES } from './projectsApi';
+import { useHeaderSlot } from '../../layouts/headerSlot';
+import { projectsApi } from './projectsApi';
 import SpaceSetupModal from './SpaceSetupModal';
 import { useAuth } from '../auth/useAuth';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
-import { IconSearch } from '../../components/icons';
-import Select from '../../components/Select';
+import { IconSearch, IconExpand, IconTrash } from '../../components/icons';
 
 const PAGE_SIZE = 10;
 
@@ -16,12 +17,12 @@ export default function ProjectListPage() {
   const { can, user } = useAuth();
   const me = user?._id || user?.id;
   const navigate = useNavigate();
+  const slotEl = useHeaderSlot();
   const toast = useToast();
   const confirm = useConfirm();
   const [data, setData] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
@@ -30,11 +31,10 @@ export default function ProjectListPage() {
     setLoading(true);
     const params = { skip: page * PAGE_SIZE, limit: PAGE_SIZE };
     if (search) params.search = search;
-    if (statusFilter) params.status = statusFilter;
     const res = await projectsApi.list(params);
     setData(res);
     setLoading(false);
-  }, [page, search, statusFilter]);
+  }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -72,23 +72,18 @@ export default function ProjectListPage() {
 
   return (
     <div>
-      <div style={s.header}>
-        <h2 style={{ margin: 0 }}>Spaces</h2>
+      {slotEl && createPortal(<span style={s.headerTitle}>Spaces</span>, slotEl)}
+
+      <div style={s.toolbar}>
+        <form onSubmit={(e) => { e.preventDefault(); setPage(0); load(); }} style={s.searchForm}>
+          <span style={s.searchIcon}><IconSearch size={15} /></span>
+          <input style={{ ...s.input, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }}
+            placeholder="Search spaces" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </form>
         {can('project.create') && (
           <button style={s.primary} onClick={() => setSetupOpen(true)}>Create space</button>
         )}
       </div>
-
-      <form onSubmit={(e) => { e.preventDefault(); setPage(0); load(); }} style={s.filters}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
-          <span style={s.searchIcon}><IconSearch size={15} /></span>
-          <input style={{ ...s.input, paddingLeft: 32, width: '100%', boxSizing: 'border-box' }}
-            placeholder="Search spaces" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select style={{ minWidth: 170 }} value={statusFilter}
-          onChange={(v) => { setStatusFilter(v); setPage(0); }}
-          options={[{ value: '', label: 'Filter by status' }, ...PROJECT_STATUSES.map((st) => ({ value: st, label: st }))]} />
-      </form>
 
       <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'auto' }}>
         <table style={s.table}>
@@ -108,7 +103,7 @@ export default function ProjectListPage() {
               </td></tr>
             )}
             {!loading && rows.map((p) => (
-              <tr key={p._id} style={s.row} onClick={() => navigate(`/projects/${p._id}`)}>
+              <tr key={p._id} className="wg-row-hover" style={s.row} onClick={() => navigate(`/projects/${p._id}`)}>
                 <Td>
                   <div style={s.nameCell}>
                     <span style={s.spaceIcon}>{p.key?.[0] || 'S'}</span>
@@ -126,7 +121,7 @@ export default function ProjectListPage() {
                 <Td>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={s.url}>/projects/{p.key}</span>
-                    <button style={s.dots} onClick={(e) => openMenu(e, p._id)} title="Actions">⋯</button>
+                    <button className="icon-btn" style={s.dots} onClick={(e) => openMenu(e, p._id)} title="Actions">⋯</button>
                   </div>
                 </Td>
               </tr>
@@ -139,15 +134,17 @@ export default function ProjectListPage() {
       {menu && menuProject && (
         <>
           <div style={s.menuBackdrop} onClick={() => setMenu(null)} />
-          <div style={{ ...s.menu, top: menu.y + 4, left: menu.x - 168 }}>
+          <div style={{ ...s.menu, top: menu.y + 6, left: menu.x - 180 }}>
             <button className="wg-menu-item" style={s.menuItem} onClick={() => { setMenu(null); navigate(`/projects/${menu.id}`); }}>
-              Open
+              <span style={s.menuIcon}><IconExpand size={15} /></span> Open
             </button>
-            {canArchive(menuProject) && menuProject.status !== 'archived' && (
-              <button className="wg-menu-item" style={s.menuItem} onClick={doArchive}>Archive</button>
-            )}
             {canDelete(menuProject) && (
-              <button className="wg-menu-item" style={{ ...s.menuItem, color: '#b91c1c' }} onClick={doDelete}>Delete</button>
+              <>
+                <div style={s.menuDivider} />
+                <button className="wg-menu-item" style={{ ...s.menuItem, color: '#dc2626' }} onClick={doDelete}>
+                  <span style={{ ...s.menuIcon, color: '#dc2626' }}><IconTrash size={15} /></span> Delete
+                </button>
+              </>
             )}
           </div>
         </>
@@ -167,33 +164,36 @@ export default function ProjectListPage() {
 const Th = ({ children, style }) => <th style={{ ...thStyle, ...style }}>{children}</th>;
 const Td = ({ children }) => <td style={tdStyle}>{children}</td>;
 
-const thStyle = { textAlign: 'left', padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#374151', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' };
-const tdStyle = { padding: '12px 16px', fontSize: 14, borderBottom: '1px solid #f1f5f9' };
+const thStyle = { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.02em',
+  color: 'var(--c-muted)', background: 'var(--c-surface-2)', borderBottom: '1px solid var(--c-border)' };
+const tdStyle = { padding: '12px 16px', fontSize: 14, color: 'var(--c-text)', borderBottom: '1px solid var(--c-border-2)' };
 
 const s = {
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  filters: { display: 'flex', gap: 10, marginBottom: 16 },
-  input: { padding: '8px 11px', border: '1px solid #d1d5db', borderRadius: 8 },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 },
+  searchForm: { position: 'relative', flex: 1, maxWidth: 360 },
+  input: { padding: '8px 11px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)', color: 'var(--c-text)' },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
-  table: { width: '100%', borderCollapse: 'collapse', background: '#fff' },
+  table: { width: '100%', borderCollapse: 'collapse', background: 'var(--c-surface)' },
   row: { cursor: 'pointer' },
   empty: { padding: 28, textAlign: 'center', color: '#6b7280' },
   star: { background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center' },
   nameCell: { display: 'flex', alignItems: 'center', gap: 10 },
-  spaceIcon: { width: 26, height: 26, borderRadius: 6, background: '#111827', color: '#ffffff',
+  spaceIcon: { width: 26, height: 26, borderRadius: 6, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 },
   nameLink: { color: '#111827', fontWeight: 600 },
   leadCell: { display: 'flex', alignItems: 'center', gap: 8 },
   avatar: { width: 26, height: 26, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   url: { color: '#6b7280', fontSize: 13 },
-  dots: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#6b7280',
-    padding: '0 6px', borderRadius: 6, lineHeight: 1 },
+  dots: { fontSize: 20, lineHeight: 1, width: 30, height: 30 },
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 300 },
-  menu: { position: 'fixed', width: 160, background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 301, padding: 4 },
-  menuItem: { display: 'block', width: '100%', textAlign: 'left', border: 'none',
-    padding: '9px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 14, color: '#111827' },
+  menu: { position: 'fixed', width: 180, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+    borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.18)', zIndex: 301, padding: 6 },
+  menuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', textAlign: 'left',
+    border: 'none', padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, color: 'var(--c-text)' },
+  menuIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
+  menuDivider: { height: 1, background: 'var(--c-border-2)', margin: '5px 0' },
   pager: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 },
   pageBtn: { width: 32, height: 32, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' },
   pageNum: { width: 32, height: 32, borderRadius: 6, border: '1px solid #111827', color: '#111827',

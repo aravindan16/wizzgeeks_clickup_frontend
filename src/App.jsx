@@ -18,6 +18,7 @@ const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetails
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
+const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
 const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'));
@@ -92,7 +93,7 @@ export default function App() {
       <Route element={<ProtectedRoute permission="task.read" />}>
         <Route element={<AppLayout />}>
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/filters" element={<FiltersPage />} />
+          <Route path="/filters" element={<FiltersIndex />} />
           <Route path="/filters/:id" element={<FiltersPage />} />
           <Route path="/tasks/:id" element={<TaskDetailsPage />} />
         </Route>

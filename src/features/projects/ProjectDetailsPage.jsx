@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import { projectsApi } from './projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
@@ -8,7 +10,7 @@ import TaskTableView from '../tasks/TaskTableView';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconMembers, IconSearch, IconFolder } from '../../components/icons';
+import { IconBoard, IconMembers, IconSearch, IconFolder, IconArrowLeft } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
@@ -28,6 +30,7 @@ const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label:
 export default function ProjectDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const slotEl = useHeaderSlot();
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
@@ -113,7 +116,12 @@ export default function ProjectDetailsPage() {
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
 
-  const removeMember = async (uid) => { await projectsApi.removeMember(id, uid); load(); };
+  const removeMember = async (m) => {
+    if (!(await confirm({ title: 'Remove member', message: `Remove ${m.full_name || m.email} from this Space?`, confirmLabel: 'Remove', danger: true }))) return;
+    await projectsApi.removeMember(id, m.user_id);
+    toast.success('Member removed');
+    load();
+  };
   const archive = async () => { await projectsApi.archive(id); load(); };
   const del = async () => {
     const ok = await confirm({
@@ -125,21 +133,25 @@ export default function ProjectDetailsPage() {
 
   return (
     <div style={s.page}>
-      <button style={s.back} onClick={() => navigate('/projects')}><span style={s.backChevron}>‹</span> Spaces</button>
+      {/* Back link ("‹ Spaces") lives in the shared topbar. */}
+      {slotEl && createPortal(
+        <button style={s.back} onClick={() => navigate('/projects')}>
+          <span style={s.backIcon}><IconArrowLeft size={16} /></span>Spaces
+        </button>,
+        slotEl,
+      )}
 
-      {/* Space header */}
+      {/* Space header — title + Create Task, tight to the top */}
       <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={s.spaceIcon}>{project.key?.[0]?.toUpperCase() || <IconFolder size={20} />}</div>
-          <div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>{project.key}</div>
-            <h2 style={{ margin: '2px 0' }}>{project.name}</h2>
-            <span className={`badge ${project.status === 'archived' ? 'badge-err' : 'badge-ok'}`}>{project.status}</span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div style={s.spaceIcon}>{project.key?.[0]?.toUpperCase() || <IconFolder size={16} />}</div>
+          <h2 style={s.spaceName}>{project.name}</h2>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {can('task.create') && project.status !== 'archived' &&
-            <button style={s.primary} onClick={() => setTaskOpen(true)}>+ Create Task</button>}
+          {isMembersTab
+            ? (canManage && <button style={s.primary} onClick={() => setAddPeopleOpen(true)}>+ Add people</button>)
+            : (can('task.create') && project.status !== 'archived' &&
+                <button style={s.primary} onClick={() => setTaskOpen(true)}>+ Create Task</button>)}
         </div>
       </div>
 
@@ -188,26 +200,21 @@ export default function ProjectDetailsPage() {
 
       {/* MEMBERS */}
       {isMembersTab && (
-        <div>
-          {canManage && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-              <button style={s.primary} onClick={() => setAddPeopleOpen(true)}>+ Add people</button>
-            </div>
-          )}
-          <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden' }}>
-            <table style={s.table}>
-              <thead><tr><Th>Name</Th><Th>Email</Th>{canManage && <Th>Actions</Th>}</tr></thead>
-              <tbody>
-                {members.map((m) => (
-                  <tr key={m._id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <Td>{m.full_name || '—'}</Td>
-                    <Td>{m.email || '—'}</Td>
-                    {canManage && <Td><button style={s.link} onClick={() => removeMember(m.user_id)}>Remove</button></Td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden' }}>
+          <table style={s.table}>
+            <thead><tr><Th>Name</Th><Th>Email</Th>{canManage && <Th style={{ textAlign: 'right' }}>Actions</Th>}</tr></thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m._id} className="wg-row-hover" style={s.memberRow}>
+                  <Td>{m.full_name || '—'}</Td>
+                  <Td><span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span></Td>
+                  {canManage && <Td style={{ textAlign: 'right' }}>
+                    <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button>
+                  </Td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       </div>
@@ -227,21 +234,22 @@ export default function ProjectDetailsPage() {
   );
 }
 
-const Th = ({ children }) => <th style={s.th}>{children}</th>;
-const Td = ({ children }) => <td style={s.td}>{children}</td>;
+const Th = ({ children, style }) => <th style={{ ...s.th, ...style }}>{children}</th>;
+const Td = ({ children, style }) => <td style={{ ...s.td, ...style }}>{children}</td>;
 
 const s = {
   // Full-height column: header/tabs/toolbar stay fixed, only viewArea scrolls.
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
-    border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
-  backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
-  spaceIcon: { width: 44, height: 44, borderRadius: 10, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0 },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none',
+    border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 16, fontWeight: 700, lineHeight: 1 },
+  backIcon: { display: 'inline-flex', alignItems: 'center', color: 'var(--c-text-strong)' },
+  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 2 },
+  spaceName: { margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  spaceIcon: { width: 30, height: 30, borderRadius: 8, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
@@ -263,13 +271,15 @@ const s = {
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 12 },
   progressOuter: { background: '#e5e7eb', borderRadius: 999, height: 10, marginTop: 16, overflow: 'hidden' },
   progressInner: { background: '#111827', height: '100%', transition: 'width .3s' },
-  table: { width: '100%', borderCollapse: 'collapse', background: '#fff' },
-  th: { textAlign: 'left', padding: '12px 14px', fontSize: 12, textTransform: 'uppercase', color: '#6b7280', background: '#f9fafb' },
-  td: { padding: '10px 14px', fontSize: 14 },
+  table: { width: '100%', borderCollapse: 'collapse', background: 'var(--c-surface)' },
+  th: { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.02em',
+    color: 'var(--c-muted)', background: 'var(--c-surface-2)', borderBottom: '1px solid var(--c-border)' },
+  td: { padding: '12px 16px', fontSize: 14, color: 'var(--c-text)' },
+  memberRow: { borderTop: '1px solid var(--c-border-2)' },
   select: { padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 8 },
   addRow: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   primary: { padding: '8px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
-  link: { background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0 },
+  link: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
 };

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usersApi } from '../users/usersApi';
 import { authApi } from '../auth/authApi';
 import { useToast } from '../../components/Toast';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function ProfilePage() {
   const toast = useToast();
@@ -102,7 +103,9 @@ function Field({ label, type = 'text', value, onChange }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      <input style={inp} type={type} value={value || ''} onChange={(e) => onChange(e.target.value)} />
+      {type === 'password'
+        ? <PasswordInput style={inp} value={value || ''} onChange={(e) => onChange(e.target.value)} />
+        : <input style={inp} type={type} value={value || ''} onChange={(e) => onChange(e.target.value)} />}
     </label>
   );
 }

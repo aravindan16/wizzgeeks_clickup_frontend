@@ -155,6 +155,16 @@ textarea:focus {
   border-color: var(--c-primary) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 22%, transparent);
 }
+/* Search box: the input sits borderless inside a bordered wrapper. Show the
+   focus ring ONCE on the wrapper (via :focus-within) and suppress the inner
+   input's own ring so we don't get a doubled/offset outline. */
+.wg-search-box { transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.wg-search-box:focus-within {
+  border-color: var(--c-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 18%, transparent);
+}
+.wg-search-box input:focus { box-shadow: none !important; border-color: transparent !important; }
+
 /* Themed checkboxes/radios across the app. */
 input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
@@ -322,6 +332,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--c-text-strong);
 }
+
+/* --- Generic table/list row hover (any clickable row) --- */
+.wg-row-hover, .wg-rel-row { transition: background var(--t-fast); }
+.wg-row-hover:hover, .wg-rel-row:hover { background: var(--c-hover); }
+
+/* --- Danger text button (e.g. "Remove"): light-red highlight on hover --- */
+.wg-danger-link { background: transparent; transition: background var(--t-fast); }
+.wg-danger-link:hover { background: color-mix(in srgb, #dc2626 14%, transparent); }
 
 /* --- Sidebar rows (Spaces / Lists) --- */
 .wg-sb-row { transition: background var(--t-fast); }

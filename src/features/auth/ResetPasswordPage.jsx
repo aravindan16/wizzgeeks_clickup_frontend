@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi } from './authApi';
 import { useToast } from '../../components/Toast';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -33,7 +34,7 @@ export default function ResetPasswordPage() {
         <label style={lbl}>Reset token</label>
         <input style={inp} value={token} onChange={(e) => setToken(e.target.value)} required />
         <label style={lbl}>New password</label>
-        <input style={inp} type="password" value={password} minLength={8}
+        <PasswordInput style={inp} value={password} minLength={8}
           onChange={(e) => setPassword(e.target.value)} required />
         {error && <p style={{ color: '#991b1b', fontSize: 13 }}>{error}</p>}
         <button style={btn} disabled={submitting}>{submitting ? 'Resetting…' : 'Reset password'}</button>

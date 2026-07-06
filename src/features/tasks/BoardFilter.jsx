@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { IconSearch } from '../../components/icons';
+import { IconSearch, IconFilter } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -78,7 +78,7 @@ export default function BoardFilter({ members, tasks, statuses = [], value, onCh
   return (
     <div style={{ position: 'relative' }}>
       <button className="wg-filter-btn" style={{ ...st.btn, ...(open || active ? st.btnActive : {}) }} onClick={() => setOpen((o) => !o)}>
-        <span>≡ Filter</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><IconFilter size={15} /> Filter</span>
         {active > 0 && <span style={st.badge}>{active}</span>}
       </button>
 
