@@ -169,7 +169,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
             <div style={s.pickerMain}>
               <div style={s.pickerTop}>
                 <h3 style={s.pickerTitle}>Custom</h3>
-                <button style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+                <button className="icon-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
               </div>
               <div style={s.grid}>
                 {CARD_TYPES.map((ct) => (
@@ -395,9 +395,9 @@ const s = {
   // config
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   title: { margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  close: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex' },
+  close: { border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex', padding: 6, borderRadius: 7 },
   headActions: { display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 },
-  hdrBtn: { border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex' },
+  hdrBtn: { border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex', padding: 6, borderRadius: 7 },
   hdrMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 160, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 5, padding: 4 },
   hdrMenuItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px',

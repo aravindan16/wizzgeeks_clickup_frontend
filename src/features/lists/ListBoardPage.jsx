@@ -13,8 +13,9 @@ import { useViews } from '../tasks/useViews';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
+import { useToast } from '../../components/Toast';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconSearch, IconArrowLeft } from '../../components/icons';
+import { IconSearch, IconEdit } from '../../components/icons';
 import { SkeletonBoard } from '../../components/Skeleton';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
@@ -29,7 +30,10 @@ export default function ListBoardPage() {
   const navigate = useNavigate();
   const slotEl = useHeaderSlot();
   const { can } = useAuth();
+  const toast = useToast();
   const [taskOpen, setTaskOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [list, setList] = useState(null);
   const [space, setSpace] = useState(null);
   const [members, setMembers] = useState([]);
@@ -42,6 +46,20 @@ export default function ListBoardPage() {
   const vs = useViews(id);
   const { activeId, updateView, activeView } = vs;
   const activeFilters = activeView?.filters || EMPTY_FILTERS;
+
+  // Inline rename of the List from the header breadcrumb (like the dashboard header).
+  const startRename = () => { setNameDraft(list?.name || ''); setEditingName(true); };
+  const commitName = async () => {
+    const v = (nameDraft || '').trim();
+    setEditingName(false);
+    if (!v || v === list.name) return;
+    setList((l) => ({ ...l, name: v }));
+    try {
+      await listsApi.update(list._id, { name: v });
+      toast.success('List renamed');
+      window.dispatchEvent(new Event('wg:list-updated'));
+    } catch { toast.error('Could not rename list'); }
+  };
 
   const loadTasks = useCallback(async (listId) => {
     const res = await tasksApi.list({ list_id: listId, limit: 200, sort_by: 'created_at', sort_dir: 1 });
@@ -101,26 +119,28 @@ export default function ListBoardPage() {
 
   return (
     <div style={s.page}>
-      {/* Back link (‹ Space name) lives in the shared topbar. */}
+      {/* Breadcrumb (Space › List) lives in the shared topbar. */}
       {slotEl && createPortal(
-        <button style={s.back} onClick={() => navigate(`/projects/${space._id}`)}>
-          <span style={s.backIcon}><IconArrowLeft size={16} /></span>{space.name}
-        </button>,
+        <span style={s.crumbs}>
+          <button style={s.crumbLink} onClick={() => navigate(`/projects/${space._id}`)}>{space.name}</button>
+          <span style={s.crumbSep}>›</span>
+          {editingName ? (
+            <input style={s.crumbInput} value={nameDraft} autoFocus
+              onChange={(e) => setNameDraft(e.target.value)} onBlur={commitName}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') setEditingName(false); }} />
+          ) : (
+            <span style={s.crumbCurrentWrap}>
+              <span style={s.crumbCurrent}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</span>
+              <button className="icon-btn" style={s.crumbEdit} title="Rename list" onClick={startRename}><IconEdit size={14} /></button>
+            </span>
+          )}
+        </span>,
         slotEl,
       )}
 
-      <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <div style={s.listIcon}>≡</div>
-          <span style={s.crumbLabel}>{list.key || space.key} · List</span>
-          <h2 style={s.listName}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</h2>
-        </div>
-        {can('task.create') && (
-          <button className="btn btn-primary" onClick={() => setTaskOpen(true)}>+ Task</button>
-        )}
-      </div>
-
-      <ViewTabs vs={vs} />
+      <ViewTabs vs={vs} rightSlot={can('task.create')
+        ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
+        : null} />
 
       <div style={s.searchBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -166,14 +186,15 @@ const s = {
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
   page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none',
-    border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 16, fontWeight: 700, lineHeight: 1 },
-  backIcon: { display: 'inline-flex', alignItems: 'center', color: 'var(--c-text-strong)' },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 2 },
-  listIcon: { width: 30, height: 30, borderRadius: 8, background: 'var(--c-surface-3)', color: 'var(--c-text)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 },
-  crumbLabel: { color: 'var(--c-muted)', fontSize: 13, whiteSpace: 'nowrap' },
-  listName: { margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
+  crumbCurrentWrap: { display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  crumbEdit: { color: 'var(--c-faint)', padding: 4, borderRadius: 6 },
+  crumbInput: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 160 },
+  taskBtn: { padding: '7px 13px', fontSize: 13 },
   tabs: { display: 'flex', gap: 4, margin: '16px 0', borderBottom: '1px solid #e5e7eb' },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },

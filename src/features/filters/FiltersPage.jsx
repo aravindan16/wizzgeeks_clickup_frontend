@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import { tasksApi, resolveStatuses, statusLabel, statusColor, PRIORITY_COLOR } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
@@ -10,7 +12,9 @@ import { useAuth } from '../auth/useAuth';
 import { usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
-import { IconFilter, IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser } from '../../components/icons';
+import { IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser, IconEdit, IconMembers, IconBoard, IconFilter, IconListCheck } from '../../components/icons';
+import { useConfirm } from '../../components/ConfirmDialog';
+import FilterShareModal from './FilterShareModal';
 
 /**
  * ClickUp-style advanced Filters page: a recursive AND/OR builder over every task
@@ -62,11 +66,60 @@ const removeFromTree = (node, id) => {
 const ruleActive = (r) => (Array.isArray(r.value) ? r.value.length > 0 : (r.value !== '' && r.value != null));
 const nodeActive = (n) => (n.type === 'group' ? n.children.some(nodeActive) : ruleActive(n));
 
+// Result-table columns (defaults; widths/visibility persisted in localStorage).
+const COLS_LS = 'wg_filter_cols';
+const COL_DEFS = [
+  { key: 'key', label: 'Key', width: 96, min: 64 },
+  { key: 'title', label: 'Title', width: 340, min: 140 },
+  { key: 'space', label: 'Space', width: 160, min: 90 },
+  { key: 'status', label: 'Status', width: 140, min: 100 },
+  { key: 'assignee', label: 'Assignee', width: 150, min: 90 },
+  { key: 'due', label: 'Due date', width: 110, min: 80 },
+  { key: 'priority', label: 'Priority', width: 110, min: 80 },
+];
+
 export default function FiltersPage() {
   const navigate = useNavigate();
   const { id: routeId } = useParams();
+  const slotEl = useHeaderSlot();
   const { user } = useAuth();
   const myId = user?._id || user?.id || '';
+  const [filterName, setFilterName] = useState(''); // saved filter's name (for the header breadcrumb)
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [tab, setTab] = useState('filters');   // filters | members
+  const [mShare, setMShare] = useState(false);  // Add-people modal
+  const [mReload, setMReload] = useState(0);    // bump to refresh members table
+  const [showBuilder, setShowBuilder] = useState(false); // filter builder card hidden by default
+  const toast = useToast();
+
+  // Result-table column widths + visibility (persisted in localStorage).
+  const [colState, setColState] = useState(() => {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(COLS_LS) || '{}'); } catch { /* ignore */ }
+    const widths = {}, visible = {};
+    COL_DEFS.forEach((c) => { widths[c.key] = saved.widths?.[c.key] || c.width; visible[c.key] = saved.visible?.[c.key] !== false; });
+    return { widths, visible };
+  });
+  const persistCols = (st) => { try { localStorage.setItem(COLS_LS, JSON.stringify(st)); } catch { /* ignore */ } };
+  const toggleColumn = (key) => setColState((st) => {
+    const visible = { ...st.visible, [key]: !st.visible[key] };
+    if (!Object.values(visible).some(Boolean)) return st; // keep at least one column
+    const next = { ...st, visible }; persistCols(next); return next;
+  });
+  const startColResize = (e, key) => {
+    e.preventDefault(); e.stopPropagation();
+    const col = COL_DEFS.find((c) => c.key === key);
+    const startX = e.clientX; const startW = colState.widths[key];
+    const move = (ev) => setColState((st) => ({ ...st, widths: { ...st.widths, [key]: Math.max(col.min || 60, startW + (ev.clientX - startX)) } }));
+    const up = () => {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      document.body.style.userSelect = '';
+      setColState((st) => { persistCols(st); return st; });
+    };
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  };
   const [projects, setProjects] = useState([]);
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
@@ -111,13 +164,16 @@ export default function FiltersPage() {
       savedFiltersApi.get(routeId).then((sf) => {
         setCards(sf.cards?.length ? sf.cards : [newGroup()]);
         setCardsConj(sf.conj || 'AND');
+        setFilterName(sf.name || '');
         markActiveFilter(routeId);
       }).catch(() => { navigate('/filters', { replace: true }); });
     } else {
       setCards([newGroup()]);
       setCardsConj('AND');
+      setFilterName('');
       markActiveFilter('');
     }
+    setTab('filters');
   }, [routeId]); // eslint-disable-line
 
   // Context Space: the Space (or a List's Space) chosen in a rule — drives List & Status options.
@@ -226,64 +282,242 @@ export default function FiltersPage() {
   }));
   const clearAll = () => { setCards([newGroup()]); setCardsConj('AND'); markActiveFilter(''); };
 
+  // Inline rename of the saved filter from the header breadcrumb.
+  const isSaved = routeId && routeId !== 'new';
+  const startRename = () => { setNameDraft(filterName || ''); setEditingName(true); };
+  const commitName = async () => {
+    const v = (nameDraft || '').trim();
+    setEditingName(false);
+    if (!v || v === filterName || !isSaved) return;
+    setFilterName(v);
+    try { await savedFiltersApi.update(routeId, { name: v }); toast.success('Filter renamed'); window.dispatchEvent(new Event('wg-saved-filters-changed')); }
+    catch { toast.error('Could not rename filter'); }
+  };
+
   const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks };
+
+  // Active rule count (for the "Filter" toggle badge).
+  const activeCount = useMemo(() => {
+    let n = 0;
+    const scan = (node) => { if (node.type === 'group') node.children.forEach(scan); else if (ruleActive(node)) n += 1; };
+    cards.forEach(scan);
+    return n;
+  }, [cards]);
+
+  // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
+  const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
+  const RENDERERS = {
+    key: (t) => <span style={s.key}>{t.key}</span>,
+    title: (t) => <span style={s.name}>{t.title}</span>,
+    space: (t) => <span style={s.muted}>{spaceName(t.project_id)}</span>,
+    status: (t) => { const sts = stsForTask(t); return <span style={{ ...s.chip, color: statusColor(sts, t.status), borderColor: statusColor(sts, t.status) }}>{statusLabel(sts, t.status)}</span>; },
+    assignee: (t) => <span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span>,
+    due: (t) => <span style={s.muted}>{shortDate(t.end_date || t.due_date)}</span>,
+    priority: (t) => <span style={{ color: PRIORITY_COLOR[t.priority] || 'var(--c-muted)', fontWeight: 600, textTransform: 'capitalize' }}>{t.priority || '—'}</span>,
+  };
+  const columns = COL_DEFS.map((c) => ({ ...c, render: RENDERERS[c.key] }));
+
+  // The filter builder card (shown inside the View tab only when "Filter" is toggled on).
+  const builderCard = (
+    <div style={s.builder}>
+      {cards.map((card, ci) => (
+        <div key={card.id} style={s.cardBlock}>
+          {ci > 0 && (
+            <div style={s.cardDivider}>
+              {ci === 1
+                ? <div style={{ width: 84 }}><Select value={cardsConj} onChange={setCardsConj} options={AND_OR} /></div>
+                : <span style={s.cardDividerText}>{cardsConj}</span>}
+            </div>
+          )}
+          <FilterGroup node={card} setNode={setNode} removeNode={removeNode} onValue={setValue}
+            addRule={addRule} addNested={addNested} options={options} usedFields={collectFields(card)} isRoot />
+        </div>
+      ))}
+      <div style={s.builderFooter}>
+        <button type="button" className="btn" style={g.addFilter} onClick={addCard}>
+          <IconPlus size={14} /> Add filter
+        </button>
+        <div style={s.footerRight}>
+          <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
+          <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
+        </div>
+      </div>
+    </div>
+  );
+
+  const filterToggle = (
+    <button type="button" className="btn" style={{ ...s.filterToggle, ...(showBuilder ? s.filterToggleActive : {}) }}
+      onClick={() => setShowBuilder((v) => !v)}>
+      <IconFilter size={15} /> Filter
+      {activeCount > 0 && <span style={s.filterBadge}>{activeCount}</span>}
+      <span style={{ display: 'inline-flex', transform: showBuilder ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><IconChevronDown size={13} /></span>
+    </button>
+  );
 
   return (
     <div>
-      <div style={s.header}>
-        <h2 style={s.title}><span style={s.titleIcon}><IconFilter size={20} /></span>Filters</h2>
-      </div>
+      {/* Breadcrumb ("Filters › <saved filter name>") lives in the shared topbar. */}
+      {slotEl && createPortal(
+        <span style={s.crumbs}>
+          <button style={s.crumbLink} onClick={() => navigate('/filters')}>Filters</button>
+          <span style={s.crumbSep}>›</span>
+          {editingName ? (
+            <input style={s.crumbInput} value={nameDraft} autoFocus
+              onChange={(e) => setNameDraft(e.target.value)} onBlur={commitName}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') setEditingName(false); }} />
+          ) : (
+            <span style={s.crumbCurrentWrap}>
+              <span style={s.crumbCurrent}>{filterName || 'New filter'}</span>
+              {isSaved && (
+                <button className="icon-btn" style={s.crumbEdit} title="Rename filter" onClick={startRename}><IconEdit size={14} /></button>
+              )}
+            </span>
+          )}
+        </span>,
+        slotEl,
+      )}
 
-      <div className="wg-card" style={s.builder}>
-        <div style={s.builderHead}>
-          <span style={s.builderTitle}>Filters</span>
-          <SavedFilters cards={cards} conj={cardsConj} />
-        </div>
-        {cards.map((card, ci) => (
-          <div key={card.id} style={s.cardBlock}>
-            {ci > 0 && (
-              <div style={s.cardDivider}>
-                {ci === 1
-                  ? <div style={{ width: 84 }}><Select value={cardsConj} onChange={setCardsConj} options={AND_OR} /></div>
-                  : <span style={s.cardDividerText}>{cardsConj}</span>}
-              </div>
-            )}
-            <FilterGroup node={card} setNode={setNode} removeNode={removeNode} onValue={setValue}
-              addRule={addRule} addNested={addNested} options={options} usedFields={collectFields(card)} isRoot />
+      {/* Tabs (Filters · Members) — like the dashboard detail. Members only exist
+          once the filter is saved (it needs an id to share). */}
+      {isSaved && (
+        <div style={s.tabs}>
+          <div style={s.tabsLeft}>
+            <button style={{ ...s.tab, ...(tab === 'filters' ? s.tabActive : {}) }} onClick={() => setTab('filters')}>
+              <IconBoard size={15} /> View
+            </button>
+            <button style={{ ...s.tab, ...(tab === 'members' ? s.tabActive : {}) }} onClick={() => setTab('members')}>
+              <IconMembers size={15} /> Members
+            </button>
           </div>
-        ))}
-        <div style={s.builderFooter}>
-          <button type="button" className="btn" style={g.addFilter} onClick={addCard}>
-            <IconPlus size={14} /> Add filter
-          </button>
-          <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
+          {/* Right corner: Add people on Members, Filter + count + Columns on View. */}
+          {tab === 'members' ? (
+            <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+          ) : (
+            <div style={s.tabsRight}>
+              {filterToggle}
+              <ColumnsMenu columns={columns} colState={colState} onToggle={toggleColumn} />
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
-      <div className="wg-card" style={s.results}>
-        <div style={s.resultsHead}>{loading ? 'Loading…' : `${filtered.length} task${filtered.length === 1 ? '' : 's'}`}</div>
-        <table style={s.table}>
+      {isSaved && tab === 'members' ? (
+        <FilterMembers filterId={routeId} reloadKey={mReload} />
+      ) : isSaved ? (
+        // Saved filter View tab: builder (when toggled) then the results table.
+        <>
+          {showBuilder && builderCard}
+          {/* Only show tasks once a filter is actually applied; otherwise the empty
+              "No tasks found" state (avoids dumping every task with no filter). */}
+          <ResultsTable columns={columns} rows={activeCount > 0 ? filtered : []} loading={loading}
+            colState={colState} onResizeStart={startColResize}
+            onOpenTask={(id) => navigate(`/tasks/${id}`)} />
+        </>
+      ) : (
+        // Brand-new (unsaved) filter: just the builder so you can create + save it.
+        builderCard
+      )}
+
+      <FilterShareModal open={mShare} filterId={routeId}
+        onClose={() => { setMShare(false); setMReload((x) => x + 1); }}
+        onChanged={() => setMReload((x) => x + 1)} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------- Members tab (table) */
+function FilterMembers({ filterId, reloadKey }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [members, setMembers] = useState([]);
+
+  const load = () => savedFiltersApi.members(filterId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
+  useEffect(() => { load(); }, [filterId, reloadKey]); // eslint-disable-line
+
+  const remove = async (m) => {
+    if (m.is_owner) return;
+    if (!(await confirm({ title: 'Remove member', message: `Remove ${m.full_name || m.email}?`, confirmLabel: 'Remove', danger: true }))) return;
+    try { await savedFiltersApi.removeMember(filterId, m.user_id); load(); window.dispatchEvent(new Event('wg-saved-filters-changed')); }
+    catch { toast.error('Could not remove member'); }
+  };
+
+  return (
+    <div style={s.mCard}>
+      <table style={s.mTable}>
+        <thead><tr><th style={s.mTh}>Name</th><th style={s.mTh}>Email</th><th style={{ ...s.mTh, textAlign: 'right' }}>Actions</th></tr></thead>
+        <tbody>
+          {members.length === 0 && <tr><td colSpan={3} style={s.mEmpty}>No members yet.</td></tr>}
+          {members.map((m) => (
+            <tr key={m.user_id} className="wg-rel-row" style={s.mRow}>
+              <td style={s.mTd}><span style={s.mName}>{m.full_name || '—'}</span></td>
+              <td style={s.mTd}><span style={s.muted}>{m.email}</span></td>
+              <td style={{ ...s.mTd, textAlign: 'right' }}>
+                {m.is_owner
+                  ? <span style={s.ownerTag}>Owner</span>
+                  : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ------------------------------- Columns show/hide menu (in the tab bar corner) */
+function ColumnsMenu({ columns, colState, onToggle }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" className="btn" style={s.colBtn} onClick={() => setOpen((o) => !o)}>
+        <IconListCheck size={15} /> Columns <IconChevronDown size={13} />
+      </button>
+      {open && (
+        <div style={s.colMenu} role="menu">
+          {columns.map((c) => (
+            <button key={c.key} type="button" className="wg-menu-item" style={s.colMenuItem} onClick={() => onToggle(c.key)}>
+              <span style={{ ...s.colCheck, ...(colState.visible[c.key] ? s.colCheckOn : {}) }}>{colState.visible[c.key] ? '✓' : ''}</span>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------- Results table (resizable columns) */
+function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
+  const shown = columns.filter((c) => colState.visible[c.key]);
+  return (
+    <div style={s.rCard}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={s.rTable}>
+          <colgroup>{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
           <thead>
-            <tr><Th w={90}>Key</Th><Th>Title</Th><Th w={160}>Space</Th><Th w={130}>Status</Th>
-              <Th w={150}>Assignee</Th><Th w={110}>Due date</Th><Th w={100}>Priority</Th></tr>
+            <tr>
+              {shown.map((c, i) => (
+                <th key={c.key} style={s.rTh}>
+                  <span style={s.rThLabel}>{c.label}</span>
+                  {i < shown.length - 1 && <span style={s.rResize} onMouseDown={(e) => onResizeStart(e, c.key)} title="Drag to resize" />}
+                </th>
+              ))}
+            </tr>
           </thead>
           <tbody>
-            {!loading && filtered.length === 0 && <tr><td colSpan={7} style={s.empty}>No tasks match these filters.</td></tr>}
-            {filtered.map((t) => {
-              const sts = stsForTask(t);
-              const due = t.end_date || t.due_date;
-              return (
-                <tr key={t._id} className="wg-rel-row" style={s.row} onClick={() => navigate(`/tasks/${t._id}`)}>
-                  <Td><span style={s.key}>{t.key}</span></Td>
-                  <Td><span style={s.name}>{t.title}</span></Td>
-                  <Td><span style={s.muted}>{spaceName(t.project_id)}</span></Td>
-                  <Td><span style={{ ...s.chip, color: statusColor(sts, t.status), borderColor: statusColor(sts, t.status) }}>{statusLabel(sts, t.status)}</span></Td>
-                  <Td><span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span></Td>
-                  <Td><span style={s.muted}>{due ? new Date(`${due}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</span></Td>
-                  <Td><span style={{ color: PRIORITY_COLOR[t.priority] || 'var(--c-muted)', fontWeight: 600, textTransform: 'capitalize' }}>{t.priority || '—'}</span></Td>
-                </tr>
-              );
-            })}
+            {!loading && rows.length === 0 && <tr><td colSpan={shown.length} style={s.empty}>No tasks found</td></tr>}
+            {rows.map((t) => (
+              <tr key={t._id} className="wg-rel-row" style={s.rRow} onClick={() => onOpenTask(t._id)}>
+                {shown.map((c) => <td key={c.key} style={s.rTd}><div style={s.rClip}>{c.render(t)}</div></td>)}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -399,7 +633,7 @@ function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
       <div style={g.valCol}>
         <ValueEditor rule={rule} setVal={setVal} options={options} />
       </div>
-      <button type="button" style={g.trash} onClick={onRemove} title="Remove"><IconTrash size={16} /></button>
+      <button type="button" className="icon-btn" style={g.trash} onClick={onRemove} title="Remove"><IconTrash size={16} /></button>
     </>
   );
 }
@@ -535,28 +769,22 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
 /* ------------------------------------------------ Saved filters (DB-backed) */
 // Sync which saved filter is "active" (by id) so the sidebar can highlight it.
 const markActiveFilter = (id) => { try { localStorage.setItem('wg_active_filter', id); } catch { /* ignore */ } window.dispatchEvent(new Event('wg-active-filter-changed')); };
-function SavedFilters({ cards, conj }) {
+// A single "Save filter" button. For an existing saved filter it updates it in
+// place; for a fresh builder (/filters/new) it prompts for a name and creates one.
+function SaveFilterButton({ cards, conj, routeId }) {
   const promptDialog = usePrompt();
   const toast = useToast();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [saved, setSaved] = useState([]);
-  const ref = useRef(null);
-  const load = () => savedFiltersApi.list().then(setSaved).catch(() => setSaved([]));
-  useEffect(() => {
-    load();
-    const onChange = () => load();
-    window.addEventListener('wg-saved-filters-changed', onChange);
-    return () => window.removeEventListener('wg-saved-filters-changed', onChange);
-  }, []);
-  useEffect(() => {
-    if (!open) return undefined;
-    load();
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h, true);
-    return () => document.removeEventListener('mousedown', h, true);
-  }, [open]);
+  const isExisting = routeId && routeId !== 'new';
   const save = async () => {
+    if (isExisting) {
+      try {
+        await savedFiltersApi.update(routeId, { cards, conj });
+        window.dispatchEvent(new Event('wg-saved-filters-changed'));
+        toast.success('Filter saved');
+      } catch { toast.error('Could not save filter'); }
+      return;
+    }
     const name = await promptDialog({ title: 'Save filter', message: 'Give this filter a name.', placeholder: 'Filter name', confirmLabel: 'Save' });
     if (!name || !name.trim()) return;
     try {
@@ -566,30 +794,8 @@ function SavedFilters({ cards, conj }) {
       navigate(`/filters/${created.id}`); // give the new filter its own route
     } catch { toast.error('Could not create filter'); }
   };
-  const del = async (id) => {
-    try { await savedFiltersApi.remove(id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
-    window.dispatchEvent(new Event('wg-saved-filters-changed'));
-    load();
-  };
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="btn" style={g.savedBtn} onClick={() => setOpen((o) => !o)}>
-        Saved filters <IconChevronDown size={14} />
-      </button>
-      {open && (
-        <div style={{ ...g.pop, right: 0, left: 'auto', minWidth: 220 }}>
-          <button type="button" style={g.popItem} onClick={() => { save(); setOpen(false); }}><IconPlus size={14} /> Save current filter</button>
-          {saved.length > 0 && <div style={g.popDivider} />}
-          {saved.map((sf) => (
-            <div key={sf.id} style={g.savedRow}>
-              <button type="button" style={{ ...g.popItem, flex: 1 }} onClick={() => { navigate(`/filters/${sf.id}`); setOpen(false); }}>{sf.name}</button>
-              <button type="button" style={g.trash} onClick={() => del(sf.id)} title="Delete"><IconTrash size={14} /></button>
-            </div>
-          ))}
-          {saved.length === 0 && <div style={g.popEmpty}>No saved filters yet</div>}
-        </div>
-      )}
-    </div>
+    <button type="button" className="btn btn-primary" style={g.saveBtn} onClick={save}>Save filter</button>
   );
 }
 
@@ -611,7 +817,7 @@ const g = {
   opCol: { width: 104, flexShrink: 0 },
   valCol: { flex: 1, minWidth: 160 },
   trash: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 38, border: 'none',
-    background: 'none', color: 'var(--c-muted)', cursor: 'pointer', borderRadius: 8, flexShrink: 0 },
+    color: 'var(--c-muted)', cursor: 'pointer', borderRadius: 8, flexShrink: 0 },
   nestedLinkRow: { paddingLeft: 92 },
   nestedLinkFlush: { paddingLeft: 0 },
   linkBtn: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' },
@@ -621,6 +827,7 @@ const g = {
   removeGroup: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid var(--c-border)',
     background: 'var(--c-surface)', color: 'var(--c-muted)', cursor: 'pointer', borderRadius: 8 },
   savedBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5 },
+  saveBtn: { fontSize: 13.5, fontWeight: 600, padding: '8px 16px' },
   trigger: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', height: 38,
     padding: '0 12px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8,
     cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
@@ -641,12 +848,59 @@ const g = {
 };
 
 const s = {
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  title: { margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, color: 'var(--c-text-strong)' },
-  titleIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
-  builder: { padding: 16, marginBottom: 16 },
-  builderHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  builderTitle: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)' },
+  crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
+  crumbCurrentWrap: { display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  crumbEdit: { color: 'var(--c-faint)', padding: 4, borderRadius: 6 },
+  crumbInput: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 160 },
+  builder: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12,
+    boxShadow: 'var(--sh-xs)', padding: 16, marginBottom: 16 },
+  footerRight: { display: 'inline-flex', alignItems: 'center', gap: 10 },
+  tabs: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    borderBottom: '1px solid var(--c-border)', marginBottom: 16 },
+  tabsLeft: { display: 'flex', alignItems: 'center', gap: 8 },
+  tab: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer',
+    padding: '10px 6px', fontSize: 14, fontWeight: 600, color: 'var(--c-muted)', borderBottom: '2px solid transparent' },
+  tabActive: { color: 'var(--c-text-strong)', borderBottom: '2px solid var(--c-text-strong)' },
+  addBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-primary)',
+    color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
+  // Members table
+  mCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  mTable: { width: '100%', borderCollapse: 'collapse' },
+  mTh: { textAlign: 'left', padding: '11px 16px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em',
+    color: 'var(--c-muted)', background: 'var(--c-surface-2)' },
+  mRow: { borderTop: '1px solid var(--c-border-2)' },
+  mTd: { padding: '12px 16px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
+  mName: { color: 'var(--c-text-strong)', fontWeight: 600 },
+  mEmpty: { padding: 28, textAlign: 'center', color: 'var(--c-muted)' },
+  ownerTag: { fontSize: 12, fontWeight: 600, color: 'var(--c-muted)', background: 'var(--c-surface-2)', padding: '3px 10px', borderRadius: 999 },
+  removeLink: { border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
+  // Right-corner controls in the View/Members tab bar
+  tabsRight: { display: 'inline-flex', alignItems: 'center', gap: 12 },
+  rCount: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
+  filterToggle: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 600 },
+  filterToggleActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)' },
+  filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
+    borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
+  colBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 600 },
+  colMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 40, minWidth: 180, background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(16,24,40,.16)', padding: 6 },
+  colMenuItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
+  colCheck: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },
+  colCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
+  // Results table (fixed layout so column widths apply; resize handles on headers)
+  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  rTable: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
+  rTh: { position: 'relative', textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase',
+    letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  rThLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  rResize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
+  rRow: { borderTop: '1px solid var(--c-border-2)', cursor: 'pointer' },
+  rTd: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
+  rClip: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   cardBlock: { marginBottom: 10 },
   cardDivider: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' },
   cardDividerText: { fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: 'var(--c-muted)', paddingLeft: 8 },

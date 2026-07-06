@@ -77,12 +77,13 @@ export default function DashboardsMenu({ collapsed }) {
   return (
     <div style={s.section} ref={rootRef}>
       <div className="wg-sb-row" style={s.row}>
-        <button type="button" style={s.caret} onClick={() => setOpen((o) => !o)} title={open ? 'Collapse' : 'Expand'}>
-          <Chevron open={open} size={13} />
-        </button>
         <NavLink to="/dashboard" end
           style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
-          <span style={s.navIcon}><IconDashboard size={18} /></span>
+          <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}>
+            <span className="wg-nav-icon"><IconDashboard size={18} /></span>
+            <span className="wg-nav-caret"><Chevron open={open} size={13} /></span>
+          </button>
           <span style={s.label}>Dashboard</span>
         </NavLink>
         <span style={s.headerActions}>
@@ -120,7 +121,7 @@ export default function DashboardsMenu({ collapsed }) {
                       </button>
                       <div style={s.divider} />
                       <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteDashboard(d)}>
-                        <span style={s.dropIcon}><IconTrash size={15} /></span> Delete dashboard
+                        <span style={{ ...s.dropIcon, color: '#b91c1c' }}><IconTrash size={15} /></span> Delete dashboard
                       </button>
                     </div>
                   )}
@@ -135,13 +136,14 @@ export default function DashboardsMenu({ collapsed }) {
 }
 
 const s = {
-  section: { marginBottom: 2, position: 'relative' },
+  section: { position: 'relative' },
   row: { display: 'flex', alignItems: 'center', gap: 2, borderRadius: 8, position: 'relative', paddingRight: 6 },
   caret: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-muted)', display: 'inline-flex', padding: 4, flexShrink: 0 },
   navMain: { display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: '9px 8px', borderRadius: 8,
     color: 'var(--c-muted)', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   active: { color: 'var(--c-text-strong)', fontWeight: 600 },
   navIcon: { width: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
+  navToggle: { width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', flexShrink: 0 },
   label: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   headerActions: { display: 'inline-flex', alignItems: 'center', gap: 2, position: 'relative', flexShrink: 0 },
   headerIconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4, borderRadius: 6 },

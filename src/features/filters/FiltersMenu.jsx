@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { IconFilter, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
+import { IconFilter, IconPlus, IconDots, IconTrash, IconMembers, IconEdit, Chevron } from '../../components/icons';
 import { savedFiltersApi } from './savedFiltersApi';
 import FilterShareModal from './FilterShareModal';
 import { useToast } from '../../components/Toast';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 /**
  * Sidebar "Filters" section (mirrors DashboardsMenu / SpacesMenu): the Filters row
@@ -14,12 +15,15 @@ export default function FiltersMenu({ collapsed }) {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const confirm = useConfirm();
   const rootRef = useRef(null);
   const [open, setOpen] = useState(true);
   const [saved, setSaved] = useState([]);        // [{id, name, cards, conj, owner_name}]
   const [headerMenu, setHeaderMenu] = useState(false);
   const [rowMenu, setRowMenu] = useState(null);
   const [shareId, setShareId] = useState(null); // saved-filter id being shared
+  const [renaming, setRenaming] = useState(null); // saved-filter id being renamed inline
+  const [draft, setDraft] = useState('');
 
   // Highlight ONLY the filter whose page we're currently on (route-driven), so the
   // highlight clears when you navigate to a List/Space/anywhere else.
@@ -40,11 +44,21 @@ export default function FiltersMenu({ collapsed }) {
 
   const newFilter = () => { setHeaderMenu(false); navigate('/filters/new'); };
   const openSaved = (id) => { setRowMenu(null); navigate(`/filters/${id}`); };
-  const deleteSaved = async (id) => {
+  const deleteSaved = async (sf) => {
     setRowMenu(null);
-    try { await savedFiltersApi.remove(id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
-    if (activeId === id) navigate('/filters');
+    if (!(await confirm({ title: 'Delete filter', message: `Delete "${sf.name}"? This can't be undone.`, confirmLabel: 'Delete', danger: true }))) return;
+    try { await savedFiltersApi.remove(sf.id); toast.success('Filter deleted'); } catch { toast.error('Could not delete filter'); }
+    if (activeId === sf.id) navigate('/filters');
     load();
+    window.dispatchEvent(new Event('wg-saved-filters-changed'));
+  };
+  const startRename = (sf) => { setRowMenu(null); setDraft(sf.name || ''); setRenaming(sf.id); };
+  const commitRename = async (sf) => {
+    const v = (draft || '').trim();
+    setRenaming(null);
+    if (!v || v === sf.name) return;
+    setSaved((list) => list.map((x) => (x.id === sf.id ? { ...x, name: v } : x))); // optimistic
+    try { await savedFiltersApi.update(sf.id, { name: v }); toast.success('Filter renamed'); } catch { toast.error('Could not rename filter'); }
     window.dispatchEvent(new Event('wg-saved-filters-changed'));
   };
 
@@ -59,11 +73,12 @@ export default function FiltersMenu({ collapsed }) {
   return (
     <div style={s.section} ref={rootRef}>
       <div className="wg-sb-row" style={s.row}>
-        <button type="button" style={s.caret} onClick={() => setOpen((o) => !o)} title={open ? 'Collapse' : 'Expand'}>
-          <Chevron open={open} size={13} />
-        </button>
         <NavLink to="/filters" end style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
-          <span style={s.navIcon}><IconFilter size={18} /></span>
+          <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}>
+            <span className="wg-nav-icon"><IconFilter size={18} /></span>
+            <span className="wg-nav-caret"><Chevron open={open} size={13} /></span>
+          </button>
           <span style={s.label}>Filters</span>
         </NavLink>
         <span style={s.headerActions}>
@@ -85,21 +100,34 @@ export default function FiltersMenu({ collapsed }) {
           {saved.length === 0 && <div style={s.empty}>No saved filters yet</div>}
           {saved.map((sf) => (
             <div key={sf.id} className="wg-sb-row" style={{ ...s.child, ...(activeId === sf.id ? s.childActive : {}) }}>
-              <div style={s.childMain} onClick={() => openSaved(sf.id)} title={sf.name}>
-                <span style={s.avatar}>{(sf.name || 'F').charAt(0).toUpperCase()}</span>
-                <span style={s.childName}>{sf.name}</span>
-              </div>
+              {renaming === sf.id ? (
+                <div style={s.childMain}>
+                  <span style={s.avatar}>{(draft || 'F').charAt(0).toUpperCase()}</span>
+                  <input style={s.renameInput} value={draft} autoFocus
+                    onChange={(e) => setDraft(e.target.value)}
+                    onBlur={() => commitRename(sf)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitRename(sf); if (e.key === 'Escape') setRenaming(null); }} />
+                </div>
+              ) : (
+                <div style={s.childMain} onClick={() => openSaved(sf.id)} title={sf.name}>
+                  <span style={s.avatar}>{(sf.name || 'F').charAt(0).toUpperCase()}</span>
+                  <span style={s.childName}>{sf.name}</span>
+                </div>
+              )}
               <span className="wg-sb-actions" style={{ ...s.rowActions, ...(rowMenu === sf.id ? s.actionsOpen : {}) }}>
                 <button className="icon-btn" style={s.iconBtn} title="Filter actions"
                   onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === sf.id ? null : sf.id); }}><IconDots size={16} /></button>
                 {rowMenu === sf.id && (
                   <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
+                    <button className="wg-menu-item" style={s.dropItem} onClick={() => startRename(sf)}>
+                      <span style={s.dropIcon}><IconEdit size={15} /></span> Rename
+                    </button>
                     <button className="wg-menu-item" style={s.dropItem} onClick={() => { setRowMenu(null); setShareId(sf.id); }}>
                       <span style={s.dropIcon}><IconMembers size={15} /></span> Members
                     </button>
                     <div style={s.divider} />
-                    <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteSaved(sf.id)}>
-                      <span style={s.dropIcon}><IconTrash size={15} /></span> Delete filter
+                    <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteSaved(sf)}>
+                      <span style={{ ...s.dropIcon, color: '#b91c1c' }}><IconTrash size={15} /></span> Delete filter
                     </button>
                   </div>
                 )}
@@ -114,7 +142,7 @@ export default function FiltersMenu({ collapsed }) {
 }
 
 const s = {
-  section: { marginBottom: 2, position: 'relative' },
+  section: { position: 'relative' },
   row: { display: 'flex', alignItems: 'center', gap: 2, borderRadius: 8, position: 'relative', paddingRight: 6 },
   caret: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-muted)', display: 'inline-flex', padding: 4, flexShrink: 0 },
   navMain: { display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: '9px 8px', borderRadius: 8,
@@ -133,6 +161,8 @@ const s = {
   childMain: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, padding: '6px 4px 6px 8px', cursor: 'pointer' },
   avatar: { width: 22, height: 22, borderRadius: 6, background: '#111827', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   childName: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' },
+  renameInput: { flex: 1, minWidth: 0, font: 'inherit', fontSize: 13.5, padding: '3px 6px', border: '1px solid var(--c-primary)',
+    borderRadius: 6, background: 'var(--c-surface)', color: 'var(--c-text)', outline: 'none' },
   empty: { fontSize: 12.5, color: 'var(--c-faint)', padding: '6px 10px' },
 
   dropdown: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 170, background: 'var(--c-surface)',
