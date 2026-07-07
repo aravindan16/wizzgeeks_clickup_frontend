@@ -14,7 +14,6 @@ export const STD_CARD_FIELDS = [
   { key: 'assignee', label: 'Assignee', def: true },
   { key: 'created_at', label: 'Date created', def: false },
   { key: 'due_date', label: 'Due date', def: true },
-  { key: 'closed_at', label: 'Date closed', def: false },
   { key: 'labels', label: 'Labels', def: true },
 ];
 

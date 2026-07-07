@@ -6,6 +6,7 @@ import { listsApi } from "../lists/listsApi";
 import CreateListModal from "../lists/CreateListModal";
 import ListStatusModal from "../lists/ListStatusModal";
 import CustomFieldManager from "../customfields/CustomFieldManager";
+import IconPicker from "../../components/IconPicker";
 import { useConfirm, usePrompt } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { useAuth } from "../auth/useAuth";
@@ -54,6 +55,28 @@ export default function SpacesMenu({ collapsed }) {
   const [listMenu, setListMenu] = useState(null); // { id, spaceId } with open ⋯ menu
   const [createListSpace, setCreateListSpace] = useState(null); // spaceId for create-list modal
   const [cfManager, setCfManager] = useState(null); // { scope, spaceId, listId, spaceName, listName }
+  const [iconFor, setIconFor] = useState(null); // { kind: 'space'|'list', id, icon } — icon picker target
+
+  const saveIcon = async (icon) => {
+    const target = iconFor;
+    setIconFor(null);
+    if (!target) return;
+    try {
+      if (target.kind === "space") {
+        await projectsApi.update(target.id, { icon });
+        setSpaces((arr) => arr.map((sp) => (sp._id === target.id ? { ...sp, icon: icon || null } : sp)));
+      } else {
+        await listsApi.update(target.id, { icon });
+        setListsBySpace((m) => {
+          const n = { ...m };
+          for (const k of Object.keys(n)) n[k] = (n[k] || []).map((l) => (l._id === target.id ? { ...l, icon: icon || null } : l));
+          return n;
+        });
+        window.dispatchEvent(new CustomEvent("wg:list-updated", { detail: { listId: target.id } }));
+      }
+      toast.success("Icon updated");
+    } catch { toast.error("Could not update icon"); }
+  };
   const [listStatus, setListStatus] = useState(null); // { list, spaceStatuses }
   const [taskFor, setTaskFor] = useState(null); // { space, list } — quick create task in a list
 
@@ -267,6 +290,12 @@ export default function SpacesMenu({ collapsed }) {
 
   const modals = (
     <>
+      <IconPicker
+        open={!!iconFor}
+        current={iconFor?.icon || ""}
+        onSelect={saveIcon}
+        onClose={() => setIconFor(null)}
+      />
       <SpaceSetupModal
         open={spaceSetupOpen}
         onClose={() => setSpaceSetupOpen(false)}
@@ -440,8 +469,8 @@ export default function SpacesMenu({ collapsed }) {
                     onClick={(e) => { e.stopPropagation(); toggleExpand(sp._id); }}
                     title={isOpen ? "Collapse" : "Expand"}
                   >
-                    <span className="wg-nav-icon" style={s.badgeVisual}>
-                      {(sp.key || sp.name || "?")[0].toUpperCase()}
+                    <span className="wg-nav-icon" style={{ ...s.badgeVisual, ...(sp.icon ? s.badgeEmoji : {}) }}>
+                      {sp.icon || (sp.key || sp.name || "?")[0].toUpperCase()}
                     </span>
                     <span className="wg-nav-caret"><Chevron open={isOpen} size={13} /></span>
                   </button>
@@ -495,6 +524,13 @@ export default function SpacesMenu({ collapsed }) {
                           <IconPlus size={16} />
                         </span>{" "}
                         Create List
+                      </button>
+                      <button
+                        className="wg-menu-item"
+                        style={s.dropItem}
+                        onClick={() => { setSpaceMenu(null); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
+                      >
+                        <span style={s.dropIcon}>🙂</span> Change icon
                       </button>
                       <button
                         className="wg-menu-item"
@@ -563,7 +599,7 @@ export default function SpacesMenu({ collapsed }) {
                           })}
                         >
                           <span style={s.listIcon}>
-                            <IconListCheck size={15} />
+                            {l.icon ? <span style={{ fontSize: 14 }}>{l.icon}</span> : <IconListCheck size={15} />}
                           </span>
                           <span style={s.rowName}>{l.name}</span>
                           {l.privacy === "private" && (
@@ -616,6 +652,13 @@ export default function SpacesMenu({ collapsed }) {
                                 <IconEdit size={16} />
                               </span>{" "}
                               Rename
+                            </button>
+                            <button
+                              className="wg-menu-item"
+                              style={s.dropItem}
+                              onClick={() => { setListMenu(null); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
+                            >
+                              <span style={s.dropIcon}>🙂</span> Change icon
                             </button>
                             <button
                               className="wg-menu-item"
@@ -812,6 +855,7 @@ const s = {
   },
   spaceToggle: { width: 22, height: 22, marginLeft: 8, flexShrink: 0 },
   badgeVisual: { width: 22, height: 22, borderRadius: 6, background: "#111827", color: "#ffffff", fontWeight: 700, fontSize: 11, flexShrink: 0 },
+  badgeEmoji: { background: "transparent", color: "inherit", fontSize: 15 },
   activeRow: { background: "#f1f5f9", color: "#111827" },
   activeText: { color: "#111827", fontWeight: 600 },
   rowName: {
