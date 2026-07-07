@@ -276,19 +276,19 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
 
                   <div style={s.chipsRow}>
                     {cfv.status && (() => { const st2 = statuses.find((x) => x.key === t.status) || { name: t.status, color: '#6b7280' };
-                      return <span style={{ ...s.statusChip, color: st2.color, background: `${st2.color}1a` }}>{st2.name}</span>; })()}
-                    {cfv.priority && <span style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
+                      return <span data-tip="Status" style={{ ...s.statusChip, color: st2.color, background: `${st2.color}1a` }}>{st2.name}</span>; })()}
+                    {cfv.priority && <span data-tip="Priority" style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
                       <span style={{ ...s.priDot, background: PRIORITY_COLOR[t.priority] }} />{t.priority}
                     </span>}
-                    {cfv.type && <span style={s.metaChip} title="Task type"><TaskTypeIcon type={t.type} size={12} /> {(t.type || 'task').charAt(0).toUpperCase() + (t.type || 'task').slice(1)}</span>}
-                    {/* Dates in order: created · due · closed. Calendar icon + hover tooltip. */}
-                    {cfv.created_at && <span style={s.metaChip} title={'Date created\nThis field is read-only'}><IconCalendar size={12} />{t.created_at && shortDate(t.created_at)}</span>}
-                    {cfv.due_date && <span style={s.metaChip} title="Due date"><IconCalendar size={12} />{t.due_date && shortDate(t.due_date)}</span>}
+                    {cfv.type && <span style={s.metaChip} data-tip="Task type"><TaskTypeIcon type={t.type} size={12} /> {(t.type || 'task').charAt(0).toUpperCase() + (t.type || 'task').slice(1)}</span>}
+                    {/* Dates in order: created · due. Calendar icon + hover tooltip. */}
+                    {cfv.created_at && <span style={s.metaChip} data-tip="Date created (read-only)"><IconCalendar size={12} />{t.created_at && shortDate(t.created_at)}</span>}
+                    {cfv.due_date && <span style={s.metaChip} data-tip="Due date"><IconCalendar size={12} />{t.due_date && shortDate(t.due_date)}</span>}
                     {cfv.closed_at && (() => {
                       const cd = t.completed_at || t.closed_at || (isDoneStatus(statuses, t.status) ? t.updated_at : null);
-                      return <span style={s.metaChip} title={'Date closed\nThis field is read-only'}><IconCalendar size={12} />{cd && shortDate(cd)}</span>;
+                      return <span style={s.metaChip} data-tip="Date closed (read-only)"><IconCalendar size={12} />{cd && shortDate(cd)}</span>;
                     })()}
-                    {cfv.labels && (t.labels || []).slice(0, 3).map((l) => <span key={l} style={s.labelChip}>{l}</span>)}
+                    {cfv.labels && (t.labels || []).slice(0, 3).map((l) => <span key={l} data-tip="Label" style={s.labelChip}>{l}</span>)}
                     {cardCustom.map((f) => {
                       const val = (t.custom_fields || {})[f._id];
                       // Relationship: same icon with/without value, clickable to link inline.
@@ -296,7 +296,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                         const n = relCount(val);
                         return (
                           <button key={f._id} style={{ ...s.cfRelChip, ...(n ? {} : { color: 'var(--c-faint)' }) }}
-                            title={f.name} onClick={(e) => openRelPicker(t, f, e)}>
+                            data-tip={f.name} onClick={(e) => openRelPicker(t, f, e)}>
                             <IconFieldRelationship size={12} />{n > 0 ? n : ''}
                           </button>
                         );
@@ -309,8 +309,8 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                     <span style={s.idRow}>
                       {cfv.key && (
                         <>
-                          <span title={t.type} style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
-                          <span style={s.key}>{t.key}</span>
+                          <span data-tip="Task type" style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
+                          <span data-tip="Task ID" style={s.key}>{t.key}</span>
                         </>
                       )}
                     </span>

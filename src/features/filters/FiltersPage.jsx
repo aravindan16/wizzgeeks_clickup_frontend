@@ -8,6 +8,7 @@ import { listsApi } from '../lists/listsApi';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
 import { savedFiltersApi } from './savedFiltersApi';
+import { labelsApi } from '../labels/labelsApi';
 import { useAuth } from '../auth/useAuth';
 import { usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
@@ -31,9 +32,10 @@ const FIELDS = [
   { key: 'status', label: 'Status' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'reporter', label: 'Reporter' },
+  { key: 'label', label: 'Label' },
 ];
 // Every field except Space is multi-select (value = array); Space stays a single id.
-const MULTI_FIELDS = new Set(['list', 'type', 'status', 'assignee', 'reporter']);
+const MULTI_FIELDS = new Set(['list', 'type', 'status', 'assignee', 'reporter', 'label']);
 const emptyValue = (field) => (MULTI_FIELDS.has(field) ? [] : '');
 let _seq = 0;
 const nid = () => `n${_seq++}`;
@@ -124,6 +126,7 @@ export default function FiltersPage() {
   const [projects, setProjects] = useState([]);
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
+  const [labels, setLabels] = useState([]);   // global label catalog {id, name, color}
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   // Each "card" is an independent filter group; the bottom "+ Add filter" adds a card.
@@ -138,6 +141,7 @@ export default function FiltersPage() {
         listsApi.forSpace(p._id).then((ls) => (ls || []).map((l) => ({ ...l, spaceId: p._id, spaceName: p.name || p.key }))).catch(() => [])));
       setLists(perSpace.flat());
       dashboardsApi.searchUsers('').then((u) => setUsers(Array.isArray(u) ? u : (u?.items || []))).catch(() => setUsers([]));
+      labelsApi.list().then(setLabels).catch(() => setLabels([]));
     })();
   }, []);
 
@@ -295,7 +299,8 @@ export default function FiltersPage() {
     catch { toast.error('Could not rename filter'); }
   };
 
-  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks };
+  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks,
+    labels: labels.map((l) => ({ value: l.name, label: l.name })) };
 
   // Active rule count (for the "Filter" toggle badge).
   const activeCount = useMemo(() => {
@@ -487,6 +492,7 @@ function ColumnsMenu({ columns, colState, onToggle }) {
 /* ---------------------------------------- Results table (resizable columns) */
 const PAGE_SIZES = [10, 20, 50, 100];
 function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
+  const navigate = useNavigate();
   const shown = columns.filter((c) => colState.visible[c.key]);
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
@@ -497,13 +503,37 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
   const pageRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
   const from = total === 0 ? 0 : safePage * pageSize + 1;
   const to = Math.min(total, (safePage + 1) * pageSize);
+
+  // --- bulk selection --- (opens the step-by-step Bulk Operation page)
+  const [selected, setSelected] = useState(() => new Set());
+  const allIds = rows.map((r) => r._id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const toggleRow = (id) => setSelected((s2) => { const n = new Set(s2); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(() => (allSelected ? new Set() : new Set(allIds)));
+  const clearSel = () => setSelected(new Set());
+  const startBulk = () => {
+    const picked = rows.filter((r) => selected.has(r._id));
+    if (picked.length) navigate('/bulk-edit', { state: { tasks: picked } });
+  };
+
   return (
     <div style={s.rCard}>
+      {/* Bulk action bar — appears when tasks are selected */}
+      {selected.size > 0 && (
+        <div style={s.bulkBar}>
+          <span style={s.bulkCount}>{selected.size} selected</span>
+          <button type="button" className="btn btn-primary" style={s.bulkBtn} onClick={startBulk}>Bulk change work items</button>
+          <button type="button" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
+        </div>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={s.rTable}>
-          <colgroup>{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
+          <colgroup><col style={{ width: 42 }} />{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
           <thead>
             <tr>
+              <th style={{ ...s.rTh, ...s.rColLine, textAlign: 'center' }}>
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
+              </th>
               {shown.map((c, i) => (
                 <th key={c.key} style={{ ...s.rTh, ...(i < shown.length - 1 ? s.rColLine : {}) }}>
                   <span style={s.rThLabel}>{c.label}</span>
@@ -513,9 +543,12 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
             </tr>
           </thead>
           <tbody>
-            {!loading && total === 0 && <tr><td colSpan={shown.length} style={s.empty}>No tasks found</td></tr>}
+            {!loading && total === 0 && <tr><td colSpan={shown.length + 1} style={s.empty}>No tasks found</td></tr>}
             {pageRows.map((t) => (
-              <tr key={t._id} className="wg-rel-row" style={s.rRow} onClick={() => onOpenTask(t._id)}>
+              <tr key={t._id} className="wg-rel-row" style={{ ...s.rRow, ...(selected.has(t._id) ? { background: 'var(--c-hover)' } : {}) }} onClick={() => onOpenTask(t._id)}>
+                <td style={{ ...s.rTd, ...s.rColLine, textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); toggleRow(t._id); }}>
+                  <input type="checkbox" checked={selected.has(t._id)} onChange={() => toggleRow(t._id)} onClick={(e) => e.stopPropagation()} />
+                </td>
                 {shown.map((c, i) => <td key={c.key} style={{ ...s.rTd, ...(i < shown.length - 1 ? s.rColLine : {}) }}><div style={s.rClip}>{c.render(t)}</div></td>)}
               </tr>
             ))}
@@ -583,6 +616,7 @@ function evalNode(node, t, ctx) {
     case 'reporter':
       m = vals.some((v) => v === '__me__' ? String(t.reporter_id) === String(ctx.myId)
         : String(t.reporter_id) === v); break;
+    case 'label': m = (t.labels || []).some((l) => vals.includes(String(l))); break;
     default: m = true;
   }
   return neg ? !m : m;
@@ -690,6 +724,8 @@ function ValueEditor({ rule, setVal, options }) {
     return <MultiSelect active={active} value={arr} onChange={setVal} options={options.statuses} placeholder="Select statuses" />;
   if (rule.field === 'list')
     return <MultiSelect active={active} value={arr} onChange={setVal} options={options.lists} placeholder="Select lists" />;
+  if (rule.field === 'label')
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.labels} placeholder="Select labels" />;
   // assignee / reporter — multi-select people
   return <UserPicker active={active} value={arr} onChange={setVal} users={options.users}
     myId={options.myId} allowUnassigned={rule.field === 'assignee'} />;
@@ -940,6 +976,19 @@ const s = {
     border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 8,
     cursor: 'pointer', fontSize: 18, lineHeight: 1 },
   pagerDisabled: { color: 'var(--c-faint)', cursor: 'not-allowed', opacity: 0.6 },
+  // bulk action bar
+  bulkBar: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: '1px solid var(--c-border)',
+    background: 'var(--c-surface-2)' },
+  bulkCount: { fontSize: 13, fontWeight: 700, color: 'var(--c-text-strong)', marginRight: 4 },
+  bulkBtn: { fontSize: 13, fontWeight: 600, padding: '6px 12px' },
+  bulkClear: { marginLeft: 'auto', border: 'none', background: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, padding: 4 },
+  bulkEdit: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, width: 300, background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.2)', padding: 12 },
+  bulkEditHead: { fontSize: 13.5, fontWeight: 700, color: 'var(--c-text-strong)', marginBottom: 8 },
+  bulkRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
+  bulkLbl: { width: 62, fontSize: 13, color: 'var(--c-text)', flexShrink: 0 },
+  bulkDate: { flex: 1, padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  bulkEditFoot: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
   cardBlock: { marginBottom: 10 },
   cardDivider: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' },
   cardDividerText: { fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: 'var(--c-muted)', paddingLeft: 8 },

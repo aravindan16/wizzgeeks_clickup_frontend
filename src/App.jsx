@@ -19,6 +19,7 @@ const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
 const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
+const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
@@ -91,6 +92,7 @@ export default function App() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/filters" element={<FiltersIndex />} />
           <Route path="/filters/:id" element={<FiltersPage />} />
+          <Route path="/bulk-edit" element={<FilterBulkPage />} />
           <Route path="/tasks/:id" element={<TaskDetailsPage />} />
         </Route>
       </Route>
