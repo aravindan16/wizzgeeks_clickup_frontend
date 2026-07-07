@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
+import { savedFiltersApi } from '../filters/savedFiltersApi';
 import { newCard } from './dashboardStore';
 import { CARD_TYPES, cardTypeTitle } from './cardTypes';
 import { STATUS_GROUPS, PRIORITIES } from '../tasks/tasksApi';
@@ -34,7 +35,10 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
   const [cardType, setCardType] = useState(null);
   const [spaces, setSpaces] = useState([]);
   const [listsBySpace, setListsBySpace] = useState({});
-  const source = 'lists'; // Lists mode only (Related Lists removed)
+  const [source, setSource] = useState('lists'); // 'lists' | 'filter' (Jira-style saved-filter source)
+  const [savedFilters, setSavedFilters] = useState([]); // saved-filter catalog for the filter source
+  const [filterId, setFilterId] = useState('');          // chosen saved filter (filter source)
+  const [filterName, setFilterName] = useState('');      // typed/pasted saved-filter name
   const [selected, setSelected] = useState({}); // listId -> meta (lists mode)
   const [selectedRelated, setSelectedRelated] = useState({}); // listId -> meta (related mode)
   const [relatedByList, setRelatedByList] = useState({}); // listId -> available related-list names
@@ -58,6 +62,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
         map[sp._id] = await listsApi.forSpace(sp._id).catch(() => []);
       }));
       setListsBySpace(map);
+      savedFiltersApi.list().then(setSavedFilters).catch(() => setSavedFilters([]));
     } finally { setLoading(false); }
   };
 
@@ -73,6 +78,9 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
       setSelectedRelated(selR);
       setRelatedByList(rBy);
       setOpenSpaces(opens);
+      setSource(editCard.source || 'lists');
+      setFilterId(editCard.filterId || '');
+      setFilterName('');
       setCardType(editCard.type || 'portfolio');
       setCardName(editCard.title || cardTypeTitle(editCard.type));
       setXMeasure(editCard.xMeasure || 'status');
@@ -82,8 +90,17 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
     } else {
       setStep('picker'); setSelected({}); setSelectedRelated({});
       setRelatedByList({}); setOpenSpaces({}); setCardType(null); setCardName(''); setXMeasure('status'); setXShow([]); setShowOpen(false);
+      setSource('lists'); setFilterId(''); setFilterName('');
     }
   }, [open, editCard, startWithSidebar]);
+
+  // When editing a filter-sourced card, show its saved-filter name once filters load.
+  useEffect(() => {
+    if (source === 'filter' && filterId && !filterName && savedFilters.length) {
+      const m = savedFilters.find((f) => f.id === filterId);
+      if (m) setFilterName(m.name);
+    }
+  }, [savedFilters, source, filterId, filterName]);
 
   const pick = (type) => {
     setCardType(type);
@@ -133,7 +150,18 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
     return { ...cur, [listId]: { ...m, lists: [...set] } };
   });
 
-  const count = source === 'tasks' ? Object.keys(selectedRelated).length : Object.keys(selected).length;
+  // Typing/pasting a saved-filter name switches the card to the filter source when
+  // the name matches exactly (case-insensitive); clearing/no-match reverts to Lists.
+  const onFilterName = (v) => {
+    setFilterName(v);
+    const m = savedFilters.find((f) => f.name.trim().toLowerCase() === v.trim().toLowerCase());
+    if (m) { setSource('filter'); setFilterId(m.id); }
+    else { setSource('lists'); setFilterId(''); }
+  };
+
+  const count = source === 'filter' ? (filterId ? 1 : 0)
+    : source === 'tasks' ? Object.keys(selectedRelated).length
+      : Object.keys(selected).length;
   const isChart = cardType === 'bar' || cardType === 'pie';
   // Categories available for the "Show" filter, derived from the X-axis measure.
   const xCategories = useMemo(() => {
@@ -145,13 +173,13 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
 
   const previewCard = useMemo(
     () => ({ id: 'preview', type: cardType, title: cardName || cardTypeTitle(cardType),
-      source, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow }),
-    [selected, selectedRelated, source, cardName, cardType, xMeasure, xShow],
+      source, filterId, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow }),
+    [selected, selectedRelated, source, filterId, cardName, cardType, xMeasure, xShow],
   );
   const add = () => {
     if (!count) return;
     const title = (cardName || '').trim() || cardTypeTitle(cardType);
-    const payload = { source, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow };
+    const payload = { source, filterId, lists: Object.values(selected), tasks: Object.values(selectedRelated), xMeasure, xShow };
     onAdd(editCard ? { ...editCard, title, ...payload } : newCard(cardType, payload, title));
   };
 
@@ -215,14 +243,21 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
             <div style={s.split}>
               <div style={s.leftPane}>
                 {count === 0
-                  ? <div style={s.previewEmpty}>Select {source === 'tasks' ? 'a List' : 'Lists'} on the right to preview the {cardTypeTitle(cardType)}.</div>
+                  ? <div style={s.previewEmpty}>Select {source === 'filter' ? 'a saved filter' : source === 'tasks' ? 'a List' : 'Lists'} on the right to preview the {cardTypeTitle(cardType)}.</div>
                   : <DashboardCard card={previewCard} />}
               </div>
               {showSidebar && (
               <div style={s.rightPane}>
                 <div style={s.dsLabel}>Data source · Lists</div>
-                <div style={s.dsHint}>Track whole Lists — progress over each List’s tasks.</div>
-                {loading ? <p style={{ color: 'var(--c-muted)' }}>Loading…</p> : (
+                <div style={s.dsHint}>Track whole Lists — or paste a saved filter name to track that filter (Jira-style).</div>
+                <input style={s.filterInput} value={filterName} placeholder="Paste a saved filter name…"
+                  onChange={(e) => onFilterName(e.target.value)} />
+                {filterName.trim() !== '' && (
+                  source === 'filter'
+                    ? <div style={s.filterOk}>✓ Using saved filter “{savedFilters.find((f) => f.id === filterId)?.name}”</div>
+                    : <div style={s.filterNo}>No saved filter matches that name.</div>
+                )}
+                {source === 'filter' ? null : loading ? <p style={{ color: 'var(--c-muted)' }}>Loading…</p> : (
                   <div style={s.tree}>
                     {spaces.length === 0 && <p style={{ color: 'var(--c-muted)' }}>No spaces yet.</p>}
                     {spaces.map((sp) => {
@@ -410,6 +445,10 @@ const s = {
   leftPane: { flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 },
   rightPane: { width: 320, flexShrink: 0, borderLeft: '1px solid var(--c-border)', paddingLeft: 20, overflowY: 'auto' },
   dsLabel: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-muted)', marginBottom: 8 },
+  filterInput: { width: '100%', padding: '8px 10px', fontSize: 13, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, outline: 'none', marginBottom: 6, boxSizing: 'border-box' },
+  filterOk: { fontSize: 12.5, fontWeight: 600, color: 'var(--c-success, #16a34a)', marginBottom: 10 },
+  filterNo: { fontSize: 12.5, color: 'var(--c-muted)', marginBottom: 10 },
   axisBlock: { marginBottom: 8 },
   axisRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
   axisLabel: { fontSize: 13.5, color: 'var(--c-text)' },

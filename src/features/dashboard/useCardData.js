@@ -5,6 +5,8 @@ const GROUP_COLOR = { not_started: '#9ca3af', active: '#3b82f6', done: '#22c55e'
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
+import { savedFiltersApi } from '../filters/savedFiltersApi';
+import { filterTasks } from '../filters/filterEval';
 import { beginSilent, endSilent } from '../../services/apiClient';
 
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -46,7 +48,27 @@ export function useCardData(card) {
         };
 
         let rows;
-        if (card.source === 'tasks') {
+        if (card.source === 'filter') {
+          // Saved-filter mode (Jira-style): the card's dataset is every task matching
+          // the chosen saved filter. One "row" = the whole filtered result.
+          const sf = card.filterId ? await savedFiltersApi.get(card.filterId).catch(() => null) : null;
+          // Page through all tasks (list endpoint caps at 200), then filter client-side.
+          const all = [];
+          for (let skip = 0; skip < 2000; skip += 200) {
+            const r = await tasksApi.list({ limit: 200, skip }).catch(() => ({ items: [], total: 0 }));
+            const items = r.items || [];
+            all.push(...items);
+            if (items.length < 200 || all.length >= (r.total || 0)) break;
+          }
+          const matched = sf ? filterTasks(all, sf.cards, sf.conj) : [];
+          // Merge statuses across every space the matched tasks live in.
+          const sts = []; const seen = {};
+          await Promise.all([...new Set(matched.map((t) => t.project_id))].map(async (sid) => {
+            (await getSts(sid)).forEach((stx) => { if (!seen[stx.key]) { seen[stx.key] = 1; sts.push(stx); } });
+          }));
+          const { done, due } = mkCounts(matched, sts);
+          rows = [{ id: card.filterId, name: sf?.name || 'Filter', spaceName: '', sts, tasks: matched, total: matched.length, done, due }];
+        } else if (card.source === 'tasks') {
           // Related mode: each unit is a List; its "tasks" are the related tasks linked
           // from that List's tasks through relationship custom fields, optionally filtered
           // to the chosen related Lists (Frontend / Backend …).
