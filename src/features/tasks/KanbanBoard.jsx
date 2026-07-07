@@ -54,9 +54,27 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const [memberQuery, setMemberQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [cardMenu, setCardMenu] = useState(null); // { id, x, y }
+  const [assignFor, setAssignFor] = useState(null); // { id, x, y } — inline assignee picker on a card
+  const [assignQuery, setAssignQuery] = useState('');
 
   const typeIcon = (t) => (TYPE_ICON[t] || '☑️');
   const assigneeName = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+
+  // Inline assignee picker for an existing card (assigns directly, no task detail).
+  const openAssign = (task, e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setCardMenu(null); setPicker(null); setAssignQuery('');
+    setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
+  };
+  const chooseAssignee = async (uid) => {
+    const id = assignFor?.id;
+    setAssignFor(null);
+    if (!id) return;
+    setBoard((b) => b.map((t) => (t._id === id ? { ...t, assignee_id: uid || null } : t))); // optimistic
+    try { await tasksApi.assign(id, uid || null); onChanged(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not assign'); onChanged(); }
+  };
 
   const openCardMenu = (task, e) => {
     e.stopPropagation();
@@ -200,8 +218,8 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                       <span style={s.key}>{t.key}</span>
                     </span>
                     {t.assignee_id
-                      ? <span style={s.cardAvatar} title={assigneeName(t.assignee_id) || 'Assignee'}>{initials(assigneeName(t.assignee_id) || '?')}</span>
-                      : <span style={s.cardAvatarEmpty} title="Unassigned">+</span>}
+                      ? <button style={{ ...s.cardAvatar, cursor: 'pointer', border: 'none' }} title={assigneeName(t.assignee_id) || 'Assignee'} onClick={(e) => openAssign(t, e)}>{initials(assigneeName(t.assignee_id) || '?')}</button>
+                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>}
                   </div>
                 </div>
                 );
@@ -268,6 +286,37 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
           </div>
         </>
       )}
+
+      {/* Inline assignee picker for an existing card (assigns on select) */}
+      {assignFor && (() => {
+        const cur = board.find((t) => t._id === assignFor.id);
+        const q = assignQuery.trim().toLowerCase();
+        const list = members.filter((m) => !q
+          || (m.full_name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q));
+        return (
+          <>
+            <div style={s.pickBackdrop} onClick={() => setAssignFor(null)} />
+            <div style={{ ...s.popFixed, top: assignFor.y, left: Math.max(8, assignFor.x - 240), width: 240 }} onClick={(e) => e.stopPropagation()}>
+              <input autoFocus style={s.popSearch} placeholder="Search or enter email…"
+                value={assignQuery} onChange={(e) => setAssignQuery(e.target.value)} />
+              <button style={s.popItem} onClick={() => chooseAssignee('')}>👤 Unassigned</button>
+              <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                {list.map((m) => (
+                  <button key={m.user_id} style={s.popItem} onClick={() => chooseAssignee(m.user_id)}>
+                    <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                    <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                      <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
+                      {m.email && <span style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>}
+                    </span>
+                    {cur?.assignee_id === m.user_id && <span style={{ marginLeft: 'auto', color: 'var(--c-primary)' }}>✓</span>}
+                  </button>
+                ))}
+                {list.length === 0 && <div style={s.popEmpty}>No matching member.</div>}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Fixed-positioned pickers (escape board clipping; no overlap) */}
       {picker && (

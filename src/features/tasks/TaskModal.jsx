@@ -4,6 +4,7 @@ import { projectsApi } from '../projects/projectsApi';
 import { customFieldsApi, FIELD_TYPE_LABEL } from '../customfields/customFieldsApi';
 import CustomFieldManager from '../customfields/CustomFieldManager';
 import CustomFieldValue from '../customfields/CustomFieldValue';
+import LabelPicker from '../labels/LabelPicker';
 import {
   IconUser, IconCalendar, IconFlag, IconChevronDown, IconPlus, IconClose,
   IconList, IconBoard, IconFieldDropdown, IconFieldText, IconFieldRelationship,
@@ -234,6 +235,10 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
             </div>
 
           </div>
+
+          {/* Labels */}
+          <div style={s.fieldsLabel}>Labels</div>
+          <LabelPicker value={form.labels} onChange={(labels) => set('labels', labels)} />
 
           {/* Fields */}
           <div style={s.fieldsLabel}>Fields</div>

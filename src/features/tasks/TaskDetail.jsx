@@ -6,6 +6,7 @@ import {
 import { projectsApi } from '../projects/projectsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
 import CustomFieldValue from '../customfields/CustomFieldValue';
+import LabelPicker from '../labels/LabelPicker';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import Select from '../../components/Select';
 import { useAuth } from '../auth/useAuth';
@@ -437,6 +438,10 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
             <Field label="Reporter">
               <span style={s.person}><span style={s.avatarSm}>{initials(nameOf(task.reporter_id))}</span> {nameOf(task.reporter_id) || '—'}</span>
             </Field>
+
+            <Field label="Labels">
+              <LabelPicker value={task.labels || []} onChange={(labels) => save({ labels })} />
+            </Field>
           </div>
         </aside>
       </div>
@@ -449,7 +454,7 @@ function Field({ label, children }) {
   return (
     <div style={s.fieldRow}>
       <span style={s.fieldLabel}>{label}</span>
-      <div style={{ flex: 1 }}>{children}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
   );
 }
