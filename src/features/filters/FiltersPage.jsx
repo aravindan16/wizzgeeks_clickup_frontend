@@ -15,6 +15,7 @@ import Select from '../../components/Select';
 import { IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser, IconEdit, IconMembers, IconBoard, IconFilter, IconListCheck } from '../../components/icons';
 import { useConfirm } from '../../components/ConfirmDialog';
 import FilterShareModal from './FilterShareModal';
+import ResizableTable from '../../components/ResizableTable';
 
 /**
  * ClickUp-style advanced Filters page: a recursive AND/OR builder over every task
@@ -442,25 +443,15 @@ function FilterMembers({ filterId, reloadKey }) {
   };
 
   return (
-    <div style={s.mCard}>
-      <table style={s.mTable}>
-        <thead><tr><th style={s.mTh}>Name</th><th style={s.mTh}>Email</th><th style={{ ...s.mTh, textAlign: 'right' }}>Actions</th></tr></thead>
-        <tbody>
-          {members.length === 0 && <tr><td colSpan={3} style={s.mEmpty}>No members yet.</td></tr>}
-          {members.map((m) => (
-            <tr key={m.user_id} className="wg-rel-row" style={s.mRow}>
-              <td style={s.mTd}><span style={s.mName}>{m.full_name || '—'}</span></td>
-              <td style={s.mTd}><span style={s.muted}>{m.email}</span></td>
-              <td style={{ ...s.mTd, textAlign: 'right' }}>
-                {m.is_owner
-                  ? <span style={s.ownerTag}>Owner</span>
-                  : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ResizableTable persistKey="wg_filter_members_cols" rowKey={(m) => m.user_id} rows={members} emptyText="No members yet."
+      columns={[
+        { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => <span style={s.mName}>{m.full_name || '—'}</span> },
+        { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={s.muted}>{m.email}</span> },
+        { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+          render: (m) => (m.is_owner
+            ? <span style={s.ownerTag}>Owner</span>
+            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+      ]} />
   );
 }
 
@@ -494,8 +485,18 @@ function ColumnsMenu({ columns, colState, onToggle }) {
 }
 
 /* ---------------------------------------- Results table (resizable columns) */
+const PAGE_SIZES = [10, 20, 50, 100];
 function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
   const shown = columns.filter((c) => colState.visible[c.key]);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  const total = rows.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  useEffect(() => { setPage(0); }, [total, pageSize]);
+  const pageRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const from = total === 0 ? 0 : safePage * pageSize + 1;
+  const to = Math.min(total, (safePage + 1) * pageSize);
   return (
     <div style={s.rCard}>
       <div style={{ overflowX: 'auto' }}>
@@ -504,7 +505,7 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <thead>
             <tr>
               {shown.map((c, i) => (
-                <th key={c.key} style={s.rTh}>
+                <th key={c.key} style={{ ...s.rTh, ...(i < shown.length - 1 ? s.rColLine : {}) }}>
                   <span style={s.rThLabel}>{c.label}</span>
                   {i < shown.length - 1 && <span style={s.rResize} onMouseDown={(e) => onResizeStart(e, c.key)} title="Drag to resize" />}
                 </th>
@@ -512,15 +513,36 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
             </tr>
           </thead>
           <tbody>
-            {!loading && rows.length === 0 && <tr><td colSpan={shown.length} style={s.empty}>No tasks found</td></tr>}
-            {rows.map((t) => (
+            {!loading && total === 0 && <tr><td colSpan={shown.length} style={s.empty}>No tasks found</td></tr>}
+            {pageRows.map((t) => (
               <tr key={t._id} className="wg-rel-row" style={s.rRow} onClick={() => onOpenTask(t._id)}>
-                {shown.map((c) => <td key={c.key} style={s.rTd}><div style={s.rClip}>{c.render(t)}</div></td>)}
+                {shown.map((c, i) => <td key={c.key} style={{ ...s.rTd, ...(i < shown.length - 1 ? s.rColLine : {}) }}><div style={s.rClip}>{c.render(t)}</div></td>)}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {total > 0 && (
+        <div style={s.pager}>
+          <label style={s.pagerLeft}>
+            Rows per page:
+            <span style={s.pageSelectWrap}>
+              <select style={s.pageSelect} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
+            </span>
+          </label>
+          <div style={s.pagerRight}>
+            <span style={s.pagerRange}>{from}–{to} of {total}</span>
+            <button type="button" style={{ ...s.pagerBtn, ...(safePage === 0 ? s.pagerDisabled : {}) }}
+              disabled={safePage === 0} onClick={() => setPage(safePage - 1)} title="Previous">‹</button>
+            <span style={s.pagerPage}>{safePage + 1} / {pageCount}</span>
+            <button type="button" style={{ ...s.pagerBtn, ...(safePage >= pageCount - 1 ? s.pagerDisabled : {}) }}
+              disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)} title="Next">›</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -898,9 +920,26 @@ const s = {
     letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
   rThLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   rResize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
+  rColLine: { borderRight: '1px solid var(--c-border-2)' },
   rRow: { borderTop: '1px solid var(--c-border-2)', cursor: 'pointer' },
   rTd: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
   rClip: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
+  pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
+  pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
+  pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+    padding: '5px 28px 5px 10px', border: '1px solid var(--c-border)', borderRadius: 7, background: 'var(--c-surface)',
+    color: 'var(--c-text)', fontSize: 13, cursor: 'pointer' },
+  pageSelectCaret: { position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex',
+    color: 'var(--c-muted)', pointerEvents: 'none' },
+  pagerRight: { display: 'inline-flex', alignItems: 'center', gap: 8 },
+  pagerRange: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
+  pagerPage: { fontSize: 13, color: 'var(--c-text)', minWidth: 54, textAlign: 'center' },
+  pagerBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
+    border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 8,
+    cursor: 'pointer', fontSize: 18, lineHeight: 1 },
+  pagerDisabled: { color: 'var(--c-faint)', cursor: 'not-allowed', opacity: 0.6 },
   cardBlock: { marginBottom: 10 },
   cardDivider: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' },
   cardDividerText: { fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: 'var(--c-muted)', paddingLeft: 8 },

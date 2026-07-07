@@ -9,7 +9,7 @@ import FiltersMenu from '../features/filters/FiltersMenu';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
-  IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
+  IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
 import ThemeCustomizer from '../components/ThemeCustomizer';
 
@@ -53,7 +53,6 @@ export default function AppLayout() {
   }, []);
 
   const width = collapsed ? 68 : 240;
-  const role = (user?.roles || [])[0] || 'member';
 
   // Shared renderer for a top-level sidebar link (used above and below the Spaces tree).
   const renderNav = (n) => (
@@ -74,26 +73,15 @@ export default function AppLayout() {
 
       {/* ===== TOP BAR (full width) ===== */}
       <header style={s.topbar}>
-        <div style={{ ...s.brand, width, justifyContent: collapsed ? 'center' : 'space-between' }}>
-          {!collapsed && (
-            <div style={s.brandLeft}>
-              <img src="/logo.png" alt="Wizzgeeks" style={{ width: 26, height: 26, objectFit: 'contain' }} />
-              <span style={s.brandText}>Wizzgeeks</span>
-            </div>
-          )}
-          <button style={s.panelBtn} onClick={toggle} title="Toggle sidebar"><IconPanel size={18} /></button>
+        <div style={{ ...s.brand, width, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+          <div style={s.brandLeft}>
+            <img src="/logo.png" alt="Taskmanager" style={{ width: 26, height: 26, objectFit: 'contain' }} />
+            {!collapsed && <span style={s.brandText}>Taskmanager</span>}
+          </div>
         </div>
 
         {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
         <div style={s.headerSlot} ref={setSlotEl} />
-
-        <div style={s.searchArea}>
-          <div style={s.searchBox} onClick={() => {}}>
-            <span style={s.searchIcon}><IconSearch size={16} /></span>
-            <span style={{ color: '#9ca3af' }}>Search...</span>
-            <span style={s.kbd}>⌘K</span>
-          </div>
-        </div>
 
         <div style={s.topRight}>
           <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
@@ -113,17 +101,12 @@ export default function AppLayout() {
             </nav>
           </div>
 
-          {/* User chip (bottom) */}
-          <button style={{ ...s.userChip, justifyContent: collapsed ? 'center' : 'flex-start' }}
-            onClick={() => navigate('/profile')} title={user?.full_name}>
-            <span style={s.chipAvatar}>{initials(user?.full_name)}</span>
-            {!collapsed && (
-              <span style={s.chipMeta}>
-                <span style={s.chipName}>{user?.full_name}</span>
-                <span style={s.chipRole}>{role}</span>
-              </span>
-            )}
-          </button>
+          {/* Collapse/expand toggle — bottom-right corner of the sidebar. */}
+          <div style={{ ...s.sidebarFooter, justifyContent: collapsed ? 'center' : 'flex-end' }}>
+            <button style={s.panelBtn} onClick={toggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+              <IconPanel size={18} />
+            </button>
+          </div>
         </aside>
 
         <main style={s.main}>
@@ -152,7 +135,7 @@ function UserMenu({ user, onProfile, onLogout, onCustomize }) {
 
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button style={{ ...s.avatarBtn, ...(open ? s.avatarBtnOpen : {}) }}
+      <button style={s.avatarBtn}
         title={user?.full_name} onClick={() => setOpen((o) => !o)}>
         {initials(user?.full_name)}
       </button>
@@ -216,6 +199,8 @@ const s = {
   navActive: { background: 'var(--c-hover)', color: 'var(--c-text-strong)', fontWeight: 600 },
   navIcon: { width: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
   navLabel: { flex: 1 },
+
+  sidebarFooter: { display: 'flex', alignItems: 'center', padding: '8px 10px', borderTop: '1px solid var(--c-border)' },
 
   // --- user chip ---
   userChip: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box',

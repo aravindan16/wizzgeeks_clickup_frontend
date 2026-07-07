@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
+import ResizableTable from '../../components/ResizableTable';
 import GridLayout, { WidthProvider } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -371,25 +372,15 @@ function DashboardMembers({ dashboardId, reloadKey }) {
   };
 
   return (
-    <div style={s.mCard}>
-      <table style={s.mTable}>
-        <thead><tr><th style={s.mTh}>Name</th><th style={s.mTh}>Email</th><th style={{ ...s.mTh, textAlign: 'right' }}>Actions</th></tr></thead>
-        <tbody>
-          {members.length === 0 && <tr><td colSpan={3} style={s.mEmpty}>No members yet.</td></tr>}
-          {members.map((m) => (
-            <tr key={m.user_id} style={s.mRow}>
-              <td style={s.mTd}><span style={s.mName}>{m.full_name || '—'}</span></td>
-              <td style={s.mTd}><span style={s.mEmail}>{m.email}</span></td>
-              <td style={{ ...s.mTd, textAlign: 'right' }}>
-                {m.is_owner
-                  ? <span style={s.ownerTag}>Owner</span>
-                  : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ResizableTable persistKey="wg_dash_members_cols" rowKey={(m) => m.user_id} rows={members} emptyText="No members yet."
+      columns={[
+        { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => <span style={s.mName}>{m.full_name || '—'}</span> },
+        { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={s.mEmail}>{m.email}</span> },
+        { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+          render: (m) => (m.is_owner
+            ? <span style={s.ownerTag}>Owner</span>
+            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+      ]} />
   );
 }
 

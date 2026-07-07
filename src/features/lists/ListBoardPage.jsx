@@ -4,6 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
 import { listsApi } from './listsApi';
 import { projectsApi } from '../projects/projectsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import { useCardFields } from '../tasks/cardFieldsStore';
+import CardFieldsMenu from '../tasks/CardFieldsMenu';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
@@ -41,6 +44,10 @@ export default function ListBoardPage() {
   const [error, setError] = useState(null);
   const [taskQuery, setTaskQuery] = useState('');
   const [openTaskId, setOpenTaskId] = useState(null);
+  const [cardCustomFields, setCardCustomFields] = useState([]); // List's custom fields (for the Customize-view menu + card chips)
+
+  // Which fields show on each board card (Customize view) — persisted per List.
+  const cf = useCardFields(id);
 
   // Views (List/Board/Table) — persisted per List in localStorage; filters per view.
   const vs = useViews(id);
@@ -87,6 +94,15 @@ export default function ListBoardPage() {
   }, [id, loadTasks]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load the List's custom fields for the Customize-view menu + card chips.
+  useEffect(() => {
+    if (!space?._id || !list?._id) return;
+    customFieldsApi.list(space._id, list._id, undefined, { _silent: true })
+      .then((fs) => setCardCustomFields((fs || []).filter((f) =>
+        ['dropdown', 'text', 'relationship'].includes(f.type) && f.enabled !== false)))
+      .catch(() => setCardCustomFields([]));
+  }, [space?._id, list?._id]);
 
   // Reflect List changes (e.g. custom statuses edited from the sidebar) immediately.
   useEffect(() => {
@@ -138,9 +154,11 @@ export default function ListBoardPage() {
         slotEl,
       )}
 
-      <ViewTabs vs={vs} rightSlot={can('task.create')
-        ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
-        : null} />
+      <ViewTabs vs={vs} rightSlot={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {activeView?.type === 'board' && <CardFieldsMenu cf={cf} customFields={cardCustomFields} />}
+          {can('task.create') && <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>}
+        </span>} />
 
       <div style={s.searchBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -161,7 +179,8 @@ export default function ListBoardPage() {
       <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
-            listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId} />
+            listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId}
+            cardFields={cf.std} cardCustom={cardCustomFields.filter((f) => cf.isOn(`cf:${f._id}`, false))} />
         )}
         {activeView?.type === 'list' && (
           <TaskListView tasks={visibleTasks} members={members} statuses={statuses}

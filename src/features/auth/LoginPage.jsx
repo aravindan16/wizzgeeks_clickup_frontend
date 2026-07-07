@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { useNavigate, Link } from 'react-router-dom';
-import { login, googleLogin } from './authSlice';
+import { useNavigate } from 'react-router-dom';
+import { login } from './authSlice';
 import { useAuth } from './useAuth';
-import GoogleButton from './GoogleButton';
 import PasswordInput from '../../components/PasswordInput';
 
 export default function LoginPage() {
@@ -25,11 +24,6 @@ export default function LoginPage() {
     if (login.fulfilled.match(result)) {
       navigate('/', { replace: true });
     }
-  };
-
-  const onGoogle = async (credential) => {
-    const result = await dispatch(googleLogin(credential));
-    if (googleLogin.fulfilled.match(result)) navigate('/', { replace: true });
   };
 
   return (
@@ -54,10 +48,7 @@ export default function LoginPage() {
           required
         />
 
-        <div style={styles.labelRow}>
-          <label style={{ ...styles.label, marginBottom: 0 }}>Password</label>
-          <Link to="/forgot-password" style={styles.linkSm}>Forgot?</Link>
-        </div>
+        <label style={styles.label}>Password</label>
         <PasswordInput
           style={styles.input}
           value={password}
@@ -72,8 +63,6 @@ export default function LoginPage() {
         <button style={{ ...styles.button, ...(submitting ? styles.buttonBusy : {}) }} type="submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
-
-        <GoogleButton onCredential={onGoogle} />
       </form>
     </div>
   );

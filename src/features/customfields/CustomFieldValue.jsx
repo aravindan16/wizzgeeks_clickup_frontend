@@ -190,7 +190,9 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      {ids.length > 0 && (
+      {/* Progress bar only on the field's OWN (create) List — hidden on the
+          related/target List, which is the reverse side of the relationship. */}
+      {ids.length > 0 && !onTargetList && (
         <div style={t.relSummary}>
           <div style={t.relBar}><div style={{ ...t.relBarFill, width: `${pct}%` }} /></div>
           <span style={t.relSummaryText}>

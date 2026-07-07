@@ -302,14 +302,14 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
                               <>
                                 <div style={s.menuScrim} onMouseDown={() => { setRowMenu(null); setMoveFor(null); }} />
                                 <div style={s.rowMenu} onMouseDown={(e) => e.stopPropagation()}>
-                                  <button style={s.menuItem} onClick={() => { setRowMenu(null); setDrawer({ mode: 'edit', type: f.type, field: f }); }}>
+                                  <button className="wg-menu-item" style={s.menuItem} onClick={() => { setRowMenu(null); setDrawer({ mode: 'edit', type: f.type, field: f }); }}>
                                     <IconFields size={15} /><span>Edit</span>
                                   </button>
-                                  <button style={s.menuItem} onClick={() => renameField(f)}>
+                                  <button className="wg-menu-item" style={s.menuItem} onClick={() => renameField(f)}>
                                     <IconEdit size={15} /><span>Rename</span>
                                   </button>
                                   <div style={s.menuDivider} />
-                                  <button style={{ ...s.menuItem, color: '#b91c1c' }} onClick={() => del(f)}>
+                                  <button className="wg-menu-item" style={{ ...s.menuItem, color: '#b91c1c' }} onClick={() => del(f)}>
                                     <IconTrash size={15} /><span>Delete</span>
                                   </button>
                                 </div>
@@ -611,7 +611,7 @@ const s = {
   dots: { fontSize: 18, color: '#9ca3af', lineHeight: 1 },
   menuScrim: { position: 'fixed', inset: 0, zIndex: 30 },
   rowMenu: { position: 'absolute', top: 'calc(50% + 10px)', right: 14, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 31, padding: 5, minWidth: 200, textAlign: 'left' },
-  menuItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: '#374151' },
+  menuItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: '#374151' },
   subMenu: { borderTop: '1px solid #F3F4F6', borderBottom: '1px solid #F3F4F6', margin: '3px 0', padding: '3px 0', maxHeight: 180, overflowY: 'auto' },
   menuDivider: { height: 1, background: '#F3F4F6', margin: '4px 0' },
   createFieldTd: { padding: '6px 16px', borderBottom: 'none' },

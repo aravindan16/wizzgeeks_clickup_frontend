@@ -19,6 +19,7 @@ import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { SkeletonBoard } from '../../components/Skeleton';
+import ResizableTable from '../../components/ResizableTable';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
 
@@ -193,22 +194,13 @@ export default function ProjectDetailsPage() {
 
       {/* MEMBERS */}
       {isMembersTab && (
-        <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden' }}>
-          <table style={s.table}>
-            <thead><tr><Th>Name</Th><Th>Email</Th>{canManage && <Th style={{ textAlign: 'right' }}>Actions</Th>}</tr></thead>
-            <tbody>
-              {members.map((m) => (
-                <tr key={m._id} className="wg-row-hover" style={s.memberRow}>
-                  <Td>{m.full_name || '—'}</Td>
-                  <Td><span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span></Td>
-                  {canManage && <Td style={{ textAlign: 'right' }}>
-                    <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button>
-                  </Td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet."
+          columns={[
+            { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
+            { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },
+            ...(canManage ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+              render: (m) => <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button> }] : []),
+          ]} />
       )}
       </div>
 
