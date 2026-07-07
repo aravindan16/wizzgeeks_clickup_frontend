@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
-import { tasksApi } from '../tasks/tasksApi';
+import { tasksApi, resolveStatuses } from '../tasks/tasksApi';
+import { projectsApi } from '../projects/projectsApi';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
 import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
@@ -28,12 +29,27 @@ export default function FilterBulkPage() {
   const [step, setStep] = useState(0);
   const [operation, setOperation] = useState('edit'); // edit | delete
   const [users, setUsers] = useState([]);
-  const [edit, setEdit] = useState({ priorityOn: false, priority: 'medium', assigneeOn: false, assignee: '',
+  const [statusOpts, setStatusOpts] = useState([]); // union of statuses across the selected tasks' spaces
+  const [spaceSts, setSpaceSts] = useState({});      // projectId -> Set of valid status keys
+  const [edit, setEdit] = useState({ statusOn: false, status: '', priorityOn: false, priority: 'medium', assigneeOn: false, assignee: '',
     reporterOn: false, reporter: '', dueOn: false, due: '', labelsOn: false, labels: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => { dashboardsApi.searchUsers('').then((u) => setUsers(Array.isArray(u) ? u : (u?.items || []))).catch(() => setUsers([])); }, []);
+
+  // Load each selected task's Space statuses → union of options (a status is only
+  // applied to tasks whose Space actually has it).
+  useEffect(() => {
+    const pids = [...new Set(initial.map((t) => String(t.project_id)))];
+    if (!pids.length) return;
+    Promise.all(pids.map((pid) => projectsApi.get(pid).then((sp) => ({ pid, sts: resolveStatuses(sp) })).catch(() => ({ pid, sts: [] }))))
+      .then((results) => {
+        const map = {}; const union = {};
+        results.forEach(({ pid, sts }) => { map[pid] = new Set(sts.map((x) => x.key)); sts.forEach((x) => { if (!union[x.key]) union[x.key] = { value: x.key, label: x.name }; }); });
+        setSpaceSts(map); setStatusOpts(Object.values(union));
+      });
+  }, []); // eslint-disable-line
 
   // No tasks (e.g. opened directly) → back to Filters.
   useEffect(() => { if (!initial.length) navigate('/filters', { replace: true }); }, []); // eslint-disable-line
@@ -54,6 +70,7 @@ export default function FilterBulkPage() {
   const changes = useMemo(() => {
     if (operation === 'delete') return [{ name: 'Delete', action: 'Permanently delete', value: `${chosen.length} work item${chosen.length === 1 ? '' : 's'}` }];
     const out = [];
+    if (edit.statusOn) out.push({ name: 'Status', action: 'Change to', value: statusOpts.find((o) => o.value === edit.status)?.label || edit.status || 'None' });
     if (edit.priorityOn) out.push({ name: 'Priority', action: 'Change to', value: cap(edit.priority) });
     if (edit.assigneeOn) out.push({ name: 'Assignee', action: 'Change to', value: edit.assignee ? userName(edit.assignee) : 'Unassigned' });
     if (edit.reporterOn) out.push({ name: 'Reporter', action: 'Change to', value: edit.reporter ? userName(edit.reporter) : 'None' });
@@ -70,6 +87,7 @@ export default function FilterBulkPage() {
         for (const t of chosen) await tasksApi.remove(t._id);
         toast.success(`Deleted ${chosen.length} work item${chosen.length === 1 ? '' : 's'}`);
       } else {
+        let statusSkipped = 0;
         for (const t of chosen) {
           const patch = {};
           if (edit.priorityOn) patch.priority = edit.priority;
@@ -79,8 +97,14 @@ export default function FilterBulkPage() {
           if (edit.labelsOn) patch.labels = Array.from(new Set([...(t.labels || []), ...edit.labels]));
           if (Object.keys(patch).length) await tasksApi.update(t._id, patch);
           if (edit.assigneeOn) await tasksApi.assign(t._id, edit.assignee || null);
+          // Status: only change it on tasks whose Space actually has that status.
+          if (edit.statusOn && edit.status) {
+            if (spaceSts[String(t.project_id)]?.has(edit.status)) await tasksApi.changeStatus(t._id, { to_status: edit.status });
+            else statusSkipped += 1;
+          }
         }
-        toast.success(`Updated ${chosen.length} work item${chosen.length === 1 ? '' : 's'}`);
+        toast.success(`Updated ${chosen.length} work item${chosen.length === 1 ? '' : 's'}`
+          + (statusSkipped ? ` (status skipped for ${statusSkipped} in other workflows)` : ''));
       }
       navigate(-1);
     } catch { setError('The bulk operation could not be completed.'); }
@@ -163,6 +187,12 @@ export default function FilterBulkPage() {
               ) : (
                 <>
                   <p style={s.p}>Choose the field(s) you wish to change on the selected <b>{chosen.length}</b> work item{chosen.length === 1 ? '' : 's'}.</p>
+                  <div style={s.fieldRow}>
+                    <input type="checkbox" checked={edit.statusOn} onChange={(e) => setEdit((v) => ({ ...v, statusOn: e.target.checked }))} />
+                    <span style={s.fieldLbl}>Change Status</span>
+                    <span style={{ width: 220 }}><Select value={edit.status} placeholder="Select status" onChange={(v) => setEdit((x) => ({ ...x, statusOn: true, status: v }))}
+                      options={statusOpts} /></span>
+                  </div>
                   <div style={s.fieldRow}>
                     <input type="checkbox" checked={edit.priorityOn} onChange={(e) => setEdit((v) => ({ ...v, priorityOn: e.target.checked }))} />
                     <span style={s.fieldLbl}>Change Priority</span>
