@@ -9,7 +9,7 @@ import FiltersMenu from '../features/filters/FiltersMenu';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconDashboard, IconMembers, IconReports, IconSettings,
-  IconSearch, IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
+  IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
 import ThemeCustomizer from '../components/ThemeCustomizer';
 
@@ -86,14 +86,6 @@ export default function AppLayout() {
 
         {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
         <div style={s.headerSlot} ref={setSlotEl} />
-
-        <div style={s.searchArea}>
-          <div style={s.searchBox} onClick={() => {}}>
-            <span style={s.searchIcon}><IconSearch size={16} /></span>
-            <span style={{ color: '#9ca3af' }}>Search...</span>
-            <span style={s.kbd}>⌘K</span>
-          </div>
-        </div>
 
         <div style={s.topRight}>
           <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
