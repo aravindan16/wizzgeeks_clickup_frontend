@@ -1,9 +1,10 @@
 import { memo, useEffect, useState } from 'react';
-import { tasksApi, PRIORITY_COLOR } from './tasksApi';
+import { tasksApi, PRIORITY_COLOR, isDoneStatus } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
-import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash } from '../../components/icons';
+import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash,
+  IconFieldDropdown, IconFieldText, IconFieldRelationship } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
 /**
@@ -19,11 +20,44 @@ const TYPE_OPTIONS = [
 // Icons for rendering any existing task type (incl. legacy/subtask).
 const TYPE_ICON = { story: '🔖', task: '☑️', bug: '🐛', epic: '🏔️', subtask: '↳' };
 
-const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+// Handles both date-only strings (YYYY-MM-DD, e.g. due_date) and full ISO
+// timestamps (created_at / updated_at) — the latter must NOT get a T00:00 suffix.
+const shortDate = (d) => {
+  if (!d) return '';
+  const dt = /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00`) : new Date(d);
+  return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
-function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
+const DEFAULT_CFV = { priority: true, status: false, key: true, assignee: true, due_date: true, labels: true, subtasks: true, created_at: false, closed_at: false };
+
+// A custom-field value rendered as a compact card chip (dropdown / relationship / text).
+const cfChipStyle = { fontSize: 11, fontWeight: 600, borderRadius: 6, padding: '2px 8px', background: 'var(--c-surface-2)',
+  color: 'var(--c-muted)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' };
+const CF_TYPE_ICON = { dropdown: IconFieldDropdown, text: IconFieldText, relationship: IconFieldRelationship };
+function renderCustomChip(field, value) {
+  const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+  // When enabled but empty, show only the field's type icon (no text) so it stays compact.
+  if (empty) {
+    const Ic = CF_TYPE_ICON[field.type] || IconFieldText;
+    return <span key={field._id} style={{ ...cfChipStyle, color: 'var(--c-faint)', padding: '3px 7px' }} title={field.name}><Ic size={13} /></span>;
+  }
+  if (field.type === 'dropdown') {
+    const vals = Array.isArray(value) ? value : [value];
+    const opt = (field.config?.options || []).find((o) => o.label === vals[0]);
+    const c = opt?.color || '#6b7280';
+    return <span key={field._id} style={{ ...cfChipStyle, color: c, background: `${c}1a` }} title={vals.join(', ')}>{vals.join(', ')}</span>;
+  }
+  if (field.type === 'relationship') {
+    const n = Array.isArray(value) ? value.length : 1;
+    return <span key={field._id} style={cfChipStyle}>🔗 {n}</span>;
+  }
+  return <span key={field._id} style={cfChipStyle} title={String(value)}>{String(value)}</span>;
+}
+
+function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask, cardFields = null, cardCustom = [] }) {
   const open = onOpenTask || (() => {});
+  const cfv = cardFields || DEFAULT_CFV;
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
@@ -204,22 +238,35 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   </div>
 
                   <div style={s.chipsRow}>
-                    <span style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
+                    {cfv.status && (() => { const st2 = statuses.find((x) => x.key === t.status) || { name: t.status, color: '#6b7280' };
+                      return <span style={{ ...s.statusChip, color: st2.color, background: `${st2.color}1a` }}>{st2.name}</span>; })()}
+                    {cfv.priority && <span style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
                       <span style={{ ...s.priDot, background: PRIORITY_COLOR[t.priority] }} />{t.priority}
-                    </span>
-                    {t.due_date && <span style={s.metaChip}>📅 {shortDate(t.due_date)}</span>}
-                    {subCount > 0 && <span style={s.metaChip} title={`${subCount} subtasks`}>☑ {subCount}</span>}
-                    {(t.labels || []).slice(0, 2).map((l) => <span key={l} style={s.labelChip}>{l}</span>)}
+                    </span>}
+                    {cfv.type && <span style={s.metaChip} title="Task type"><TaskTypeIcon type={t.type} size={12} /> {(t.type || 'task').charAt(0).toUpperCase() + (t.type || 'task').slice(1)}</span>}
+                    {/* Dates in order: created · due · closed. Calendar icon + hover tooltip. */}
+                    {cfv.created_at && <span style={s.metaChip} title={'Date created\nThis field is read-only'}><IconCalendar size={12} />{t.created_at && shortDate(t.created_at)}</span>}
+                    {cfv.due_date && <span style={s.metaChip} title="Due date"><IconCalendar size={12} />{t.due_date && shortDate(t.due_date)}</span>}
+                    {cfv.closed_at && (() => {
+                      const cd = t.completed_at || t.closed_at || (isDoneStatus(statuses, t.status) ? t.updated_at : null);
+                      return <span style={s.metaChip} title={'Date closed\nThis field is read-only'}><IconCalendar size={12} />{cd && shortDate(cd)}</span>;
+                    })()}
+                    {cfv.labels && (t.labels || []).slice(0, 3).map((l) => <span key={l} style={s.labelChip}>{l}</span>)}
+                    {cardCustom.map((f) => renderCustomChip(f, (t.custom_fields || {})[f._id]))}
                   </div>
 
                   <div style={s.cardBottom}>
                     <span style={s.idRow}>
-                      <span title={t.type} style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
-                      <span style={s.key}>{t.key}</span>
+                      {cfv.key && (
+                        <>
+                          <span title={t.type} style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
+                          <span style={s.key}>{t.key}</span>
+                        </>
+                      )}
                     </span>
-                    {t.assignee_id
+                    {cfv.assignee && (t.assignee_id
                       ? <button style={{ ...s.cardAvatar, cursor: 'pointer', border: 'none' }} title={assigneeName(t.assignee_id) || 'Assignee'} onClick={(e) => openAssign(t, e)}>{initials(assigneeName(t.assignee_id) || '?')}</button>
-                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>}
+                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>)}
                   </div>
                 </div>
                 );
@@ -384,6 +431,8 @@ const s = {
   chipsRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 },
   priChip: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
     textTransform: 'capitalize', borderRadius: 999, padding: '2px 9px' },
+  statusChip: { display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '.02em', borderRadius: 6, padding: '2px 8px' },
   priDot: { width: 7, height: 7, borderRadius: 999 },
   metaChip: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600,
     color: 'var(--c-muted)', background: 'var(--c-surface-3)', borderRadius: 999, padding: '2px 8px' },
