@@ -48,12 +48,9 @@ function renderCustomChip(field, value) {
     const c = opt?.color || '#6b7280';
     return <span key={field._id} style={{ ...cfChipStyle, color: c, background: `${c}1a` }} title={vals.join(', ')}>{vals.join(', ')}</span>;
   }
-  if (field.type === 'relationship') {
-    const n = Array.isArray(value) ? value.length : 1;
-    return <span key={field._id} style={cfChipStyle}>🔗 {n}</span>;
-  }
   return <span key={field._id} style={cfChipStyle} title={String(value)}>{String(value)}</span>;
 }
+const relCount = (value) => (Array.isArray(value) ? value.length : (value ? 1 : 0));
 
 function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask, cardFields = null, cardCustom = [] }) {
   const open = onOpenTask || (() => {});
@@ -90,9 +87,49 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const [cardMenu, setCardMenu] = useState(null); // { id, x, y }
   const [assignFor, setAssignFor] = useState(null); // { id, x, y } — inline assignee picker on a card
   const [assignQuery, setAssignQuery] = useState('');
+  const [relFor, setRelFor] = useState(null); // { taskId, field, x, y } — inline relationship picker
+  const [relQuery, setRelQuery] = useState('');
+  const [relResults, setRelResults] = useState([]);
 
   const typeIcon = (t) => (TYPE_ICON[t] || '☑️');
   const assigneeName = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+
+  // Inline relationship picker for a card's relationship custom field (link tasks
+  // without opening the task detail).
+  const openRelPicker = (task, field, e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setCardMenu(null); setAssignFor(null); setPicker(null); setRelQuery('');
+    setRelFor((cur) => (cur?.taskId === task._id && cur?.field?._id === field._id ? null
+      : { taskId: task._id, field, x: r.right, y: r.bottom + 6 }));
+  };
+  useEffect(() => {
+    if (!relFor) { setRelResults([]); return undefined; }
+    const cfg = relFor.field.config || {};
+    const ownerList = relFor.field.list_id ? String(relFor.field.list_id) : null;   // List where the field lives
+    const targetList = cfg.related_to === 'list' && cfg.list_id ? String(cfg.list_id) : null; // "Related to" List
+    // On the TARGET list, link tasks from the OWNING List; on the owning list, link
+    // tasks from the target List. (A List field always links the OTHER end.)
+    let scope;
+    if (targetList && String(listId) === targetList && ownerList) scope = { list_id: ownerList };
+    else if (targetList) scope = { list_id: targetList };
+    else scope = { project_id: projectId };
+    const h = setTimeout(() => {
+      tasksApi.list({ ...scope, search: relQuery, limit: 30 }).then((r) => setRelResults(r.items || [])).catch(() => setRelResults([]));
+    }, 150);
+    return () => clearTimeout(h);
+  }, [relFor, relQuery, listId, projectId]);
+  const toggleRel = async (taskId, field, linkedId) => {
+    const task = board.find((t) => t._id === taskId);
+    if (!task) return;
+    const cur = (task.custom_fields || {})[field._id];
+    const arr = Array.isArray(cur) ? cur : (cur ? [cur] : []);
+    const next = arr.includes(linkedId) ? arr.filter((x) => x !== linkedId) : [...arr, linkedId];
+    const nextCf = { ...(task.custom_fields || {}), [field._id]: next };
+    setBoard((b) => b.map((t) => (t._id === taskId ? { ...t, custom_fields: nextCf } : t))); // optimistic
+    try { await tasksApi.update(taskId, { custom_fields: nextCf }); onChanged(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not update'); onChanged(); }
+  };
 
   // Inline assignee picker for an existing card (assigns directly, no task detail).
   const openAssign = (task, e) => {
@@ -252,7 +289,20 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                       return <span style={s.metaChip} title={'Date closed\nThis field is read-only'}><IconCalendar size={12} />{cd && shortDate(cd)}</span>;
                     })()}
                     {cfv.labels && (t.labels || []).slice(0, 3).map((l) => <span key={l} style={s.labelChip}>{l}</span>)}
-                    {cardCustom.map((f) => renderCustomChip(f, (t.custom_fields || {})[f._id]))}
+                    {cardCustom.map((f) => {
+                      const val = (t.custom_fields || {})[f._id];
+                      // Relationship: same icon with/without value, clickable to link inline.
+                      if (f.type === 'relationship') {
+                        const n = relCount(val);
+                        return (
+                          <button key={f._id} style={{ ...s.cfRelChip, ...(n ? {} : { color: 'var(--c-faint)' }) }}
+                            title={f.name} onClick={(e) => openRelPicker(t, f, e)}>
+                            <IconFieldRelationship size={12} />{n > 0 ? n : ''}
+                          </button>
+                        );
+                      }
+                      return renderCustomChip(f, val);
+                    })}
                   </div>
 
                   <div style={s.cardBottom}>
@@ -359,6 +409,33 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   </button>
                 ))}
                 {list.length === 0 && <div style={s.popEmpty}>No matching member.</div>}
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Inline relationship picker for a card's relationship field (links on select) */}
+      {relFor && (() => {
+        const task = board.find((t) => t._id === relFor.taskId);
+        const cur = (task?.custom_fields || {})[relFor.field._id];
+        const linked = Array.isArray(cur) ? cur : (cur ? [cur] : []);
+        const items = relResults.filter((r) => r._id !== relFor.taskId);
+        return (
+          <>
+            <div style={s.pickBackdrop} onClick={() => setRelFor(null)} />
+            <div style={{ ...s.popFixed, top: relFor.y, left: Math.max(8, relFor.x - 260), width: 260 }} onClick={(e) => e.stopPropagation()}>
+              <input autoFocus style={s.popSearch} placeholder={`Link to ${relFor.field.name}…`}
+                value={relQuery} onChange={(e) => setRelQuery(e.target.value)} />
+              <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 4 }}>
+                {items.length === 0 && <div style={s.popEmpty}>No tasks found</div>}
+                {items.map((r) => (
+                  <button key={r._id} style={s.popItem} onClick={() => toggleRel(relFor.taskId, relFor.field, r._id)}>
+                    <span style={s.relKey}>{r.key}</span>
+                    <span style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                    {linked.includes(r._id) && <span style={{ marginLeft: 'auto', color: 'var(--c-primary)' }}>✓</span>}
+                  </button>
+                ))}
               </div>
             </div>
           </>
@@ -474,6 +551,9 @@ const s = {
   pickBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
   popFixed: { position: 'fixed', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8,
     boxShadow: '0 12px 32px rgba(0,0,0,.2)', zIndex: 401, minWidth: 200, padding: 4, color: 'var(--c-text)' },
+  cfRelChip: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, borderRadius: 6,
+    padding: '3px 7px', background: 'var(--c-surface-2)', color: 'var(--c-muted)', border: 'none', cursor: 'pointer' },
+  relKey: { color: '#4f46e5', fontWeight: 700, fontSize: 12, flexShrink: 0 },
   popSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--c-border)',
     borderRadius: 6, fontSize: 14, marginBottom: 4, background: 'var(--c-surface)', color: 'var(--c-text)' },
   popItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
