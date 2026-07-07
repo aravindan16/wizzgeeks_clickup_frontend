@@ -77,8 +77,8 @@ export default function AppLayout() {
         <div style={{ ...s.brand, width, justifyContent: collapsed ? 'center' : 'space-between' }}>
           {!collapsed && (
             <div style={s.brandLeft}>
-              <img src="/logo.png" alt="Wizzgeeks" style={{ width: 26, height: 26, objectFit: 'contain' }} />
-              <span style={s.brandText}>Wizzgeeks</span>
+              <img src="/logo.png" alt="Taskmanager" style={{ width: 26, height: 26, objectFit: 'contain' }} />
+              <span style={s.brandText}>Taskmanager</span>
             </div>
           )}
           <button style={s.panelBtn} onClick={toggle} title="Toggle sidebar"><IconPanel size={18} /></button>
