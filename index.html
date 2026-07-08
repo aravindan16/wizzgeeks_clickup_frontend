@@ -2,12 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=3" />
+    <link rel="icon" type="image/png" href="/favicon.png?v=7" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Taskmanager</title>
     <!-- Browser shim: react-draggable/react-resizable read process.env.DRAGGABLE_DEBUG
          at runtime; without this `process` is undefined and drag/resize throw. -->
-    <script>window.process = window.process || { env: {} };</script>
+    <script>
+      window.process = window.process || { env: {} };
+    </script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
