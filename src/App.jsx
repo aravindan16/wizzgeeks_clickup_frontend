@@ -14,6 +14,7 @@ const DashboardHome = lazy(() => import('./features/dashboard/DashboardHome'));
 const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'));
 const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage'));
 const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
+const SpaceSettingsPage = lazy(() => import('./features/projects/SpaceSettingsPage'));
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
@@ -81,6 +82,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/:id" element={<ProjectDetailsPage />} />
+          <Route path="/projects/:id/settings" element={<SpaceSettingsPage />} />
           <Route path="/lists/:id" element={<ListBoardPage />} />
         </Route>
       </Route>

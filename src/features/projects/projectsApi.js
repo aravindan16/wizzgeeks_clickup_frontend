@@ -16,6 +16,10 @@ export const projectsApi = {
   removeMember: (id, userId) =>
     apiClient.delete(`/projects/${id}/members/${userId}`).then((r) => r.data),
   statusTemplates: () => apiClient.get('/projects/status-templates').then((r) => r.data),
+  // Custom per-space roles (Jira-style role management)
+  roles: (id) => apiClient.get(`/projects/${id}/roles`).then((r) => r.data),
+  createRole: (id, payload) => apiClient.post(`/projects/${id}/roles`, payload).then((r) => r.data),
+  removeRole: (id, roleId) => apiClient.delete(`/projects/${id}/roles/${roleId}`).then((r) => r.data),
 };
 
 export const PROJECT_ROLES = [
