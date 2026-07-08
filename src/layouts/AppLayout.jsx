@@ -8,7 +8,7 @@ import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import FiltersMenu from '../features/filters/FiltersMenu';
 import { HeaderSlotContext } from './headerSlot';
 import {
-  IconDashboard, IconMembers, IconReports, IconSettings,
+  IconMembers, IconSettings,
   IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
 import ThemeCustomizer from '../components/ThemeCustomizer';
@@ -18,9 +18,7 @@ import ThemeCustomizer from '../components/ThemeCustomizer';
  * collapsible, permission-aware left sidebar + main content. Light ClickUp-style.
  */
 const NAV = [
-  { to: '/team-activity', label: 'Team Activity', Icon: IconMembers, permission: 'dailyupdate.read.team' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
-  { to: '/audit', label: 'Audit Log', Icon: IconReports, permission: 'audit.read' },
   { to: '/settings', label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
 ];
 
@@ -91,7 +89,7 @@ export default function AppLayout() {
 
       {/* ===== BODY: sidebar + main ===== */}
       <div style={s.body}>
-        <aside style={{ ...s.sidebar, width }}>
+        <aside style={{ ...s.sidebar, width }} data-no-tip>
           <div style={s.navScroll}>
             <nav style={s.nav}>
               <DashboardsMenu collapsed={collapsed} />
@@ -192,12 +190,12 @@ const s = {
     flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)', overflow: 'hidden' },
   navScroll: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' },
   nav: { display: 'flex', flexDirection: 'column', gap: 2 },
-  navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', textDecoration: 'none', fontSize: 14,
+  navItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box',
+    padding: '9px 8px', borderRadius: 8, color: 'var(--c-muted)', textDecoration: 'none', fontSize: 14,
     fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden' },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
   navActive: { background: 'var(--c-hover)', color: 'var(--c-text-strong)', fontWeight: 600 },
-  navIcon: { width: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
+  navIcon: { width: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
   navLabel: { flex: 1 },
 
   sidebarFooter: { display: 'flex', alignItems: 'center', padding: '8px 10px', borderTop: '1px solid var(--c-border)' },

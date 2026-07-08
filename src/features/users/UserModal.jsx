@@ -11,9 +11,8 @@ import PasswordInput from '../../components/PasswordInput';
 const EMPTY = {
   email: '',
   password: '',
+  confirm_password: '',
   full_name: '',
-  designation: '',
-  department: '',
   role_keys: ['employee'],
 };
 
@@ -27,8 +26,6 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
       setForm({
         email: user.email,
         full_name: user.full_name || '',
-        designation: user.designation || '',
-        department: user.department || '',
         role_keys: user.roles || [],
       });
     } else {
@@ -56,17 +53,24 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
       setError('Select at least one role');
       return;
     }
+    if (mode === 'create' && form.password !== form.confirm_password) {
+      setError('Passwords do not match');
+      return;
+    }
     setSaving(true);
     try {
       if (mode === 'edit') {
         await usersApi.update(user._id, {
           full_name: form.full_name,
-          designation: form.designation,
-          department: form.department,
           role_keys: form.role_keys,
         });
       } else {
-        await usersApi.create(form);
+        await usersApi.create({
+          email: form.email,
+          password: form.password,
+          full_name: form.full_name,
+          role_keys: form.role_keys,
+        });
       }
       onSaved();
     } catch (err) {
@@ -95,23 +99,19 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
           </Field>
 
           {mode === 'create' && (
-            <Field label="Password">
-              <PasswordInput style={ov.input} value={form.password}
-                onChange={(e) => setField('password', e.target.value)}
-                minLength={8} required placeholder="min 8 characters" />
-            </Field>
+            <>
+              <Field label="Password">
+                <PasswordInput style={ov.input} value={form.password}
+                  onChange={(e) => setField('password', e.target.value)}
+                  minLength={8} required placeholder="min 8 characters" />
+              </Field>
+              <Field label="Confirm password">
+                <PasswordInput style={ov.input} value={form.confirm_password}
+                  onChange={(e) => setField('confirm_password', e.target.value)}
+                  minLength={8} required placeholder="re-enter password" />
+              </Field>
+            </>
           )}
-
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Field label="Designation">
-              <input style={ov.input} value={form.designation}
-                onChange={(e) => setField('designation', e.target.value)} />
-            </Field>
-            <Field label="Department">
-              <input style={ov.input} value={form.department}
-                onChange={(e) => setField('department', e.target.value)} />
-            </Field>
-          </div>
 
           <Field label="Roles">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

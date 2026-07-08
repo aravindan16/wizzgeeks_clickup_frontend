@@ -42,12 +42,15 @@
   --t-fast: 120ms cubic-bezier(.4,0,.2,1);
   --t-med: 200ms cubic-bezier(.4,0,.2,1);
 
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: var(--c-text);
   background: var(--c-bg);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  letter-spacing: -0.01em;
 }
 
 /* --- Dark theme: override the palette tokens; everything keyed to var() follows. --- */
@@ -277,7 +280,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   transition: background var(--t-fast), color var(--t-fast);
 }
 .nav-item:hover { background: var(--c-hover); color: var(--c-text-strong); }
-.nav-item.active::before {
+.wg-navrow-active { background: var(--c-hover); }
+.nav-item.active::before,
+.wg-navrow-active::before {
   content: '';
   position: absolute;
   left: 0; top: 50%; transform: translateY(-50%);
@@ -321,44 +326,37 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 }
 .wg-tip-wrap:hover .wg-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Lightweight styled tooltip via [data-tip] (replaces ugly native title tooltips). */
-[data-tip] { position: relative; }
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) translateY(3px);
+/* Single app-wide tooltip rendered in a portal by <GlobalTooltip>. position:fixed
+   so it never gets clipped by scroll/overflow containers (unlike CSS ::after). */
+.wg-gtip {
+  position: fixed;
+  z-index: 4000;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 7px 11px;
   background: #1f2430;
   color: #fff;
-  padding: 5px 9px;
-  border-radius: 8px;
-  font-size: 11.5px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 9px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.35;
   letter-spacing: .01em;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--t-fast), transform var(--t-fast);
-  z-index: 600;
-  box-shadow: 0 8px 20px rgba(0,0,0,.28);
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .32);
+  animation: wg-gtip-in .12s ease-out;
 }
-[data-tip]::before {
+.wg-gtip::after {
   content: '';
   position: absolute;
-  bottom: calc(100% + 3px);
   left: 50%;
-  transform: translateX(-50%) translateY(3px);
+  margin-left: -5px;
   border: 5px solid transparent;
-  border-top-color: #1f2430;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--t-fast), transform var(--t-fast);
-  z-index: 600;
 }
-[data-tip]:hover::after, [data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
-[data-tip='']::after, [data-tip='']::before { display: none; }
+.wg-gtip.is-above::after { top: 100%; border-top-color: #1f2430; }
+.wg-gtip.is-below::after { bottom: 100%; border-bottom-color: #1f2430; }
+@keyframes wg-gtip-in { from { opacity: 0; } }
 
 /* Completed step in the Bulk Operation rail — only the title underlines on hover. */
 .wg-rail-link:hover .wg-rail-label { text-decoration: underline; }

@@ -18,11 +18,14 @@ import {
   IconEdit,
   IconBoard,
   IconDots,
-  IconListCheck,
-  IconFolder,
+  IconList,
   IconSmile,
   Chevron,
 } from "../../components/icons";
+import { Layers } from "lucide-react";
+
+// Sidebar Spaces glyph — Lucide, tuned to the app's 1.9 stroke to match Users/Settings.
+const IconFolder = ({ size = 18 }) => <Layers size={size} strokeWidth={1.9} />;
 import TaskModal from "../tasks/TaskModal";
 import { resolveStatuses } from "../tasks/tasksApi";
 import apiClient from "../../services/apiClient";
@@ -381,7 +384,7 @@ export default function SpacesMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div className="wg-sb-row" style={s.header}>
+      <div className={`wg-sb-row${(pathname.startsWith('/projects') || pathname.startsWith('/lists')) ? ' wg-navrow-active' : ''}`} style={s.header}>
         <div
           style={{
             ...s.headInner,
@@ -601,7 +604,7 @@ export default function SpacesMenu({ collapsed }) {
                           })}
                         >
                           <span style={s.listIcon}>
-                            {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconListCheck size={15} />}
+                            {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconList size={15} />}
                           </span>
                           <span style={s.rowName}>{l.name}</span>
                           {l.privacy === "private" && (
@@ -700,27 +703,11 @@ export default function SpacesMenu({ collapsed }) {
                     {lists.length === 0 && (
                       <div style={s.listsEmpty}>No lists yet</div>
                     )}
-                    <button
-                      style={s.addList}
-                      onClick={() => openCreateList(sp._id)}
-                    >
-                      <IconPlus size={14} /> Create List
-                    </button>
                   </div>
                 )}
               </div>
             );
           })}
-          <button
-            className="wg-sb-row"
-            style={s.newSpace}
-            onClick={() => setSpaceSetupOpen(true)}
-          >
-            <span style={s.newSpaceIcon}>
-              <IconPlus size={15} />
-            </span>{" "}
-            New Space
-          </button>
         </div>
       )}
 
@@ -749,8 +736,9 @@ const s = {
     color: "var(--c-muted)",
   },
   heading: {
-    fontSize: 14,
-    fontWeight: 500,
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: "0.01em",
     color: "inherit",
     whiteSpace: "nowrap",
     overflow: "hidden",
@@ -865,6 +853,8 @@ const s = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    fontWeight: 500,
+    letterSpacing: "-0.01em",
   },
   // NOTE: don't set `display` here — the .wg-sb-actions CSS toggles it on hover.
   rowActions: { gap: 0 },
@@ -924,16 +914,18 @@ const s = {
     gap: 8,
     padding: "6px 8px",
     borderRadius: 8,
-    color: "#64748b",
+    color: "var(--c-muted)",
     textDecoration: "none",
     fontSize: 13.5,
+    fontWeight: 500,
+    letterSpacing: "-0.01em",
     flex: 1,
     minWidth: 0,
   },
   listIcon: {
     display: "inline-flex",
     alignItems: "center",
-    color: "#64748b",
+    color: "var(--c-muted)",
     flexShrink: 0,
   },
   listsEmpty: { color: "#64748b", fontSize: 12, padding: "4px 10px" },

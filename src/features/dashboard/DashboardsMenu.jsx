@@ -3,7 +3,11 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { dashboardsApi } from './dashboardsApi';
 import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
-import { IconDashboard, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
+import { LayoutDashboard } from 'lucide-react';
+import { IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
+
+// Sidebar Dashboard glyph — Lucide, tuned to the app's 1.9 stroke to match Users/Settings.
+const IconDashboard = ({ size = 18 }) => <LayoutDashboard size={size} strokeWidth={1.9} />;
 
 /**
  * Sidebar "Dashboard" section (ClickUp-style, mirrors SpacesMenu): the Dashboard
@@ -76,7 +80,7 @@ export default function DashboardsMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div className="wg-sb-row" style={s.row}>
+      <div className={`wg-sb-row${location.pathname.startsWith('/dashboard') ? ' wg-navrow-active' : ''}`} style={s.row}>
         <NavLink to="/dashboard" end
           style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
           <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}

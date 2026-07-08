@@ -1,10 +1,15 @@
 import ReactDOM from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 import { store } from './store';
 import App from './App';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
+import GlobalTooltip from './components/GlobalTooltip';
 import { initTheme } from './services/theme';
 import './index.css';
 
@@ -20,6 +25,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <ConfirmProvider>
         <BrowserRouter>
           <App />
+          <GlobalTooltip />
         </BrowserRouter>
       </ConfirmProvider>
     </ToastProvider>

@@ -1,3 +1,5 @@
+import { List as LucideList, ListChecks as LucideListChecks, ListFilter as LucideListFilter } from 'lucide-react';
+
 /* Lightweight Lucide-style line icons (stroke = currentColor). Visual only. */
 const base = (size) => ({
   width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
@@ -31,12 +33,8 @@ export const IconBoard = ({ size = 18 }) => (
 export const IconMembers = ({ size = 18 }) => (
   <svg {...base(size)}><circle cx="9" cy="8" r="3.2" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6.1" /><path d="M18 20a6 6 0 0 0-3-5.2" /></svg>
 );
-export const IconList = ({ size = 18 }) => (
-  <svg {...base(size)}><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></svg>
-);
-export const IconListCheck = ({ size = 18 }) => (
-  <svg {...base(size)}><path d="M11 6h10M11 12h10M11 18h10" /><path d="M3 6l1.4 1.4L7 5" /><path d="M3 12l1.4 1.4L7 11" /><path d="M3 18l1.4 1.4L7 17" /></svg>
-);
+export const IconList = ({ size = 18 }) => <LucideList size={size} strokeWidth={1.9} />;
+export const IconListCheck = ({ size = 18 }) => <LucideListChecks size={size} strokeWidth={1.9} />;
 export const IconDots = ({ size = 18 }) => (
   <svg {...base(size)}><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></svg>
 );
@@ -117,9 +115,7 @@ export const IconLogout = ({ size = 18 }) => (
 export const IconCheck = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M20 6 9 17l-5-5" /></svg>
 );
-export const IconFilter = ({ size = 18 }) => (
-  <svg {...base(size)}><path d="M3 5h18l-7 8v6l-4-2v-4z" /></svg>
-);
+export const IconFilter = ({ size = 18 }) => <LucideListFilter size={size} strokeWidth={1.9} />;
 export const IconArrowLeft = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg>
 );
