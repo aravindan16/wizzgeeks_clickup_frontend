@@ -14,6 +14,7 @@ const DashboardHome = lazy(() => import('./features/dashboard/DashboardHome'));
 const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'));
 const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage'));
 const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
+const SpaceSettingsPage = lazy(() => import('./features/projects/SpaceSettingsPage'));
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
@@ -22,6 +23,7 @@ const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
+const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
 
 // Lightweight fallback shown while a route chunk loads.
 const RouteFallback = () => (
@@ -81,6 +83,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/:id" element={<ProjectDetailsPage />} />
+          <Route path="/projects/:id/settings" element={<SpaceSettingsPage />} />
           <Route path="/lists/:id" element={<ListBoardPage />} />
         </Route>
       </Route>
@@ -101,6 +104,12 @@ export default function App() {
       <Route element={<ProtectedRoute permission="user.read" />}>
         <Route element={<AppLayout />}>
           <Route path="/users" element={<UserManagementPage />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute permission="permission.manage" />}>
+        <Route element={<AppLayout />}>
+          <Route path="/permissions" element={<PermissionsPage />} />
         </Route>
       </Route>
 

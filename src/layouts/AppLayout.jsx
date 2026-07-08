@@ -11,7 +11,11 @@ import {
   IconMembers, IconSettings,
   IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
+import { ShieldCheck } from 'lucide-react';
 import ThemeCustomizer from '../components/ThemeCustomizer';
+
+// Sidebar Permission glyph — Lucide, tuned to the app's 1.9 stroke.
+const IconPermission = ({ size = 18 }) => <ShieldCheck size={size} strokeWidth={1.9} />;
 
 /**
  * Application shell: a full-width top bar (brand · search · actions) over a
@@ -20,6 +24,7 @@ import ThemeCustomizer from '../components/ThemeCustomizer';
 const NAV = [
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/settings', label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
+  { to: '/permissions', label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },
 ];
 
 const STORAGE_KEY = 'wg_sidebar_collapsed';
@@ -93,9 +98,9 @@ export default function AppLayout() {
           <div style={s.navScroll}>
             <nav style={s.nav}>
               <DashboardsMenu collapsed={collapsed} />
-              {NAV.filter((n) => !n.permission || can(n.permission)).map(renderNav)}
               {can('project.read') && <SpacesMenu collapsed={collapsed} />}
               {can('task.read') && <FiltersMenu collapsed={collapsed} />}
+              {NAV.filter((n) => !n.permission || can(n.permission)).map(renderNav)}
             </nav>
           </div>
 

@@ -1,37 +1,32 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ICON_MAP, ICON_CATEGORIES } from './iconLibrary';
+import { COLOR_ICON_MAP, COLOR_CATEGORIES } from './colorIcons';
 import { IconClose } from './icons';
 
 /**
- * ClickUp / Jira-style icon picker backed by the **lucide-react** icon library
- * (no hand-drawn emoji). Icons are referenced by name and rendered straight from
- * the library, so `onSelect(name)` stores a Lucide icon name (e.g. "Rocket").
- * A search box matches the humanised name; category tabs group the curated set.
+ * ClickUp / Jira-style icon picker backed by **react-icons Flat Color Icons** —
+ * full-color, app-style glyphs (no monochrome line icons). Icons are referenced by
+ * name and rendered straight from the library, so `onSelect(name)` stores a
+ * Flat-Color icon name (e.g. "FcTodoList"). Search matches the humanised name.
  */
-const CAT_LABELS = { work: 'Work', dev: 'Tech', people: 'People', files: 'Files', nature: 'Nature', shapes: 'Shapes' };
-const CATEGORIES = Object.entries(ICON_CATEGORIES).map(([id, names]) => ({
-  id, label: CAT_LABELS[id] || id, tab: names[0], names,
-}));
-
-// "CircleCheck" -> "circle check" for search matching.
-const humanize = (n) => n.replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/([0-9])([A-Za-z])/g, '$1 $2').toLowerCase();
-const ALL = CATEGORIES.flatMap((c) => c.names.map((n) => ({ n, h: humanize(n), cat: c.id })));
+// "FcTodoList" -> "todo list", "FcBarChart" -> "bar chart"
+const humanize = (n) => n.replace(/^Fc/, '').replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/([0-9])([A-Za-z])/g, '$1 $2').toLowerCase();
+const ALL = COLOR_CATEGORIES.flatMap((c) => c.names.map((n) => ({ n, h: humanize(n) })));
 
 function Glyph({ name, size = 24 }) {
-  const Cmp = ICON_MAP[name];
-  return Cmp ? <Cmp size={size} strokeWidth={2} /> : null;
+  const Cmp = COLOR_ICON_MAP[name];
+  return Cmp ? <Cmp size={size} /> : null;
 }
 
 export default function IconPicker({ open, current, onSelect, onClose }) {
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState(CATEGORIES[0].id);
+  const [cat, setCat] = useState(COLOR_CATEGORIES[0].id);
 
   const query = q.trim().toLowerCase();
   const results = useMemo(() => (query ? ALL.filter((x) => x.h.includes(query)) : null), [query]);
 
   if (!open) return null;
-  const activeCat = CATEGORIES.find((c) => c.id === cat) || CATEGORIES[0];
+  const activeCat = COLOR_CATEGORIES.find((c) => c.id === cat) || COLOR_CATEGORIES[0];
   const shown = query ? results.map((x) => x.n) : activeCat.names;
 
   return createPortal(
@@ -43,7 +38,7 @@ export default function IconPicker({ open, current, onSelect, onClose }) {
         </div>
 
         <div style={s.searchWrap}>
-          <span style={s.searchIcon}><Glyph name="Search" size={15} /></span>
+          <span style={s.searchIcon}>🔍</span>
           <input autoFocus style={s.search} placeholder="Search icons…" value={q} onChange={(e) => setQ(e.target.value)} />
           {current ? (
             <button type="button" style={s.remove} title="Remove icon" onClick={() => onSelect('')}>Remove</button>
@@ -52,10 +47,10 @@ export default function IconPicker({ open, current, onSelect, onClose }) {
 
         {!query && (
           <div style={s.tabs}>
-            {CATEGORIES.map((c) => (
+            {COLOR_CATEGORIES.map((c) => (
               <button key={c.id} type="button" title={c.label} className="wg-icon-tab"
                 style={{ ...s.tab, ...(c.id === cat ? s.tabActive : {}) }} onClick={() => setCat(c.id)}>
-                <Glyph name={c.tab} size={18} />
+                <Glyph name={c.names[0]} size={20} />
               </button>
             ))}
           </div>
@@ -68,7 +63,7 @@ export default function IconPicker({ open, current, onSelect, onClose }) {
               {shown.map((n) => (
                 <button key={n} type="button" title={humanize(n)} className="wg-icon-cell"
                   style={{ ...s.cell, ...(current === n ? s.cellActive : {}) }} onClick={() => onSelect(n)}>
-                  <Glyph name={n} size={22} />
+                  <Glyph name={n} size={24} />
                 </button>
               ))}
             </div>
@@ -89,22 +84,22 @@ const s = {
   x: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: 'none', color: 'var(--c-muted)', borderRadius: 8, cursor: 'pointer' },
 
   searchWrap: { display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px 10px', flexShrink: 0 },
-  searchIcon: { position: 'absolute', marginLeft: 10, display: 'inline-flex', pointerEvents: 'none', opacity: .55 },
-  search: { flex: 1, height: 38, padding: '0 12px 0 34px', fontSize: 14, color: 'var(--c-text-strong)', background: 'var(--c-surface-2)',
+  searchIcon: { position: 'absolute', marginLeft: 10, fontSize: 13, pointerEvents: 'none', opacity: .6 },
+  search: { flex: 1, height: 38, padding: '0 12px 0 32px', fontSize: 14, color: 'var(--c-text-strong)', background: 'var(--c-surface-2)',
     border: '1px solid var(--c-border)', borderRadius: 10, outline: 'none' },
   remove: { height: 38, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: 'var(--c-danger, #dc2626)', background: 'none',
     border: '1px solid var(--c-border)', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' },
 
   tabs: { display: 'flex', gap: 4, padding: '0 12px 8px', borderBottom: '1px solid var(--c-border)', flexShrink: 0, overflowX: 'auto' },
-  tab: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 36, background: 'none', color: 'var(--c-muted)',
-    border: 'none', borderRadius: 8, cursor: 'pointer', opacity: .8 },
-  tabActive: { background: 'var(--c-surface-2)', color: 'var(--c-text-strong)', opacity: 1, boxShadow: 'inset 0 -2px 0 var(--c-primary)' },
+  tab: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 36, background: 'none',
+    border: 'none', borderRadius: 8, cursor: 'pointer', opacity: .85 },
+  tabActive: { background: 'var(--c-surface-2)', opacity: 1, boxShadow: 'inset 0 -2px 0 var(--c-primary)' },
 
   body: { flex: 1, overflowY: 'auto', padding: '10px 16px 16px' },
   secLabel: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--c-muted)', margin: '2px 2px 10px' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(48px, 1fr))', gap: 6 },
-  cell: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 48, color: 'var(--c-text-strong)', background: 'transparent',
+  cell: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 48, background: 'transparent',
     border: '1px solid transparent', borderRadius: 10, cursor: 'pointer', transition: 'background .12s' },
-  cellActive: { borderColor: 'var(--c-primary)', background: 'var(--c-primary-weak)', color: 'var(--c-primary)', boxShadow: '0 0 0 1px var(--c-primary)' },
+  cellActive: { borderColor: 'var(--c-primary)', background: 'var(--c-primary-weak)', boxShadow: '0 0 0 1px var(--c-primary)' },
   empty: { padding: '30px 10px', textAlign: 'center', color: 'var(--c-muted)', fontSize: 13 },
 };

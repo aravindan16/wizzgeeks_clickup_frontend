@@ -16,13 +16,17 @@ export const projectsApi = {
   removeMember: (id, userId) =>
     apiClient.delete(`/projects/${id}/members/${userId}`).then((r) => r.data),
   statusTemplates: () => apiClient.get('/projects/status-templates').then((r) => r.data),
+  // Custom per-space roles (Jira-style role management)
+  roles: (id) => apiClient.get(`/projects/${id}/roles`).then((r) => r.data),
+  createRole: (id, payload) => apiClient.post(`/projects/${id}/roles`, payload).then((r) => r.data),
+  removeRole: (id, roleId) => apiClient.delete(`/projects/${id}/roles/${roleId}`).then((r) => r.data),
 };
 
+// The app uses exactly three built-in roles everywhere (plus per-space custom roles).
 export const PROJECT_ROLES = [
-  { value: 'project_manager', label: 'Project Manager' },
-  { value: 'team_lead', label: 'Team Lead' },
-  { value: 'developer', label: 'Developer' },
-  { value: 'tester', label: 'Tester' },
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'employee', label: 'Employee' },
 ];
 
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed', 'archived'];

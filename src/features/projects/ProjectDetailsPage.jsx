@@ -14,6 +14,7 @@ import { IconBoard, IconMembers, IconSearch } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
+import SpaceSettingsMenu from './SpaceSettingsMenu';
 import AddMembersModal from './AddMembersModal';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -150,11 +151,15 @@ export default function ProjectDetailsPage() {
       <ViewTabs vs={vs} extraTabs={[{
         id: 'members', label: 'Members', icon: <IconMembers size={16} />,
         active: isMembersTab, onClick: () => setActiveId('members'),
-      }]} rightSlot={isMembersTab
-        ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
-        : (can('task.create') && project.status !== 'archived'
-            ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Create Task</button>
-            : null)} />
+      }]} rightSlot={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <SpaceSettingsMenu onSpaceSetting={() => navigate(`/projects/${id}/settings`)} />
+          {isMembersTab
+            ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
+            : (can('task.create') && project.status !== 'archived'
+                ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
+                : null)}
+        </span>} />
 
       {/* Common search + filter toolbar for any task view. */}
       {!isMembersTab && (
