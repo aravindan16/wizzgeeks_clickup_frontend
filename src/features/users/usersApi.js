@@ -6,6 +6,8 @@ export const usersApi = {
   update: (id, payload) => apiClient.patch(`/users/${id}`, payload).then((r) => r.data),
   disable: (id) => apiClient.post(`/users/${id}/disable`).then((r) => r.data),
   activate: (id) => apiClient.post(`/users/${id}/activate`).then((r) => r.data),
+  resetPassword: (id, newPassword) =>
+    apiClient.post(`/users/${id}/reset-password`, { new_password: newPassword }).then((r) => r.data),
   roles: () => apiClient.get('/roles').then((r) => r.data),
   myProfile: () => apiClient.get('/users/me/profile').then((r) => r.data),
   updateMyProfile: (payload) => apiClient.patch('/users/me/profile', payload).then((r) => r.data),

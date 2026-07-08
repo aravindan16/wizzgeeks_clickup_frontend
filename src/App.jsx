@@ -12,7 +12,6 @@ import { bootstrap } from './features/auth/authSlice';
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
 const DashboardHome = lazy(() => import('./features/dashboard/DashboardHome'));
 const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'));
-const AuditLogPage = lazy(() => import('./features/audit/AuditLogPage'));
 const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage'));
 const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
@@ -21,7 +20,6 @@ const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
 const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
 const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
-const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 
@@ -98,11 +96,6 @@ export default function App() {
       </Route>
 
 
-      <Route element={<ProtectedRoute permission="dailyupdate.read.team" />}>
-        <Route element={<AppLayout />}>
-          <Route path="/team-activity" element={<TeamActivityPage />} />
-        </Route>
-      </Route>
 
 
       <Route element={<ProtectedRoute permission="user.read" />}>
@@ -111,11 +104,6 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute permission="audit.read" />}>
-        <Route element={<AppLayout />}>
-          <Route path="/audit" element={<AuditLogPage />} />
-        </Route>
-      </Route>
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

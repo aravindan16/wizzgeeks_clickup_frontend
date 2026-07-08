@@ -9,6 +9,7 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@reduxjs/toolkit": "^2.2.5",
     "axios": "^1.7.2",
     "lucide-react": "^1.23.0",
