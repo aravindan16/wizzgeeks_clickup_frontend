@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { dashboardsApi } from './dashboardsApi';
+import { savedFiltersApi } from './savedFiltersApi';
 import { useToast } from '../../components/Toast';
 import { IconClose, IconTrash, IconSearch, IconPlus } from '../../components/icons';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
-/** Share a dashboard with other users (owner-managed member list). */
-export default function DashboardShareModal({ open, dashboardId, onClose, onChanged }) {
+/** Share a saved filter with other users (owner-managed member list). */
+export default function FilterShareModal({ open, filterId, onClose, onChanged }) {
   const toast = useToast();
   const [members, setMembers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -14,36 +14,32 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!open || !dashboardId) return;
+    if (!open || !filterId) return;
     setQuery('');
-    dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
-  }, [open, dashboardId]);
+    savedFiltersApi.members(filterId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
+  }, [open, filterId]);
 
-  // Server-side user search (accessible to any authenticated user), debounced.
   useEffect(() => {
     if (!open) return undefined;
     const h = setTimeout(() => {
-      dashboardsApi.searchUsers(query).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
+      savedFiltersApi.searchUsers(query).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
     }, 200);
     return () => clearTimeout(h);
   }, [open, query]);
 
   const memberIds = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
-  const candidates = useMemo(
-    () => users.filter((u) => !memberIds.has(u.user_id)).slice(0, 30),
-    [users, memberIds],
-  );
+  const candidates = useMemo(() => users.filter((u) => !memberIds.has(u.user_id)).slice(0, 30), [users, memberIds]);
 
-  const apply = (items) => { setMembers(items); onChanged?.(); window.dispatchEvent(new Event('wg-dashboards-changed')); };
+  const apply = (items) => { setMembers(items); onChanged?.(); window.dispatchEvent(new Event('wg-saved-filters-changed')); };
 
   const add = async (u) => {
     setBusy(true);
-    try { const r = await dashboardsApi.addMember(dashboardId, u.user_id); apply(r.items || []); toast.success(`Added ${u.full_name || u.email}`); }
+    try { const r = await savedFiltersApi.addMember(filterId, u.user_id); apply(r.items || []); toast.success(`Added ${u.full_name || u.email}`); }
     catch { toast.error('Could not add member'); } finally { setBusy(false); }
   };
   const remove = async (m) => {
     setBusy(true);
-    try { const r = await dashboardsApi.removeMember(dashboardId, m.user_id); apply(r.items || []); }
+    try { const r = await savedFiltersApi.removeMember(filterId, m.user_id); apply(r.items || []); }
     catch { toast.error('Could not remove member'); } finally { setBusy(false); }
   };
 
@@ -52,7 +48,7 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
     <div style={s.backdrop} onClick={onClose}>
       <div style={s.modal} onClick={(e) => e.stopPropagation()}>
         <div style={s.head}>
-          <h3 style={s.title}>Share dashboard</h3>
+          <h3 style={s.title}>Share filter</h3>
           <button className="icon-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
         </div>
 

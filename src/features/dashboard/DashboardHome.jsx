@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
+import ResizableTable from '../../components/ResizableTable';
 import GridLayout, { WidthProvider } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { useAuth } from '../auth/useAuth';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { loadLegacyDashboards, clearLegacyDashboards } from './dashboardStore';
 import { dashboardsApi } from './dashboardsApi';
@@ -12,7 +15,7 @@ import { beginSilent, endSilent } from '../../services/apiClient';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
 import DashboardShareModal from './DashboardShareModal';
-import { IconPlus, IconEdit, IconTrash, IconMembers, IconGrip, Chevron } from '../../components/icons';
+import { IconPlus, IconEdit, IconTrash, IconMembers, IconBoard, IconGrip, Chevron } from '../../components/icons';
 
 const Grid = WidthProvider(GridLayout);
 // Default grid placement for a card with no saved layout yet (2-up, half width).
@@ -28,6 +31,7 @@ export default function DashboardHome() {
   const { user } = useAuth();
   const uid = user?._id || user?.id;
   const confirm = useConfirm();
+  const promptDialog = usePrompt();
   const toast = useToast();
   const navigate = useNavigate();
   const { id: openId } = useParams(); // /dashboard/:id — the open dashboard, if any
@@ -64,11 +68,14 @@ export default function DashboardHome() {
   const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
 
   const createDashboard = async () => {
+    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    if (!name || !name.trim()) return;
     try {
-      const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
+      const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setDashboards((cur) => [...(cur || []), d]);
       notifyChanged();
-      navigate(`/dashboard/${d.id}`); // jump straight into the new (empty) dashboard
+      toast.success(`Dashboard "${d.name}" created`);
+      navigate(`/dashboard/${d.id}`); // route into the newly-created dashboard
     } catch { toast.error('Could not create dashboard'); }
   };
 
@@ -120,6 +127,7 @@ export default function DashboardHome() {
 
 /* ---------------------------------------------------------------- list view */
 function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
+  const slotEl = useHeaderSlot();
   const [renaming, setRenaming] = useState(null); // dashboard id
   const [draft, setDraft] = useState('');
 
@@ -132,30 +140,16 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 
   return (
     <div style={s.wrap}>
-      <div style={s.headRow}>
-        <h2 style={s.title}>Dashboards</h2>
-        {dashboards.length > 0 && (
-          <button style={s.addBtn} onClick={onCreate}><IconPlus size={16} /> New Dashboard</button>
-        )}
-      </div>
+      {slotEl && createPortal(<span style={s.headerTitle}>Dashboards</span>, slotEl)}
 
-      {dashboards.length === 0 ? (
-        <div style={s.emptyGrid}>
-          <button style={s.scratch} onClick={onCreate}>
-            <span style={s.scratchIcon}><IconPlus size={26} /></span>
-            <span style={s.scratchTitle}>Start from scratch</span>
-            <span style={s.scratchDesc}>Create a dashboard, then add cards to it.</span>
-          </button>
+      <div style={s.listCard}>
+        <div style={s.listHead}>
+          <span style={s.colName}>Name</span>
+          <span style={s.colMeta}>Cards</span>
+          <span style={s.colActions} />
         </div>
-      ) : (
-        <div style={s.listCard}>
-          <div style={s.listHead}>
-            <span style={s.colName}>Name</span>
-            <span style={s.colMeta}>Cards</span>
-            <span style={s.colActions} />
-          </div>
-          {dashboards.map((d) => (
-            <div key={d.id} style={s.listRow}>
+        {dashboards.map((d) => (
+            <div key={d.id} className="wg-row-hover" style={s.listRow}>
               {renaming === d.id ? (
                 <input style={s.renameInput} value={draft} autoFocus
                   onChange={(e) => setDraft(e.target.value)}
@@ -175,8 +169,10 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
               </span>
             </div>
           ))}
+          <div className="wg-row-hover" style={s.newRow} onClick={onCreate} role="button" tabIndex={0}>
+            <span style={s.newRowIcon}><IconPlus size={15} /></span> New dashboard
+          </div>
         </div>
-      )}
     </div>
   );
 }
@@ -184,21 +180,24 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 /* -------------------------------------------------------------- detail view */
 function DashboardDetail({ dashboard, onBack, onChange }) {
   const confirm = useConfirm();
+  const slotEl = useHeaderSlot();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null); // card open in the modal
   const [editSidebar, setEditSidebar] = useState(true); // modal opens with the filter panel shown?
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(dashboard.name);
-  const [sharing, setSharing] = useState(false);
+  const [tab, setTab] = useState('view'); // view | members
+  const [mShare, setMShare] = useState(false); // members "Add people" modal
+  const [mReload, setMReload] = useState(0);   // bump to refresh the members table
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Sidebar actions navigate here with ?add=1 / ?share=1 → open the right modal.
+  // Sidebar actions navigate here with ?add=1 → open the add-card modal; ?share=1 → Members tab.
   useEffect(() => {
     const add = searchParams.get('add') === '1';
     const share = searchParams.get('share') === '1';
     if (!add && !share) return;
     if (add) setAdding(true);
-    if (share) setSharing(true);
+    if (share) setTab('members');
     const next = new URLSearchParams(searchParams);
     next.delete('add'); next.delete('share');
     setSearchParams(next, { replace: true });
@@ -273,30 +272,46 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
     setName(v); onChange({ ...dashboard, name: v }); setEditingName(false);
   };
 
+  // Breadcrumb ("Dashboards › <name>") lives in the shared topbar via a portal.
+  const breadcrumb = (
+    <div style={s.crumbs}>
+      <button style={s.crumbLink} onClick={onBack}>Dashboards</button>
+      <span style={s.crumbSep}><Chevron open={false} size={12} /></span>
+      {editingName ? (
+        <input style={s.crumbInput} value={name} autoFocus
+          onChange={(e) => setName(e.target.value)} onBlur={commitName}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setName(dashboard.name); setEditingName(false); } }} />
+      ) : (
+        <span style={s.crumbCurrentWrap}>
+          <span style={s.crumbCurrent}>{dashboard.name}</span>
+          <button className="icon-btn" style={s.iconBtn} title="Rename dashboard" onClick={() => setEditingName(true)}><IconEdit size={14} /></button>
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div style={s.wrap}>
-      <div style={s.crumbs}>
-        <button style={s.crumbLink} onClick={onBack}>Dashboards</button>
-        <span style={s.crumbSep}><Chevron open={false} size={12} /></span>
-        {editingName ? (
-          <input style={s.crumbInput} value={name} autoFocus
-            onChange={(e) => setName(e.target.value)} onBlur={commitName}
-            onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setName(dashboard.name); setEditingName(false); } }} />
-        ) : (
-          <span style={s.crumbCurrentWrap}>
-            <span style={s.crumbCurrent}>{dashboard.name}</span>
-            <button className="icon-btn" style={s.iconBtn} title="Rename dashboard" onClick={() => setEditingName(true)}><IconEdit size={14} /></button>
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        {cards.length > 0 && (
-          <button style={s.shareBtn} title="Pack cards into rows by size" onClick={autoArrange}><IconGrip size={16} /> Auto-arrange</button>
-        )}
-        <button style={s.shareBtn} onClick={() => setSharing(true)}><IconMembers size={16} /> Share</button>
-        <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>
+      {slotEl && createPortal(breadcrumb, slotEl)}
+
+      {/* Tabs (View · Members) with the primary action in the right corner. */}
+      <div style={s.tabs}>
+        <div style={s.tabsLeft}>
+          <button style={{ ...s.tab, ...(tab === 'view' ? s.tabActive : {}) }} onClick={() => setTab('view')}>
+            <IconBoard size={15} /> View
+          </button>
+          <button style={{ ...s.tab, ...(tab === 'members' ? s.tabActive : {}) }} onClick={() => setTab('members')}>
+            <IconMembers size={15} /> Members
+          </button>
+        </div>
+        {tab === 'members'
+          ? <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+          : <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>}
       </div>
 
-      {cards.length === 0 ? (
+      {tab === 'members' ? (
+        <DashboardMembers dashboardId={dashboard.id} reloadKey={mReload} />
+      ) : cards.length === 0 ? (
         <div style={s.emptyGrid}>
           <button style={s.scratch} onClick={() => setAdding(true)}>
             <span style={s.scratchIcon}><IconPlus size={26} /></span>
@@ -333,14 +348,51 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
         startWithSidebar={editing ? editSidebar : true}
         onDelete={() => { const id = editing?.id; setEditing(null); if (id) removeCard(id); }}
         onClose={() => { setAdding(false); setEditing(null); }} onAdd={saveCard} />
-      <DashboardShareModal open={sharing} dashboardId={dashboard.id} onClose={() => setSharing(false)} />
+      <DashboardShareModal open={mShare} dashboardId={dashboard.id}
+        onChanged={() => setMReload((x) => x + 1)}
+        onClose={() => { setMShare(false); setMReload((x) => x + 1); }} />
     </div>
   );
 }
 
+/* ------------------------------------------------------- Members tab (table) */
+function DashboardMembers({ dashboardId, reloadKey }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [members, setMembers] = useState([]);
+
+  const load = () => dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
+  useEffect(() => { load(); }, [dashboardId, reloadKey]);
+
+  const remove = async (m) => {
+    if (m.is_owner) return;
+    if (!(await confirm({ title: 'Remove member', message: `Remove ${m.full_name || m.email}?`, confirmLabel: 'Remove', danger: true }))) return;
+    try { await dashboardsApi.removeMember(dashboardId, m.user_id); load(); }
+    catch { toast.error('Could not remove member'); }
+  };
+
+  return (
+    <ResizableTable persistKey="wg_dash_members_cols" rowKey={(m) => m.user_id} rows={members} emptyText="No members yet."
+      columns={[
+        { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => <span style={s.mName}>{m.full_name || '—'}</span> },
+        { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={s.mEmail}>{m.email}</span> },
+        { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+          render: (m) => (m.is_owner
+            ? <span style={s.ownerTag}>Owner</span>
+            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+      ]} />
+  );
+}
+
 const s = {
-  wrap: { padding: '4px 0' },
+  wrap: { padding: 0, marginTop: -10 },
   headRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  newRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box',
+    padding: '11px 16px', borderTop: '1px solid var(--c-border-2)',
+    cursor: 'pointer', textAlign: 'left', fontSize: 14, fontWeight: 600, color: 'var(--c-muted)' },
+  newRowIcon: { width: 26, height: 26, borderRadius: 7, background: 'var(--c-surface-2)', color: 'var(--c-muted)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   title: { margin: 0, color: 'var(--c-text-strong)' },
   addBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--c-primary)',
     color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
@@ -365,13 +417,35 @@ const s = {
   iconBtn: { border: 'none', color: 'var(--c-faint)', cursor: 'pointer', display: 'inline-flex', padding: 5, borderRadius: 6 },
 
   // detail view
-  crumbs: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 },
-  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 18, fontWeight: 600, padding: 0 },
+  crumbs: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 20 },
+
+  // tabs (View / Members) — tabs on the left, primary action in the right corner
+  tabs: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    borderBottom: '1px solid var(--c-border)', marginBottom: 16 },
+  tabsLeft: { display: 'flex', alignItems: 'center', gap: 8 },
+  tab: { display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer',
+    padding: '10px 6px', margin: '0 6px', fontSize: 14, fontWeight: 600, color: 'var(--c-muted)',
+    borderBottom: '2px solid transparent', marginBottom: -1 },
+  tabActive: { color: 'var(--c-text-strong)', borderBottom: '2px solid var(--c-text-strong)' },
+  mCard: { border: '1px solid var(--c-border)', borderRadius: 12, overflow: 'hidden', background: 'var(--c-surface)' },
+  mTable: { width: '100%', borderCollapse: 'collapse' },
+  mTh: { textAlign: 'left', padding: '11px 18px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em',
+    color: 'var(--c-muted)', background: 'var(--c-surface-2)' },
+  mRow: { borderTop: '1px solid var(--c-border-2)' },
+  mTd: { padding: '13px 18px', fontSize: 14, color: 'var(--c-text)' },
+  mName: { color: 'var(--c-text-strong)', fontWeight: 600 },
+  mEmail: { color: 'var(--c-muted)' },
+  mEmpty: { padding: 24, textAlign: 'center', color: 'var(--c-muted)' },
+  removeLink: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+    padding: '5px 12px', borderRadius: 8 },
+  ownerTag: { fontSize: 11.5, fontWeight: 700, color: 'var(--c-muted)', background: 'var(--c-surface-3)', borderRadius: 999, padding: '3px 12px' },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
   crumbSep: { color: 'var(--c-faint)', display: 'inline-flex' },
   crumbCurrentWrap: { display: 'inline-flex', alignItems: 'center', gap: 6 },
-  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 18, fontWeight: 700 },
-  crumbInput: { fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
-    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 220 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700 },
+  crumbInput: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 200 },
 
   // shared empty state
   emptyGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 320px))', gap: 16 },

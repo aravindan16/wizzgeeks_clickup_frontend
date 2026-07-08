@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { usersApi } from './usersApi';
 import { IconClose } from '../../components/icons';
+import PasswordInput from '../../components/PasswordInput';
 
 /**
  * Create/Edit user modal. In edit mode the password field is hidden (password
@@ -95,7 +96,7 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
 
           {mode === 'create' && (
             <Field label="Password">
-              <input style={ov.input} type="password" value={form.password}
+              <PasswordInput style={ov.input} value={form.password}
                 onChange={(e) => setField('password', e.target.value)}
                 minLength={8} required placeholder="min 8 characters" />
             </Field>

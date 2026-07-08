@@ -17,10 +17,11 @@ const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage')
 const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
+const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
+const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
+const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
-const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage'));
-const ResetPasswordPage = lazy(() => import('./features/auth/ResetPasswordPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 
@@ -40,7 +41,7 @@ const RouteFallback = () => (
  */
 // Public auth routes where the user is logged OUT — no session to restore, so we
 // skip the /auth/refresh bootstrap (it would just 401 pointlessly).
-const AUTH_ROUTES = ['/login', '/forgot-password', '/reset-password'];
+const AUTH_ROUTES = ['/login'];
 
 // Module-level one-shot guard: React StrictMode double-invokes effects in dev,
 // which fired /auth/refresh twice. This ensures bootstrap runs exactly once.
@@ -62,8 +63,6 @@ export default function App() {
     <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
@@ -91,6 +90,9 @@ export default function App() {
       <Route element={<ProtectedRoute permission="task.read" />}>
         <Route element={<AppLayout />}>
           <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/filters" element={<FiltersIndex />} />
+          <Route path="/filters/:id" element={<FiltersPage />} />
+          <Route path="/bulk-edit" element={<FilterBulkPage />} />
           <Route path="/tasks/:id" element={<TaskDetailsPage />} />
         </Route>
       </Route>

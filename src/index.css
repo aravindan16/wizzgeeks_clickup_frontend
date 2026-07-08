@@ -155,6 +155,16 @@ textarea:focus {
   border-color: var(--c-primary) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 22%, transparent);
 }
+/* Search box: the input sits borderless inside a bordered wrapper. Show the
+   focus ring ONCE on the wrapper (via :focus-within) and suppress the inner
+   input's own ring so we don't get a doubled/offset outline. */
+.wg-search-box { transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.wg-search-box:focus-within {
+  border-color: var(--c-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 18%, transparent);
+}
+.wg-search-box input:focus { box-shadow: none !important; border-color: transparent !important; }
+
 /* Themed checkboxes/radios across the app. */
 input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
@@ -311,6 +321,48 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 }
 .wg-tip-wrap:hover .wg-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* Lightweight styled tooltip via [data-tip] (replaces ugly native title tooltips). */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  background: #1f2430;
+  color: #fff;
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+  z-index: 600;
+  box-shadow: 0 8px 20px rgba(0,0,0,.28);
+}
+[data-tip]::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  border: 5px solid transparent;
+  border-top-color: #1f2430;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+  z-index: 600;
+}
+[data-tip]:hover::after, [data-tip]:hover::before { opacity: 1; transform: translateX(-50%) translateY(0); }
+[data-tip='']::after, [data-tip='']::before { display: none; }
+
+/* Completed step in the Bulk Operation rail — only the title underlines on hover. */
+.wg-rail-link:hover .wg-rail-label { text-decoration: underline; }
+
 /* --- Custom Field Manager (ClickUp-style) --- */
 .cf-row { transition: background var(--t-fast); }
 .cf-row:hover { background: var(--c-hover); }
@@ -323,9 +375,25 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   box-shadow: inset 3px 0 0 var(--c-text-strong);
 }
 
+/* --- Generic table/list row hover (any clickable row) --- */
+.wg-row-hover, .wg-rel-row { transition: background var(--t-fast); }
+.wg-row-hover:hover, .wg-rel-row:hover { background: var(--c-hover); }
+
+/* --- Danger text button (e.g. "Remove"): light-red highlight on hover --- */
+.wg-danger-link { background: transparent; transition: background var(--t-fast); }
+.wg-danger-link:hover { background: color-mix(in srgb, #dc2626 14%, transparent); }
+
 /* --- Sidebar rows (Spaces / Lists) --- */
 .wg-sb-row { transition: background var(--t-fast); }
 .wg-sb-row:hover { background: var(--c-hover); }
+/* Toggle icon: show the item's icon by default, swap to the expand/collapse
+   chevron in the SAME spot on hover (ClickUp-style). */
+.wg-nav-toggle { position: relative; width: 20px; height: 20px; display: inline-flex;
+  align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 0; color: inherit; flex-shrink: 0; }
+.wg-nav-toggle .wg-nav-icon { display: inline-flex; align-items: center; justify-content: center; }
+.wg-nav-toggle .wg-nav-caret { display: none; align-items: center; justify-content: center; }
+.wg-sb-row:hover .wg-nav-toggle .wg-nav-icon { display: none; }
+.wg-sb-row:hover .wg-nav-toggle .wg-nav-caret { display: inline-flex; }
 /* Count and hover-actions share one right-edge slot (in flow), so the row name
    shrinks to make room instead of being overlapped. Only one shows at a time. */
 .wg-sb-actions { display: none; align-items: center; flex-shrink: 0; }
@@ -350,7 +418,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
 /* --- User dropdown menu items --- */
 .wg-menu-item { background: none; border: none; transition: background var(--t-fast); }
-.wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
+.wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); transform: none !important; filter: none !important; }
+.wg-icon-cell:hover { background: var(--c-hover-strong) !important; }
+.wg-icon-tab:hover { background: var(--c-hover-strong) !important; opacity: 1 !important; }
 
 /* --- Global API loading: centered circular spinner over the viewport --- */
 .wg-loader-overlay {
@@ -390,6 +460,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   transition: color var(--t-fast), background var(--t-fast);
 }
 .wg-tab:hover { color: var(--c-text); background: var(--c-hover); }
+.wg-addview-btn { background: none; border-radius: var(--r-sm); transition: color var(--t-fast), background var(--t-fast); }
+.wg-addview-btn:hover { color: var(--c-text); background: var(--c-hover); }
+.wg-foot-link { background: none; transition: background var(--t-fast); }
+.wg-foot-link:hover:not(:disabled) { background: var(--c-hover); }
 .wg-tab.active { color: var(--c-text); font-weight: 600; }
 .wg-tab.active::after {
   content: '';

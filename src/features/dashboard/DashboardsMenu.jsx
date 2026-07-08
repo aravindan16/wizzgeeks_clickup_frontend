@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { dashboardsApi } from './dashboardsApi';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { IconDashboard, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
 
 /**
@@ -13,6 +14,8 @@ export default function DashboardsMenu({ collapsed }) {
   const navigate = useNavigate();
   const location = useLocation();
   const confirm = useConfirm();
+  const promptDialog = usePrompt();
+  const toast = useToast();
   const rootRef = useRef(null);
   const [open, setOpen] = useState(true);
   const [items, setItems] = useState([]);
@@ -38,16 +41,18 @@ export default function DashboardsMenu({ collapsed }) {
 
   const createDashboard = async () => {
     setHeaderMenu(false);
+    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    if (!name || !name.trim()) return;
     try {
-      const d = await dashboardsApi.create({ name: 'Dashboard', cards: [] });
+      const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setItems((cur) => [...cur, d]);
       setOpen(true);
       window.dispatchEvent(new Event('wg-dashboards-changed'));
+      toast.success(`Dashboard "${d.name}" created`);
       navigate(`/dashboard/${d.id}`);
-    } catch { /* ignore */ }
+    } catch { toast.error('Could not create dashboard'); }
   };
 
-  const addCard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
   const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
 
   const deleteDashboard = async (d) => {
@@ -72,12 +77,13 @@ export default function DashboardsMenu({ collapsed }) {
   return (
     <div style={s.section} ref={rootRef}>
       <div className="wg-sb-row" style={s.row}>
-        <button type="button" style={s.caret} onClick={() => setOpen((o) => !o)} title={open ? 'Collapse' : 'Expand'}>
-          <Chevron open={open} size={13} />
-        </button>
         <NavLink to="/dashboard" end
           style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
-          <span style={s.navIcon}><IconDashboard size={18} /></span>
+          <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}>
+            <span className="wg-nav-icon"><IconDashboard size={18} /></span>
+            <span className="wg-nav-caret"><Chevron open={open} size={13} /></span>
+          </button>
           <span style={s.label}>Dashboard</span>
         </NavLink>
         <span style={s.headerActions}>
@@ -108,18 +114,14 @@ export default function DashboardsMenu({ collapsed }) {
                 <span className="wg-sb-actions" style={{ ...s.rowActions, ...(rowMenu === d.id ? s.actionsOpen : {}) }}>
                   <button className="icon-btn" style={s.iconBtn} title="Dashboard actions"
                     onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === d.id ? null : d.id); }}><IconDots size={16} /></button>
-                  <button className="icon-btn" style={s.iconBtn} title="Add card" onClick={() => addCard(d)}><IconPlus size={16} /></button>
                   {rowMenu === d.id && (
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
-                      <button className="wg-menu-item" style={s.dropItem} onClick={() => addCard(d)}>
-                        <span style={s.dropIcon}><IconPlus size={15} /></span> Create card
-                      </button>
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => shareDashboard(d)}>
                         <span style={s.dropIcon}><IconMembers size={15} /></span> Members
                       </button>
                       <div style={s.divider} />
                       <button className="wg-menu-item" style={{ ...s.dropItem, color: '#b91c1c' }} onClick={() => deleteDashboard(d)}>
-                        <span style={s.dropIcon}><IconTrash size={15} /></span> Delete dashboard
+                        <span style={{ ...s.dropIcon, color: '#b91c1c' }}><IconTrash size={15} /></span> Delete dashboard
                       </button>
                     </div>
                   )}
@@ -134,13 +136,14 @@ export default function DashboardsMenu({ collapsed }) {
 }
 
 const s = {
-  section: { marginBottom: 2, position: 'relative' },
+  section: { position: 'relative' },
   row: { display: 'flex', alignItems: 'center', gap: 2, borderRadius: 8, position: 'relative', paddingRight: 6 },
   caret: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--c-muted)', display: 'inline-flex', padding: 4, flexShrink: 0 },
   navMain: { display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: '9px 8px', borderRadius: 8,
     color: 'var(--c-muted)', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   active: { color: 'var(--c-text-strong)', fontWeight: 600 },
   navIcon: { width: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
+  navToggle: { width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', flexShrink: 0 },
   label: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   headerActions: { display: 'inline-flex', alignItems: 'center', gap: 2, position: 'relative', flexShrink: 0 },
   headerIconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 4, borderRadius: 6 },

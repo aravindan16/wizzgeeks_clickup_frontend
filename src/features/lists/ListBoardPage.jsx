@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import { listsApi } from './listsApi';
 import { projectsApi } from '../projects/projectsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import { useCardFields } from '../tasks/cardFieldsStore';
+import CardFieldsMenu from '../tasks/CardFieldsMenu';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
@@ -11,8 +16,9 @@ import { useViews } from '../tasks/useViews';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
+import { useToast } from '../../components/Toast';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconSearch } from '../../components/icons';
+import { IconSearch, IconEdit } from '../../components/icons';
 import { SkeletonBoard } from '../../components/Skeleton';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
@@ -25,8 +31,12 @@ const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label:
 export default function ListBoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const slotEl = useHeaderSlot();
   const { can } = useAuth();
+  const toast = useToast();
   const [taskOpen, setTaskOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [list, setList] = useState(null);
   const [space, setSpace] = useState(null);
   const [members, setMembers] = useState([]);
@@ -34,11 +44,29 @@ export default function ListBoardPage() {
   const [error, setError] = useState(null);
   const [taskQuery, setTaskQuery] = useState('');
   const [openTaskId, setOpenTaskId] = useState(null);
+  const [cardCustomFields, setCardCustomFields] = useState([]); // List's custom fields (for the Customize-view menu + card chips)
+
+  // Which fields show on each board card (Customize view) — persisted per List.
+  const cf = useCardFields(id);
 
   // Views (List/Board/Table) — persisted per List in localStorage; filters per view.
   const vs = useViews(id);
   const { activeId, updateView, activeView } = vs;
   const activeFilters = activeView?.filters || EMPTY_FILTERS;
+
+  // Inline rename of the List from the header breadcrumb (like the dashboard header).
+  const startRename = () => { setNameDraft(list?.name || ''); setEditingName(true); };
+  const commitName = async () => {
+    const v = (nameDraft || '').trim();
+    setEditingName(false);
+    if (!v || v === list.name) return;
+    setList((l) => ({ ...l, name: v }));
+    try {
+      await listsApi.update(list._id, { name: v });
+      toast.success('List renamed');
+      window.dispatchEvent(new Event('wg:list-updated'));
+    } catch { toast.error('Could not rename list'); }
+  };
 
   const loadTasks = useCallback(async (listId) => {
     const res = await tasksApi.list({ list_id: listId, limit: 200, sort_by: 'created_at', sort_dir: 1 });
@@ -66,6 +94,15 @@ export default function ListBoardPage() {
   }, [id, loadTasks]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load the List's custom fields for the Customize-view menu + card chips.
+  useEffect(() => {
+    if (!space?._id || !list?._id) return;
+    customFieldsApi.list(space._id, list._id, undefined, { _silent: true })
+      .then((fs) => setCardCustomFields((fs || []).filter((f) =>
+        ['dropdown', 'text', 'relationship'].includes(f.type) && f.enabled !== false)))
+      .catch(() => setCardCustomFields([]));
+  }, [space?._id, list?._id]);
 
   // Reflect List changes (e.g. custom statuses edited from the sidebar) immediately.
   useEffect(() => {
@@ -98,22 +135,30 @@ export default function ListBoardPage() {
 
   return (
     <div style={s.page}>
-      <button style={s.back} onClick={() => navigate(`/projects/${space._id}`)}><span style={s.backChevron}>‹</span> {space.name}</button>
+      {/* Breadcrumb (Space › List) lives in the shared topbar. */}
+      {slotEl && createPortal(
+        <span style={s.crumbs}>
+          <button style={s.crumbLink} onClick={() => navigate(`/projects/${space._id}`)}>{space.name}</button>
+          <span style={s.crumbSep}>›</span>
+          {editingName ? (
+            <input style={s.crumbInput} value={nameDraft} autoFocus
+              onChange={(e) => setNameDraft(e.target.value)} onBlur={commitName}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') setEditingName(false); }} />
+          ) : (
+            <span style={s.crumbCurrentWrap}>
+              <span style={s.crumbCurrent}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</span>
+              <button className="icon-btn" style={s.crumbEdit} title="Rename list" onClick={startRename}><IconEdit size={14} /></button>
+            </span>
+          )}
+        </span>,
+        slotEl,
+      )}
 
-      <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={s.listIcon}>≡</div>
-          <div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>{list.key || space.key} · List</div>
-            <h2 style={{ margin: '2px 0' }}>{list.name} {list.privacy === 'private' && <span title="Private">🔒</span>}</h2>
-          </div>
-        </div>
-        {can('task.create') && (
-          <button className="btn btn-primary" onClick={() => setTaskOpen(true)}>+ Task</button>
-        )}
-      </div>
-
-      <ViewTabs vs={vs} />
+      <ViewTabs vs={vs} rightSlot={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {activeView?.type === 'board' && <CardFieldsMenu cf={cf} customFields={cardCustomFields} />}
+          {can('task.create') && <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>}
+        </span>} />
 
       <div style={s.searchBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -134,7 +179,8 @@ export default function ListBoardPage() {
       <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
-            listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId} />
+            listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId}
+            cardFields={cf.std} cardCustom={cardCustomFields.filter((f) => cf.isOn(`cf:${f._id}`, false))} />
         )}
         {activeView?.type === 'list' && (
           <TaskListView tasks={visibleTasks} members={members} statuses={statuses}
@@ -158,13 +204,16 @@ export default function ListBoardPage() {
 const s = {
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
-    border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
-  backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
-  listIcon: { width: 44, height: 44, borderRadius: 10, background: '#f1f2f4', color: '#000000',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22, flexShrink: 0 },
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
+  crumbCurrentWrap: { display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  crumbEdit: { color: 'var(--c-faint)', padding: 4, borderRadius: 6 },
+  crumbInput: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 10px', minWidth: 160 },
+  taskBtn: { padding: '7px 13px', fontSize: 13 },
   tabs: { display: 'flex', gap: 4, margin: '16px 0', borderBottom: '1px solid #e5e7eb' },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },

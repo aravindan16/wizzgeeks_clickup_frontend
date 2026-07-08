@@ -10,6 +10,12 @@ export const IconRecent = ({ size = 18 }) => (
 export const IconStar = ({ size = 18 }) => (
   <svg {...base(size)}><polygon points="12 2.5 14.9 8.4 21.4 9.3 16.7 13.9 17.8 20.4 12 17.3 6.2 20.4 7.3 13.9 2.6 9.3 9.1 8.4" /></svg>
 );
+export const IconEye = ({ size = 18 }) => (
+  <svg {...base(size)}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+);
+export const IconEyeOff = ({ size = 18 }) => (
+  <svg {...base(size)}><path d="M10.7 5.1A9.9 9.9 0 0 1 12 5c6.4 0 10 7 10 7a13.4 13.4 0 0 1-1.7 2.7" /><path d="M6.6 6.6A13.3 13.3 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6" /><path d="m2 2 20 20" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+);
 export const IconDashboard = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M12 14.5 16 10" /><path d="M4 19a9 9 0 1 1 16 0" /><path d="M4 19h16" /></svg>
 );
@@ -128,6 +134,9 @@ export const IconSun = ({ size = 18 }) => (
 );
 export const IconFolder = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+);
+export const IconSmile = ({ size = 18 }) => (
+  <svg {...base(size)}><circle cx="12" cy="12" r="9.2" /><path d="M8.2 14.2a4.6 4.6 0 0 0 7.6 0" /><path d="M9 9.5h.01" /><path d="M15 9.5h.01" /></svg>
 );
 // --- Task type icons (monochrome) ---
 export const IconTypeTask = ({ size = 18 }) => (

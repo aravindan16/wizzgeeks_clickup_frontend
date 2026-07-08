@@ -1,9 +1,10 @@
 import { memo, useEffect, useState } from 'react';
-import { tasksApi, PRIORITY_COLOR } from './tasksApi';
+import { tasksApi, PRIORITY_COLOR, isDoneStatus } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
-import { IconChevronDown, IconCalendar, IconUser, IconEnter } from '../../components/icons';
+import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash,
+  IconFieldDropdown, IconFieldText, IconFieldRelationship } from '../../components/icons';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
 /**
@@ -19,11 +20,41 @@ const TYPE_OPTIONS = [
 // Icons for rendering any existing task type (incl. legacy/subtask).
 const TYPE_ICON = { story: '🔖', task: '☑️', bug: '🐛', epic: '🏔️', subtask: '↳' };
 
-const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+// Handles both date-only strings (YYYY-MM-DD, e.g. due_date) and full ISO
+// timestamps (created_at / updated_at) — the latter must NOT get a T00:00 suffix.
+const shortDate = (d) => {
+  if (!d) return '';
+  const dt = /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00`) : new Date(d);
+  return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
-function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask }) {
+const DEFAULT_CFV = { priority: true, status: false, key: true, assignee: true, due_date: true, labels: true, subtasks: true, created_at: false, closed_at: false };
+
+// A custom-field value rendered as a compact card chip (dropdown / relationship / text).
+const cfChipStyle = { fontSize: 11, fontWeight: 600, borderRadius: 6, padding: '2px 8px', background: 'var(--c-surface-2)',
+  color: 'var(--c-muted)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' };
+const CF_TYPE_ICON = { dropdown: IconFieldDropdown, text: IconFieldText, relationship: IconFieldRelationship };
+function renderCustomChip(field, value) {
+  const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+  // When enabled but empty, show only the field's type icon (no text) so it stays compact.
+  if (empty) {
+    const Ic = CF_TYPE_ICON[field.type] || IconFieldText;
+    return <span key={field._id} style={{ ...cfChipStyle, color: 'var(--c-faint)', padding: '3px 7px' }} title={field.name}><Ic size={13} /></span>;
+  }
+  if (field.type === 'dropdown') {
+    const vals = Array.isArray(value) ? value : [value];
+    const opt = (field.config?.options || []).find((o) => o.label === vals[0]);
+    const c = opt?.color || '#6b7280';
+    return <span key={field._id} style={{ ...cfChipStyle, color: c, background: `${c}1a` }} title={vals.join(', ')}>{vals.join(', ')}</span>;
+  }
+  return <span key={field._id} style={cfChipStyle} title={String(value)}>{String(value)}</span>;
+}
+const relCount = (value) => (Array.isArray(value) ? value.length : (value ? 1 : 0));
+
+function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [], statuses = [], onOpenTask, cardFields = null, cardCustom = [] }) {
   const open = onOpenTask || (() => {});
+  const cfv = cardFields || DEFAULT_CFV;
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
@@ -54,9 +85,67 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const [memberQuery, setMemberQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [cardMenu, setCardMenu] = useState(null); // { id, x, y }
+  const [assignFor, setAssignFor] = useState(null); // { id, x, y } — inline assignee picker on a card
+  const [assignQuery, setAssignQuery] = useState('');
+  const [relFor, setRelFor] = useState(null); // { taskId, field, x, y } — inline relationship picker
+  const [relQuery, setRelQuery] = useState('');
+  const [relResults, setRelResults] = useState([]);
 
   const typeIcon = (t) => (TYPE_ICON[t] || '☑️');
   const assigneeName = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+
+  // Inline relationship picker for a card's relationship custom field (link tasks
+  // without opening the task detail).
+  const openRelPicker = (task, field, e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setCardMenu(null); setAssignFor(null); setPicker(null); setRelQuery('');
+    setRelFor((cur) => (cur?.taskId === task._id && cur?.field?._id === field._id ? null
+      : { taskId: task._id, field, x: r.right, y: r.bottom + 6 }));
+  };
+  useEffect(() => {
+    if (!relFor) { setRelResults([]); return undefined; }
+    const cfg = relFor.field.config || {};
+    const ownerList = relFor.field.list_id ? String(relFor.field.list_id) : null;   // List where the field lives
+    const targetList = cfg.related_to === 'list' && cfg.list_id ? String(cfg.list_id) : null; // "Related to" List
+    // On the TARGET list, link tasks from the OWNING List; on the owning list, link
+    // tasks from the target List. (A List field always links the OTHER end.)
+    let scope;
+    if (targetList && String(listId) === targetList && ownerList) scope = { list_id: ownerList };
+    else if (targetList) scope = { list_id: targetList };
+    else scope = { project_id: projectId };
+    const h = setTimeout(() => {
+      tasksApi.list({ ...scope, search: relQuery, limit: 30 }).then((r) => setRelResults(r.items || [])).catch(() => setRelResults([]));
+    }, 150);
+    return () => clearTimeout(h);
+  }, [relFor, relQuery, listId, projectId]);
+  const toggleRel = async (taskId, field, linkedId) => {
+    const task = board.find((t) => t._id === taskId);
+    if (!task) return;
+    const cur = (task.custom_fields || {})[field._id];
+    const arr = Array.isArray(cur) ? cur : (cur ? [cur] : []);
+    const next = arr.includes(linkedId) ? arr.filter((x) => x !== linkedId) : [...arr, linkedId];
+    const nextCf = { ...(task.custom_fields || {}), [field._id]: next };
+    setBoard((b) => b.map((t) => (t._id === taskId ? { ...t, custom_fields: nextCf } : t))); // optimistic
+    try { await tasksApi.update(taskId, { custom_fields: nextCf }); onChanged(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not update'); onChanged(); }
+  };
+
+  // Inline assignee picker for an existing card (assigns directly, no task detail).
+  const openAssign = (task, e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setCardMenu(null); setPicker(null); setAssignQuery('');
+    setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
+  };
+  const chooseAssignee = async (uid) => {
+    const id = assignFor?.id;
+    setAssignFor(null);
+    if (!id) return;
+    setBoard((b) => b.map((t) => (t._id === id ? { ...t, assignee_id: uid || null } : t))); // optimistic
+    try { await tasksApi.assign(id, uid || null); onChanged(); }
+    catch (err) { setError(err.response?.data?.error?.message || 'Could not assign'); onChanged(); }
+  };
 
   const openCardMenu = (task, e) => {
     e.stopPropagation();
@@ -162,9 +251,14 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
             onDragOver={(e) => { e.preventDefault(); if (dragOverCol !== st) setDragOverCol(st); }}
             onDrop={() => onDrop(st)}>
             <div className="wg-col-head" style={{ background: bg }}>
-              <span style={{ ...s.statusDot, background: col.color }} />
-              <span style={{ flex: 1, color: col.color }}>{col.name}</span>
-              <span style={s.count}>{byStatus(st).length}</span>
+              <span style={{ ...s.statusPill, background: col.color }}>
+                {['done', 'closed'].includes(col.group)
+                  ? <span style={s.pillGlyph}>✓</span>
+                  : <span style={{ ...s.pillRing, borderColor: 'rgba(255,255,255,.85)' }} />}
+                {col.name}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ ...s.count, color: col.color }}>{byStatus(st).length}</span>
             </div>
             <div className="wg-col-body">
               {byStatus(st).map((t) => {
@@ -181,22 +275,48 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   </div>
 
                   <div style={s.chipsRow}>
-                    <span style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
+                    {cfv.status && (() => { const st2 = statuses.find((x) => x.key === t.status) || { name: t.status, color: '#6b7280' };
+                      return <span data-tip="Status" style={{ ...s.statusChip, color: st2.color, background: `${st2.color}1a` }}>{st2.name}</span>; })()}
+                    {cfv.priority && <span data-tip="Priority" style={{ ...s.priChip, color: PRIORITY_COLOR[t.priority], background: `${PRIORITY_COLOR[t.priority]}1a` }}>
                       <span style={{ ...s.priDot, background: PRIORITY_COLOR[t.priority] }} />{t.priority}
-                    </span>
-                    {t.due_date && <span style={s.metaChip}>📅 {shortDate(t.due_date)}</span>}
-                    {subCount > 0 && <span style={s.metaChip} title={`${subCount} subtasks`}>☑ {subCount}</span>}
-                    {(t.labels || []).slice(0, 2).map((l) => <span key={l} style={s.labelChip}>{l}</span>)}
+                    </span>}
+                    {cfv.type && <span style={s.metaChip} data-tip="Task type"><TaskTypeIcon type={t.type} size={12} /> {(t.type || 'task').charAt(0).toUpperCase() + (t.type || 'task').slice(1)}</span>}
+                    {/* Dates in order: created · due. Calendar icon + hover tooltip. */}
+                    {cfv.created_at && <span style={s.metaChip} data-tip="Date created (read-only)"><IconCalendar size={12} />{t.created_at && shortDate(t.created_at)}</span>}
+                    {cfv.due_date && <span style={s.metaChip} data-tip="Due date"><IconCalendar size={12} />{t.due_date && shortDate(t.due_date)}</span>}
+                    {cfv.closed_at && (() => {
+                      const cd = t.completed_at || t.closed_at || (isDoneStatus(statuses, t.status) ? t.updated_at : null);
+                      return <span style={s.metaChip} data-tip="Date closed (read-only)"><IconCalendar size={12} />{cd && shortDate(cd)}</span>;
+                    })()}
+                    {cfv.labels && (t.labels || []).slice(0, 3).map((l) => <span key={l} data-tip="Label" style={s.labelChip}>{l}</span>)}
+                    {cardCustom.map((f) => {
+                      const val = (t.custom_fields || {})[f._id];
+                      // Relationship: same icon with/without value, clickable to link inline.
+                      if (f.type === 'relationship') {
+                        const n = relCount(val);
+                        return (
+                          <button key={f._id} style={{ ...s.cfRelChip, ...(n ? {} : { color: 'var(--c-faint)' }) }}
+                            data-tip={f.name} onClick={(e) => openRelPicker(t, f, e)}>
+                            <IconFieldRelationship size={12} />{n > 0 ? n : ''}
+                          </button>
+                        );
+                      }
+                      return renderCustomChip(f, val);
+                    })}
                   </div>
 
                   <div style={s.cardBottom}>
                     <span style={s.idRow}>
-                      <span title={t.type} style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
-                      <span style={s.key}>{t.key}</span>
+                      {cfv.key && (
+                        <>
+                          <span data-tip="Task type" style={{ display: 'inline-flex', color: '#6b7280' }}><TaskTypeIcon type={t.type} size={14} /></span>
+                          <span data-tip="Task ID" style={s.key}>{t.key}</span>
+                        </>
+                      )}
                     </span>
-                    {t.assignee_id
-                      ? <span style={s.cardAvatar} title={assigneeName(t.assignee_id) || 'Assignee'}>{initials(assigneeName(t.assignee_id) || '?')}</span>
-                      : <span style={s.cardAvatarEmpty} title="Unassigned">+</span>}
+                    {cfv.assignee && (t.assignee_id
+                      ? <button style={{ ...s.cardAvatar, cursor: 'pointer', border: 'none' }} title={assigneeName(t.assignee_id) || 'Assignee'} onClick={(e) => openAssign(t, e)}>{initials(assigneeName(t.assignee_id) || '?')}</button>
+                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>)}
                   </div>
                 </div>
                 );
@@ -252,12 +372,75 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
       {cardMenu && (
         <>
           <div style={s.pickBackdrop} onClick={() => setCardMenu(null)} />
-          <div style={{ ...s.popFixed, top: cardMenu.y, left: cardMenu.x - 150, minWidth: 150 }}>
-            <button style={s.popItem} onClick={() => { const id = cardMenu.id; setCardMenu(null); open(id); }}>Open</button>
-            <button style={{ ...s.popItem, color: '#b91c1c' }} onClick={() => deleteCard(cardMenu.id)}>Delete</button>
+          <div style={{ ...s.popFixed, top: cardMenu.y, left: cardMenu.x - 176, minWidth: 176, borderRadius: 12, padding: 6 }}>
+            <button className="wg-menu-item" style={s.menuItem} onClick={() => { const id = cardMenu.id; setCardMenu(null); open(id); }}>
+              <span style={s.menuIcon}><IconExpand size={15} /></span> Open
+            </button>
+            <div style={s.menuDivider} />
+            <button className="wg-menu-item" style={{ ...s.menuItem, color: '#dc2626' }} onClick={() => deleteCard(cardMenu.id)}>
+              <span style={{ ...s.menuIcon, color: '#dc2626' }}><IconTrash size={15} /></span> Delete
+            </button>
           </div>
         </>
       )}
+
+      {/* Inline assignee picker for an existing card (assigns on select) */}
+      {assignFor && (() => {
+        const cur = board.find((t) => t._id === assignFor.id);
+        const q = assignQuery.trim().toLowerCase();
+        const list = members.filter((m) => !q
+          || (m.full_name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q));
+        return (
+          <>
+            <div style={s.pickBackdrop} onClick={() => setAssignFor(null)} />
+            <div style={{ ...s.popFixed, top: assignFor.y, left: Math.max(8, assignFor.x - 240), width: 240 }} onClick={(e) => e.stopPropagation()}>
+              <input autoFocus style={s.popSearch} placeholder="Search or enter email…"
+                value={assignQuery} onChange={(e) => setAssignQuery(e.target.value)} />
+              <button style={s.popItem} onClick={() => chooseAssignee('')}>👤 Unassigned</button>
+              <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                {list.map((m) => (
+                  <button key={m.user_id} style={s.popItem} onClick={() => chooseAssignee(m.user_id)}>
+                    <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                    <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                      <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
+                      {m.email && <span style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>}
+                    </span>
+                    {cur?.assignee_id === m.user_id && <span style={{ marginLeft: 'auto', color: 'var(--c-primary)' }}>✓</span>}
+                  </button>
+                ))}
+                {list.length === 0 && <div style={s.popEmpty}>No matching member.</div>}
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Inline relationship picker for a card's relationship field (links on select) */}
+      {relFor && (() => {
+        const task = board.find((t) => t._id === relFor.taskId);
+        const cur = (task?.custom_fields || {})[relFor.field._id];
+        const linked = Array.isArray(cur) ? cur : (cur ? [cur] : []);
+        const items = relResults.filter((r) => r._id !== relFor.taskId);
+        return (
+          <>
+            <div style={s.pickBackdrop} onClick={() => setRelFor(null)} />
+            <div style={{ ...s.popFixed, top: relFor.y, left: Math.max(8, relFor.x - 260), width: 260 }} onClick={(e) => e.stopPropagation()}>
+              <input autoFocus style={s.popSearch} placeholder={`Link to ${relFor.field.name}…`}
+                value={relQuery} onChange={(e) => setRelQuery(e.target.value)} />
+              <div style={{ maxHeight: 260, overflowY: 'auto', marginTop: 4 }}>
+                {items.length === 0 && <div style={s.popEmpty}>No tasks found</div>}
+                {items.map((r) => (
+                  <button key={r._id} style={s.popItem} onClick={() => toggleRel(relFor.taskId, relFor.field, r._id)}>
+                    <span style={s.relKey}>{r.key}</span>
+                    <span style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                    {linked.includes(r._id) && <span style={{ marginLeft: 'auto', color: 'var(--c-primary)' }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Fixed-positioned pickers (escape board clipping; no overlap) */}
       {picker && (
@@ -314,13 +497,19 @@ const s = {
     color: 'var(--c-faint)', fontSize: 12.5, fontWeight: 600, letterSpacing: '.02em',
     background: 'var(--c-hover)', animation: 'wg-pop 120ms ease' },
   statusDot: { width: 9, height: 9, borderRadius: '50%', flexShrink: 0 },
-  count: { background: 'var(--c-surface-3)', color: 'var(--c-muted)', borderRadius: 999, padding: '1px 9px', fontWeight: 700, fontSize: 12 },
+  statusPill: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 11px', borderRadius: 6,
+    color: '#fff', fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', whiteSpace: 'nowrap' },
+  pillGlyph: { fontSize: 11, fontWeight: 900, lineHeight: 1 },
+  pillRing: { width: 10, height: 10, borderRadius: '50%', border: '2px solid', flexShrink: 0 },
+  count: { background: 'transparent', borderRadius: 999, padding: '1px 4px', fontWeight: 800, fontSize: 13 },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
   cardTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: 'var(--c-text)', display: '-webkit-box',
     WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
   chipsRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 },
   priChip: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700,
     textTransform: 'capitalize', borderRadius: 999, padding: '2px 9px' },
+  statusChip: { display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '.02em', borderRadius: 6, padding: '2px 8px' },
   priDot: { width: 7, height: 7, borderRadius: 999 },
   metaChip: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600,
     color: 'var(--c-muted)', background: 'var(--c-surface-3)', borderRadius: 999, padding: '2px 8px' },
@@ -333,8 +522,12 @@ const s = {
     color: 'var(--c-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 },
   key: { fontWeight: 700, color: 'var(--c-text-strong)', fontSize: 12, letterSpacing: '.02em' },
   createBtn: { display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
+    padding: '9px 12px', border: 'none', color: 'var(--c-muted)', cursor: 'pointer',
     borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', marginTop: 2 },
+  menuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box', textAlign: 'left',
+    border: 'none', padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, color: 'var(--c-text)' },
+  menuIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
+  menuDivider: { height: 1, background: 'var(--c-border-2)', margin: '5px 0' },
   composer: { background: 'var(--c-surface)', border: '2px solid var(--c-text-strong)', borderRadius: 10, padding: 10 },
   composerTop: { display: 'flex', justifyContent: 'flex-end', marginBottom: 2 },
   composerClose: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 13, padding: 2 },
@@ -358,6 +551,9 @@ const s = {
   pickBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
   popFixed: { position: 'fixed', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8,
     boxShadow: '0 12px 32px rgba(0,0,0,.2)', zIndex: 401, minWidth: 200, padding: 4, color: 'var(--c-text)' },
+  cfRelChip: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, borderRadius: 6,
+    padding: '3px 7px', background: 'var(--c-surface-2)', color: 'var(--c-muted)', border: 'none', cursor: 'pointer' },
+  relKey: { color: '#4f46e5', fontWeight: 700, fontSize: 12, flexShrink: 0 },
   popSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--c-border)',
     borderRadius: 6, fontSize: 14, marginBottom: 4, background: 'var(--c-surface)', color: 'var(--c-text)' },
   popItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',

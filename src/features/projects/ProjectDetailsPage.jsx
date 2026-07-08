@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useHeaderSlot } from '../../layouts/headerSlot';
 import { projectsApi } from './projectsApi';
 import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
@@ -8,7 +10,7 @@ import TaskTableView from '../tasks/TaskTableView';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
 import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconMembers, IconSearch, IconFolder } from '../../components/icons';
+import { IconBoard, IconMembers, IconSearch } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
@@ -17,6 +19,7 @@ import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { SkeletonBoard } from '../../components/Skeleton';
+import ResizableTable from '../../components/ResizableTable';
 
 const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
 
@@ -28,6 +31,7 @@ const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label:
 export default function ProjectDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const slotEl = useHeaderSlot();
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
@@ -113,7 +117,12 @@ export default function ProjectDetailsPage() {
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
 
-  const removeMember = async (uid) => { await projectsApi.removeMember(id, uid); load(); };
+  const removeMember = async (m) => {
+    if (!(await confirm({ title: 'Remove member', message: `Remove ${m.full_name || m.email} from this Space?`, confirmLabel: 'Remove', danger: true }))) return;
+    await projectsApi.removeMember(id, m.user_id);
+    toast.success('Member removed');
+    load();
+  };
   const archive = async () => { await projectsApi.archive(id); load(); };
   const del = async () => {
     const ok = await confirm({
@@ -125,30 +134,27 @@ export default function ProjectDetailsPage() {
 
   return (
     <div style={s.page}>
-      <button style={s.back} onClick={() => navigate('/projects')}><span style={s.backChevron}>‹</span> Spaces</button>
+      {/* Breadcrumb ("Spaces › Space name") lives in the shared topbar. */}
+      {slotEl && createPortal(
+        <span style={s.crumbs}>
+          <button style={s.crumbLink} onClick={() => navigate('/projects')}>Spaces</button>
+          <span style={s.crumbSep}>›</span>
+          <span style={s.crumbCurrent}>{project.name}</span>
+        </span>,
+        slotEl,
+      )}
 
-      {/* Space header */}
-      <div style={s.head}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={s.spaceIcon}>{project.key?.[0]?.toUpperCase() || <IconFolder size={20} />}</div>
-          <div>
-            <div style={{ color: '#6b7280', fontSize: 13 }}>{project.key}</div>
-            <h2 style={{ margin: '2px 0' }}>{project.name}</h2>
-            <span className={`badge ${project.status === 'archived' ? 'badge-err' : 'badge-ok'}`}>{project.status}</span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {can('task.create') && project.status !== 'archived' &&
-            <button style={s.primary} onClick={() => setTaskOpen(true)}>+ Create Task</button>}
-        </div>
-      </div>
-
-      {/* View tabs (List / Board / Table) + Members + "+ View". Double-click or
-          right-click a tab to rename/delete; filters persist per view. */}
+      {/* View tabs (List / Board / Table) + Members + "+ View". The primary action
+          (Create Task, or Add people on the Members tab) sits at the right corner.
+          Double-click or right-click a tab to rename/delete; filters persist per view. */}
       <ViewTabs vs={vs} extraTabs={[{
         id: 'members', label: 'Members', icon: <IconMembers size={16} />,
         active: isMembersTab, onClick: () => setActiveId('members'),
-      }]} />
+      }]} rightSlot={isMembersTab
+        ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
+        : (can('task.create') && project.status !== 'archived'
+            ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Create Task</button>
+            : null)} />
 
       {/* Common search + filter toolbar for any task view. */}
       {!isMembersTab && (
@@ -188,27 +194,13 @@ export default function ProjectDetailsPage() {
 
       {/* MEMBERS */}
       {isMembersTab && (
-        <div>
-          {canManage && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-              <button style={s.primary} onClick={() => setAddPeopleOpen(true)}>+ Add people</button>
-            </div>
-          )}
-          <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden' }}>
-            <table style={s.table}>
-              <thead><tr><Th>Name</Th><Th>Email</Th>{canManage && <Th>Actions</Th>}</tr></thead>
-              <tbody>
-                {members.map((m) => (
-                  <tr key={m._id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <Td>{m.full_name || '—'}</Td>
-                    <Td>{m.email || '—'}</Td>
-                    {canManage && <Td><button style={s.link} onClick={() => removeMember(m.user_id)}>Remove</button></Td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet."
+          columns={[
+            { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
+            { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },
+            ...(canManage ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+              render: (m) => <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button> }] : []),
+          ]} />
       )}
       </div>
 
@@ -227,21 +219,20 @@ export default function ProjectDetailsPage() {
   );
 }
 
-const Th = ({ children }) => <th style={s.th}>{children}</th>;
-const Td = ({ children }) => <td style={s.td}>{children}</td>;
+const Th = ({ children, style }) => <th style={{ ...s.th, ...style }}>{children}</th>;
+const Td = ({ children, style }) => <td style={{ ...s.td, ...style }}>{children}</td>;
 
 const s = {
   // Full-height column: header/tabs/toolbar stay fixed, only viewArea scrolls.
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginBottom: -24 },
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', background: 'none',
-    border: 'none', color: '#6b7280', cursor: 'pointer', marginBottom: 14, padding: '4px 2px', fontSize: 14, fontWeight: 500 },
-  backChevron: { fontSize: 18, lineHeight: 1, marginTop: -1 },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
-  spaceIcon: { width: 44, height: 44, borderRadius: 10, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0 },
+  crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
+  crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
+  crumbCurrent: { color: 'var(--c-text-strong)', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  taskBtn: { padding: '7px 13px', fontSize: 13 },
   searchBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 },
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
@@ -263,13 +254,15 @@ const s = {
   cards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 12 },
   progressOuter: { background: '#e5e7eb', borderRadius: 999, height: 10, marginTop: 16, overflow: 'hidden' },
   progressInner: { background: '#111827', height: '100%', transition: 'width .3s' },
-  table: { width: '100%', borderCollapse: 'collapse', background: '#fff' },
-  th: { textAlign: 'left', padding: '12px 14px', fontSize: 12, textTransform: 'uppercase', color: '#6b7280', background: '#f9fafb' },
-  td: { padding: '10px 14px', fontSize: 14 },
+  table: { width: '100%', borderCollapse: 'collapse', background: 'var(--c-surface)' },
+  th: { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWeight: 600, letterSpacing: '.02em',
+    color: 'var(--c-muted)', background: 'var(--c-surface-2)', borderBottom: '1px solid var(--c-border)' },
+  td: { padding: '12px 16px', fontSize: 14, color: 'var(--c-text)' },
+  memberRow: { borderTop: '1px solid var(--c-border-2)' },
   select: { padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 8 },
   addRow: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   primary: { padding: '8px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
-  link: { background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0 },
+  link: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
 };
