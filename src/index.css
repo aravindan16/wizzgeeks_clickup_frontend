@@ -419,6 +419,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* --- User dropdown menu items --- */
 .wg-menu-item { background: none; border: none; transition: background var(--t-fast); }
 .wg-menu-item:hover { background: var(--c-hover-strong); color: var(--c-text-strong); transform: none !important; filter: none !important; }
+.wg-icon-cell:hover { background: var(--c-hover-strong) !important; }
+.wg-icon-tab:hover { background: var(--c-hover-strong) !important; opacity: 1 !important; }
 
 /* --- Global API loading: centered circular spinner over the viewport --- */
 .wg-loader-overlay {

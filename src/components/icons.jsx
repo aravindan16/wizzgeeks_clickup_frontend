@@ -135,6 +135,9 @@ export const IconSun = ({ size = 18 }) => (
 export const IconFolder = ({ size = 18 }) => (
   <svg {...base(size)}><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
 );
+export const IconSmile = ({ size = 18 }) => (
+  <svg {...base(size)}><circle cx="12" cy="12" r="9.2" /><path d="M8.2 14.2a4.6 4.6 0 0 0 7.6 0" /><path d="M9 9.5h.01" /><path d="M15 9.5h.01" /></svg>
+);
 // --- Task type icons (monochrome) ---
 export const IconTypeTask = ({ size = 18 }) => (
   <svg {...base(size)}><rect x="4" y="4" width="16" height="16" rx="3" /><path d="m8.5 12 2.2 2.2 4.3-4.4" /></svg>

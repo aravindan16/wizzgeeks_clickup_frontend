@@ -7,6 +7,7 @@ import CreateListModal from "../lists/CreateListModal";
 import ListStatusModal from "../lists/ListStatusModal";
 import CustomFieldManager from "../customfields/CustomFieldManager";
 import IconPicker from "../../components/IconPicker";
+import AppIcon, { hasIcon } from "../../components/AppIcon";
 import { useConfirm, usePrompt } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { useAuth } from "../auth/useAuth";
@@ -19,6 +20,7 @@ import {
   IconDots,
   IconListCheck,
   IconFolder,
+  IconSmile,
   Chevron,
 } from "../../components/icons";
 import TaskModal from "../tasks/TaskModal";
@@ -469,8 +471,8 @@ export default function SpacesMenu({ collapsed }) {
                     onClick={(e) => { e.stopPropagation(); toggleExpand(sp._id); }}
                     title={isOpen ? "Collapse" : "Expand"}
                   >
-                    <span className="wg-nav-icon" style={{ ...s.badgeVisual, ...(sp.icon ? s.badgeEmoji : {}) }}>
-                      {sp.icon || (sp.key || sp.name || "?")[0].toUpperCase()}
+                    <span className="wg-nav-icon" style={{ ...s.badgeVisual, ...(hasIcon(sp.icon) ? s.badgeEmoji : {}) }}>
+                      {hasIcon(sp.icon) ? <AppIcon name={sp.icon} size={15} /> : (sp.key || sp.name || "?")[0].toUpperCase()}
                     </span>
                     <span className="wg-nav-caret"><Chevron open={isOpen} size={13} /></span>
                   </button>
@@ -530,7 +532,7 @@ export default function SpacesMenu({ collapsed }) {
                         style={s.dropItem}
                         onClick={() => { setSpaceMenu(null); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
                       >
-                        <span style={s.dropIcon}>🙂</span> Change icon
+                        <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
                       </button>
                       <button
                         className="wg-menu-item"
@@ -599,7 +601,7 @@ export default function SpacesMenu({ collapsed }) {
                           })}
                         >
                           <span style={s.listIcon}>
-                            {l.icon ? <span style={{ fontSize: 14 }}>{l.icon}</span> : <IconListCheck size={15} />}
+                            {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconListCheck size={15} />}
                           </span>
                           <span style={s.rowName}>{l.name}</span>
                           {l.privacy === "private" && (
@@ -658,7 +660,7 @@ export default function SpacesMenu({ collapsed }) {
                               style={s.dropItem}
                               onClick={() => { setListMenu(null); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
                             >
-                              <span style={s.dropIcon}>🙂</span> Change icon
+                              <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
                             </button>
                             <button
                               className="wg-menu-item"
