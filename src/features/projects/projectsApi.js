@@ -22,11 +22,11 @@ export const projectsApi = {
   removeRole: (id, roleId) => apiClient.delete(`/projects/${id}/roles/${roleId}`).then((r) => r.data),
 };
 
+// The app uses exactly three built-in roles everywhere (plus per-space custom roles).
 export const PROJECT_ROLES = [
-  { value: 'project_manager', label: 'Project Manager' },
-  { value: 'team_lead', label: 'Team Lead' },
-  { value: 'developer', label: 'Developer' },
-  { value: 'tester', label: 'Tester' },
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'employee', label: 'Employee' },
 ];
 
 export const PROJECT_STATUSES = ['active', 'on_hold', 'completed', 'archived'];

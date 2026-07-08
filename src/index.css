@@ -490,6 +490,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 }
 .icon-btn:hover { background: var(--c-hover-strong); color: var(--c-text-strong); }
 
+/* Modal close (X) + text "Close" buttons: clear hover highlight. */
+.wg-x-btn:hover { background: var(--c-hover-strong) !important; color: var(--c-text-strong) !important; }
+.wg-close-btn:hover { background: var(--c-hover) !important; color: var(--c-text-strong) !important; }
+
 /* --- Dashboard grid (react-grid-layout) --- */
 .wg-dash-grid .react-grid-item { transition: transform 180ms ease, width 180ms ease, height 180ms ease; }
 .wg-dash-grid .react-grid-item.react-grid-placeholder { background: var(--c-primary); opacity: 0.12; border-radius: 12px; }

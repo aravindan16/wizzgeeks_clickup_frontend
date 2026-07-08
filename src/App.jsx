@@ -23,6 +23,7 @@ const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
+const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
 
 // Lightweight fallback shown while a route chunk loads.
 const RouteFallback = () => (
@@ -103,6 +104,12 @@ export default function App() {
       <Route element={<ProtectedRoute permission="user.read" />}>
         <Route element={<AppLayout />}>
           <Route path="/users" element={<UserManagementPage />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute permission="permission.manage" />}>
+        <Route element={<AppLayout />}>
+          <Route path="/permissions" element={<PermissionsPage />} />
         </Route>
       </Route>
 

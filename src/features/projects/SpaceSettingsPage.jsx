@@ -182,7 +182,7 @@ export default function SpaceSettingsPage() {
                       </td>
                       <td style={{ ...s.td, color: 'var(--c-muted)' }}>{m.email || '—'}</td>
                       <td style={s.td}>
-                        <select style={s.roleSelect} value={m.project_role || 'developer'} onChange={(e) => changeRole(m, e.target.value)}>
+                        <select style={s.roleSelect} value={m.project_role || 'employee'} onChange={(e) => changeRole(m, e.target.value)}>
                           {PROJECT_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                         </select>
                       </td>

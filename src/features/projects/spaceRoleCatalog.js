@@ -61,26 +61,23 @@ export const PERMISSION_GROUPS = [
 
 export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.perms.map((p) => p.key));
 
-// Built-in system roles (display + sensible default permission sets).
+// The three built-in roles used across the whole app (plus per-space custom roles).
 export const SYSTEM_ROLES = [
   {
-    key: 'administrator', name: 'Administrator', system: true,
-    description: 'Admins can do most things, like update settings and add other admins.',
+    key: 'super_admin', name: 'Super Admin', system: true,
+    description: 'Full control over the space and everything in it.',
     permissions: ALL_PERMISSIONS,
   },
   {
-    key: 'member', name: 'Member', system: true,
-    description: 'Members are part of the team, and can add, edit, and collaborate on all work.',
+    key: 'admin', name: 'Admin', system: true,
+    description: 'Can do most things, like update settings, manage members, and manage tasks.',
+    permissions: PERMISSION_GROUPS.filter((g) => g.key !== 'administer')
+      .flatMap((g) => g.perms.map((p) => p.key))
+      .concat(['space.manage', 'space.members.manage']),
+  },
+  {
+    key: 'employee', name: 'Employee', system: true,
+    description: 'Part of the team — can create, edit, and collaborate on work.',
     permissions: PERMISSION_GROUPS.filter((g) => ['work_tasks', 'collaborate', 'view'].includes(g.key)).flatMap((g) => g.perms.map((p) => p.key)),
-  },
-  {
-    key: 'guest', name: 'Guest - Collaborator', system: true,
-    description: 'Limited access to one assigned space, with no admin permissions. For external collaborators.',
-    permissions: ['task.view', 'task.comment.add', 'task.attachment.add', 'task.comment.edit_own', 'task.comment.delete_own'],
-  },
-  {
-    key: 'viewer', name: 'Viewer', system: true,
-    description: 'Viewers can search through, view, and comment on your team’s work, but not much else.',
-    permissions: ['task.view', 'task.comment.add'],
   },
 ];
