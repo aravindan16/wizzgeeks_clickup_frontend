@@ -8,7 +8,7 @@ export const savedFiltersApi = {
   update: (id, payload) => apiClient.patch(`/saved-filters/${id}`, payload).then((r) => r.data),
   remove: (id) => apiClient.delete(`/saved-filters/${id}`).then((r) => r.data),
   // sharing (owner-managed members)
-  searchUsers: (q) => apiClient.get('/saved-filters/users/search', { params: { q } }).then((r) => r.data),
+  searchUsers: (q) => apiClient.get('/saved-filters/users/search', { params: { q }, _silent: true }).then((r) => r.data),
   members: (id) => apiClient.get(`/saved-filters/${id}/members`).then((r) => r.data),
   addMember: (id, userId) => apiClient.post(`/saved-filters/${id}/members`, { user_id: userId }).then((r) => r.data),
   removeMember: (id, userId) => apiClient.delete(`/saved-filters/${id}/members/${userId}`).then((r) => r.data),

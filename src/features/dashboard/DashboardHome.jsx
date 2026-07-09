@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -36,6 +36,7 @@ export default function DashboardHome() {
   const navigate = useNavigate();
   const { id: openId } = useParams(); // /dashboard/:id — the open dashboard, if any
   const [dashboards, setDashboards] = useState(null); // null = loading
+  const creatingRef = useRef(false);
 
   // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
@@ -68,20 +69,35 @@ export default function DashboardHome() {
   const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
 
   const createDashboard = async () => {
-    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    const name = await promptDialog({
+      title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create',
+      // Inline validation — keeps the modal open and shows the error above Create.
+      validate: (v) => ((dashboards || []).some((x) => (x.name || '').trim().toLowerCase() === v.toLowerCase())
+        ? 'A dashboard with this name already exists' : ''),
+    });
     if (!name || !name.trim()) return;
+    if (creatingRef.current) return; // guard: never create twice for one action
+    creatingRef.current = true;
     try {
       const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setDashboards((cur) => [...(cur || []), d]);
       notifyChanged();
       toast.success(`Dashboard "${d.name}" created`);
       navigate(`/dashboard/${d.id}`); // route into the newly-created dashboard
-    } catch { toast.error('Could not create dashboard'); }
+    } catch (err) { toast.error(err.response?.data?.error?.message || 'Could not create dashboard'); }
+    finally { creatingRef.current = false; }
   };
 
   // Optimistic local update + background save (rename, card add/remove/edit).
   // opts.silent → drag/resize layout saves: no global loader, no sidebar refetch.
   const updateDashboard = (d, opts = {}) => {
+    // Renaming to a name another dashboard already uses → instant message, no API/loader.
+    const server = (dashboards || []).find((x) => x.id === d.id);
+    if (server && d.name !== server.name
+      && (dashboards || []).some((x) => x.id !== d.id && (x.name || '').trim().toLowerCase() === (d.name || '').trim().toLowerCase())) {
+      toast.error('A dashboard with this name already exists');
+      return;
+    }
     setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
     if (opts.silent) {
       beginSilent();
@@ -89,7 +105,7 @@ export default function DashboardHome() {
     } else {
       dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
         .then(notifyChanged)
-        .catch(() => toast.error('Could not save changes'));
+        .catch((err) => { toast.error(err.response?.data?.error?.message || 'Could not save changes'); notifyChanged(); });
     }
   };
 
@@ -109,6 +125,7 @@ export default function DashboardHome() {
         dashboard={openDash}
         onBack={() => navigate('/dashboard')}
         onChange={updateDashboard}
+        isNameTaken={(n) => (dashboards || []).some((x) => x.id !== openDash.id && (x.name || '').trim().toLowerCase() === n.trim().toLowerCase())}
       />
     );
   }
@@ -178,8 +195,9 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 }
 
 /* -------------------------------------------------------------- detail view */
-function DashboardDetail({ dashboard, onBack, onChange }) {
+function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const slotEl = useHeaderSlot();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null); // card open in the modal
@@ -269,7 +287,13 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
 
   const commitName = () => {
     const v = (name || '').trim() || 'Dashboard';
-    setName(v); onChange({ ...dashboard, name: v }); setEditingName(false);
+    setEditingName(false);
+    // Only save (hit the API / show the loader) when the name actually changed.
+    if (v === dashboard.name) { setName(dashboard.name); return; }
+    // Instant client-side duplicate check — no API call / loader.
+    if (isNameTaken?.(v)) { toast.error('A dashboard with this name already exists'); setName(dashboard.name); return; }
+    setName(v);
+    onChange({ ...dashboard, name: v });
   };
 
   // Breadcrumb ("Dashboards › <name>") lives in the shared topbar via a portal.

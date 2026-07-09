@@ -47,10 +47,11 @@ export function ConfirmProvider({ children }) {
   );
 }
 
-function Dialog({ title, message, confirmLabel, cancelLabel, danger, prompt, defaultValue, placeholder, onCancel, onConfirm }) {
+function Dialog({ title, message, confirmLabel, cancelLabel, danger, prompt, defaultValue, placeholder, validate, onCancel, onConfirm }) {
   const confirmRef = useRef(null);
   const inputRef = useRef(null);
   const [val, setVal] = useState(defaultValue || '');
+  const [error, setError] = useState('');
   const canConfirm = !prompt || val.trim().length > 0;
 
   useEffect(() => {
@@ -64,7 +65,15 @@ function Dialog({ title, message, confirmLabel, cancelLabel, danger, prompt, def
     return () => document.removeEventListener('keydown', onKey);
   }, [onCancel, onConfirm, prompt]);
 
-  const submit = () => { if (canConfirm) onConfirm(prompt ? val.trim() : true); };
+  const submit = () => {
+    if (!canConfirm) return;
+    if (prompt && validate) {
+      // Keep the modal open and show the error inline instead of resolving.
+      const err = validate(val.trim());
+      if (err) { setError(err); inputRef.current?.focus(); return; }
+    }
+    onConfirm(prompt ? val.trim() : true);
+  };
   const accent = danger ? '#ef4444' : '#111827';
   const accentBg = danger ? '#fee2e2' : '#f1f2f4';
 
@@ -78,10 +87,11 @@ function Dialog({ title, message, confirmLabel, cancelLabel, danger, prompt, def
           <h3 style={s.title}>{title}</h3>
           {message && <div style={s.message}>{message}</div>}
           {prompt && (
-            <input ref={inputRef} style={s.input} value={val} placeholder={placeholder || ''}
-              onChange={(e) => setVal(e.target.value)}
+            <input ref={inputRef} style={{ ...s.input, ...(error ? s.inputError : {}) }} value={val} placeholder={placeholder || ''}
+              onChange={(e) => { setVal(e.target.value); if (error) setError(''); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }} />
           )}
+          {prompt && error && <div style={s.error}>{error}</div>}
         </div>
         <div style={s.footer}>
           <button type="button" style={s.cancel} onClick={onCancel}>{cancelLabel}</button>
@@ -107,6 +117,8 @@ const s = {
   message: { fontSize: 14, color: '#6b7280', lineHeight: 1.55 },
   input: { width: '100%', boxSizing: 'border-box', marginTop: 14, padding: '11px 13px', fontSize: 14,
     border: '1px solid #d1d5db', borderRadius: 10, outline: 'none', color: '#111827' },
+  inputError: { borderColor: '#ef4444' },
+  error: { marginTop: 8, fontSize: 13, color: '#dc2626', fontWeight: 500 },
   footer: { display: 'flex', gap: 10, padding: '14px 24px 20px' },
   cancel: { flex: 1, padding: '11px 14px', background: '#fff', border: '1px solid #e5e7eb',
     borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer', color: '#374151' },

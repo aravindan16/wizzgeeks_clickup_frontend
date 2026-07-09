@@ -29,15 +29,25 @@ function Calculation({ data }) {
   );
 }
 
+// Monochromatic palette derived from the app accent (var(--c-primary)), so charts
+// always match the current theme colour. color-mix over the surface keeps it
+// readable in both light and dark themes.
+function accentColor(i, n) {
+  if (n <= 1) return 'var(--c-primary)';
+  const pct = Math.round(100 - (i * (55 / (n - 1)))); // 100% accent → 45% for the last slice
+  return `color-mix(in srgb, var(--c-primary) ${pct}%, var(--c-surface))`;
+}
+
 // Build the chart series [{key,label,count,color}] for the chosen X-axis measure,
 // optionally filtered to the categories in `xShow` (empty/undefined = show all).
+// Every series is recoloured with the accent palette so charts follow the theme.
 function series(data, xMeasure, xShow) {
   let arr;
   if (xMeasure === 'priority') arr = data.byPriority || [];
-  else if (xMeasure === 'list') arr = (data.byList || []).map((l) => ({ key: l.name, label: l.name, count: l.total, color: 'var(--c-primary)' }));
+  else if (xMeasure === 'list') arr = (data.byList || []).map((l) => ({ key: l.name, label: l.name, count: l.total }));
   else arr = data.byStatusGroup || []; // default: status group (Not started/Active/Done/Closed)
   if (Array.isArray(xShow) && xShow.length) arr = arr.filter((a) => xShow.includes(a.key));
-  return arr;
+  return arr.map((a, i) => ({ ...a, color: accentColor(i, arr.length) }));
 }
 const niceCeil = (v) => {
   if (v <= 5) return 5;
