@@ -12,7 +12,10 @@ import ResizableTable from '../../components/ResizableTable';
 export default function UserManagementPage() {
   const { can } = useAuth();
   const slotEl = useHeaderSlot();
-  const [allUsers, setAllUsers] = useState([]);
+  const [users, setUsers] = useState([]);      // the current page from the API
+  const [total, setTotal] = useState(0);       // total matching rows (for the pager)
+  const [page, setPage] = useState(0);         // 0-based
+  const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
@@ -21,20 +24,28 @@ export default function UserManagementPage() {
   const [modal, setModal] = useState({ open: false, mode: 'create', user: null });
   const [pwUser, setPwUser] = useState(null); // user whose password the admin is resetting
 
+  // Server-side pagination: ask the backend for one page (skip/limit) + search/status.
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await usersApi.list({ skip: 0, limit: 200 });
-      setAllUsers(res.items || []);
+      const params = { skip: page * pageSize, limit: pageSize };
+      if (search.trim()) params.search = search.trim();
+      if (statusFilter) params.status = statusFilter;
+      const res = await usersApi.list(params);
+      setUsers(res.items || []);
+      setTotal(res.total || 0);
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to load users');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, search, statusFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  // Debounced fetch on any page/size/search/status change.
+  useEffect(() => { const h = setTimeout(load, 200); return () => clearTimeout(h); }, [load]);
+  // Reset to the first page when the filters change.
+  useEffect(() => { setPage(0); }, [search, statusFilter]);
   useEffect(() => { usersApi.roles().then(setRoles).catch(() => setRoles([])); }, []);
 
   const toggleStatus = async (u) => {
@@ -42,16 +53,6 @@ export default function UserManagementPage() {
     else await usersApi.activate(u._id);
     load();
   };
-
-  // Live client-side search + status filter (no Search button).
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allUsers.filter((u) => {
-      if (statusFilter && u.status !== statusFilter) return false;
-      if (!q) return true;
-      return (u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
-    });
-  }, [allUsers, search, statusFilter]);
 
   const columns = useMemo(() => [
     { key: 'name', label: 'Name', width: 180, render: (u) => u.full_name },
@@ -102,11 +103,16 @@ export default function UserManagementPage() {
 
       <ResizableTable
         columns={columns}
-        rows={rows}
+        rows={users}
         rowKey={(u) => u._id}
         persistKey="wg-users-table"
         emptyText={loading ? 'Loading…' : 'No users found.'}
-        defaultPageSize={10}
+        serverMode
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0); }}
       />
 
       <UserModal

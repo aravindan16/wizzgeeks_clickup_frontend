@@ -30,7 +30,9 @@ export const AND_OR = [{ value: 'AND', label: 'AND' }, { value: 'OR', label: 'OR
 export const emptyValue = (field) => (MULTI_FIELDS.has(field) ? [] : '');
 
 let _seq = 0;
-const nid = () => `n${_seq++}`;
+// Collision-proof node id (counter + random suffix) so newly added rules never
+// share an id with the sequential ids baked into a previously-saved/persisted tree.
+const nid = () => `n${_seq++}_${Math.random().toString(36).slice(2, 9)}`;
 export const mkRule = (field = 'status') => ({ id: nid(), type: 'rule', field, op: 'is', value: emptyValue(field) });
 export const mkGroup = (field) => ({ id: nid(), type: 'group', conj: 'AND', children: [mkRule(field)] });
 export const newGroup = () => mkGroup('status');
@@ -197,7 +199,7 @@ function ValueEditor({ rule, setVal, options }) {
     return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" />;
   }
   if (rule.field === 'space')
-    return <Select placeholder="Select option" highlight={active} value={rule.value} onChange={setVal}
+    return <Select placeholder="Select option" value={rule.value} onChange={setVal}
       options={(options.projects || []).map((p) => ({ value: p._id, label: p.name || p.key }))} />;
   if (rule.field === 'type')
     return <MultiSelect active={active} value={arr} onChange={setVal} options={TASK_TYPES} placeholder="Select types" />;
@@ -211,10 +213,10 @@ function ValueEditor({ rule, setVal, options }) {
     myId={options.myId} allowUnassigned={rule.field === 'assignee'} />;
 }
 
-function TextFilter({ value, onChange, active }) {
+function TextFilter({ value, onChange }) {
   return (
     <input value={value || ''} placeholder="Contains text…" onChange={(e) => onChange(e.target.value)}
-      style={{ ...g.trigger, ...(active ? g.triggerActive : {}), cursor: 'text' }} />
+      className="wg-select-trigger" style={{ ...g.trigger, cursor: 'text' }} />
   );
 }
 
@@ -232,7 +234,7 @@ function MultiSelect({ value, onChange, options, placeholder, active }) {
     ? (options.find((o) => o.value === value[0])?.label || '1 selected') : `${value.length} selected`;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(active ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
         <span style={{ color: value.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         <IconChevronDown size={14} />
       </button>
@@ -273,7 +275,7 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
   const Box = ({ on }) => <span style={{ ...g.checkbox, ...(on ? g.checkboxOn : {}) }}>{on ? '✓' : ''}</span>;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(active ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: sel.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <IconUser size={14} />{label}
         </span>

@@ -21,6 +21,12 @@ export default function ResizableTable({
   columns, rows, rowKey, onRowClick, emptyText = 'No data.',
   persistKey, card = true, rowClassName = 'wg-rel-row',
   paginated = true, defaultPageSize = 10,
+  // --- server-side pagination (backend paging) ---
+  // When serverMode is set, `rows` is ALREADY the current page from the API.
+  // The component controls nothing itself — it reports page/size changes so the
+  // parent can refetch: onPageChange(page0based), onPageSizeChange(size).
+  serverMode = false, page: pageProp, pageSize: pageSizeProp, total: totalProp,
+  onPageChange, onPageSizeChange,
 }) {
   const [widths, setWidths] = useState(() => {
     let saved = {};
@@ -46,16 +52,22 @@ export default function ResizableTable({
   };
 
   // --- pagination ---
-  const [pageSize, setPageSize] = useState(defaultPageSize);
-  const [page, setPage] = useState(0); // 0-based
-  const total = rows.length;
+  // Client mode owns its own page/size state; server mode is fully controlled.
+  const [pageSizeC, setPageSizeC] = useState(defaultPageSize);
+  const [pageC, setPageC] = useState(0); // 0-based
+  const pageSize = serverMode ? (pageSizeProp || defaultPageSize) : pageSizeC;
+  const total = serverMode ? (totalProp || 0) : rows.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
-  // Reset to the first page when the data set or page size changes.
-  useEffect(() => { setPage(0); }, [total, pageSize]);
-  const pageRows = paginated ? rows.slice(safePage * pageSize, safePage * pageSize + pageSize) : rows;
+  const rawPage = serverMode ? (pageProp || 0) : pageC;
+  const safePage = Math.min(rawPage, pageCount - 1);
+  // Client mode: reset to the first page when the data set / page size changes.
+  useEffect(() => { if (!serverMode) setPageC(0); }, [serverMode, total, pageSizeC]);
+  const setPage = (p) => (serverMode ? onPageChange?.(Math.max(0, p)) : setPageC(p));
+  const setPageSize = (n) => (serverMode ? onPageSizeChange?.(n) : setPageSizeC(n));
+  // Server mode: rows ARE the current page already; client mode slices locally.
+  const pageRows = (!paginated || serverMode) ? rows : rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
   const from = total === 0 ? 0 : safePage * pageSize + 1;
-  const to = Math.min(total, (safePage + 1) * pageSize);
+  const to = serverMode ? Math.min(total, safePage * pageSize + rows.length) : Math.min(total, (safePage + 1) * pageSize);
 
   const last = columns.length - 1;
   const content = (

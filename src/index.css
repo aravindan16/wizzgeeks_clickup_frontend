@@ -400,7 +400,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 
 /* Select trigger: no harsh black outline on mouse focus; soft ring for keyboard only. */
 .wg-select-trigger:focus { outline: none; }
-.wg-select-trigger:focus-visible { outline: none; border-color: var(--c-text-strong); box-shadow: 0 0 0 3px rgba(120,130,150,.2); }
+.wg-select-trigger:focus-visible { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-weak); }
 
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two
