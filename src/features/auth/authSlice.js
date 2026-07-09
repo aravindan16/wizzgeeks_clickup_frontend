@@ -63,7 +63,11 @@ export const logout = createAsyncThunk('auth/logout', async () => {
 const authSlice = createSlice({
   name: 'auth',
   initialState,
-  reducers: {},
+  reducers: {
+    // Merge fields into the current user (e.g. avatar_color/avatar_url after a
+    // profile change) so the topbar avatar updates live.
+    patchUser: (s, a) => { if (s.user) s.user = { ...s.user, ...a.payload }; },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(bootstrap.pending, (s) => {
@@ -105,4 +109,5 @@ const authSlice = createSlice({
   },
 });
 
+export const { patchUser } = authSlice.actions;
 export default authSlice.reducer;
