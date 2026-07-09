@@ -9,8 +9,12 @@ import TaskListView from '../tasks/TaskListView';
 import TaskTableView from '../tasks/TaskTableView';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
-import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconMembers, IconSearch } from '../../components/icons';
+import FilterBuilder, { newGroup, activeRuleCount } from '../filters/FilterBuilder';
+import { filterTasks } from '../filters/filterEval';
+import { labelsApi } from '../labels/labelsApi';
+import { listsApi } from '../lists/listsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import { IconBoard, IconMembers, IconSearch, IconFilter, IconChevronDown } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
@@ -22,7 +26,7 @@ import { useToast } from '../../components/Toast';
 import { SkeletonBoard } from '../../components/Skeleton';
 import ResizableTable from '../../components/ResizableTable';
 
-const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
+const DEFAULT_CARDS = [newGroup()]; // stable default builder tree (one empty rule)
 
 /**
  * A Project behaves like a Jira "Space": opening it shows tabbed views — the
@@ -46,11 +50,26 @@ export default function ProjectDetailsPage() {
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [taskQuery, setTaskQuery] = useState('');
   const [openTaskId, setOpenTaskId] = useState(null);
+  const [labels, setLabels] = useState([]);
+  const [spaceLists, setSpaceLists] = useState([]);
+  const [spaceFields, setSpaceFields] = useState([]);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   // Views (List/Board/Table tabs) — persisted per Space, shared with the List board.
   const vs = useViews(id);
   const { activeId, setActiveId, updateView, activeView } = vs;
-  const activeFilters = activeView?.filters || EMPTY_FILTERS;
+
+  // Filter builder (same as the Filters tab), persisted per view under fcards/fconj.
+  const fcards = activeView?.fcards?.length ? activeView.fcards : DEFAULT_CARDS;
+  const fconj = activeView?.fconj || 'AND';
+  const setFcards = (u) => updateView(activeId, { fcards: typeof u === 'function' ? u(fcards) : u });
+  const setFconj = (v) => updateView(activeId, { fconj: v });
+
+  useEffect(() => {
+    labelsApi.list().then(setLabels).catch(() => setLabels([]));
+    listsApi.forSpace(id).then(setSpaceLists).catch(() => setSpaceLists([]));
+    customFieldsApi.list(id).then(setSpaceFields).catch(() => setSpaceFields([]));
+  }, [id]);
 
   const canManageGlobal = can('project.member.manage');
 
@@ -89,26 +108,29 @@ export default function ProjectDetailsPage() {
 
   // Search + filters recomputed only when tasks/query/filters change — not on
   // every unrelated re-render (modals opening, etc.).
+  const filterOptions = useMemo(() => ({
+    projects: project ? [project] : [],
+    lists: spaceLists.map((l) => ({ value: l._id, label: l.name })),
+    statuses: statuses.map((st) => ({ value: st.key, label: st.name })),
+    users: members.map((m) => ({ user_id: m.user_id, full_name: m.full_name, email: m.email })),
+    labels: labels.map((l) => ({ value: l.name, label: l.name })),
+    customFields: spaceFields.map((c) => ({ key: `cf:${c._id}`, label: c.name, type: c.type, config: c.config })),
+    tasks, myId: me,
+  }), [project, spaceLists, statuses, members, labels, spaceFields, tasks, me]);
+
   const visibleTasks = useMemo(() => {
     const tq = taskQuery.trim().toLowerCase();
     const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
       nameMap.get(t.assignee_id), nameMap.get(t.reporter_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
-    const matchesFilters = (t) => {
-      if (activeFilters.assignee.length && !activeFilters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-      if (activeFilters.status.length && !activeFilters.status.includes(t.status)) return false;
-      if (activeFilters.type.length && !activeFilters.type.includes(t.type)) return false;
-      if ((activeFilters.priority || []).length && !activeFilters.priority.includes(t.priority)) return false;
-      if ((activeFilters.label || []).length && !(t.labels || []).some((l) => activeFilters.label.includes(l))) return false;
-      return true;
-    };
-    return tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
-  }, [tasks, taskQuery, activeFilters, nameMap]);
+    return filterTasks(tasks, fcards, fconj, { myId: me }).filter(matchesSearch);
+  }, [tasks, taskQuery, fcards, fconj, nameMap, me]);
+
+  const activeFilterCount = activeRuleCount(fcards);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!project) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
   const isOwner = project.owner_id && project.owner_id === me;
-  const activeFilterCount = countFilters(activeFilters);
   const isMembersTab = activeId === 'members';
   // TODO: Re-introduce role-based permissions later. For now ANY member of the
   // space can manage members (add/remove/change role) — no specific role needed.
@@ -170,13 +192,20 @@ export default function ProjectDetailsPage() {
               <input style={s.searchInput} placeholder={`Search ${activeView?.name?.toLowerCase() || 'tasks'}`} value={taskQuery}
                 onChange={(e) => setTaskQuery(e.target.value)} />
             </div>
-            <BoardFilter members={members} tasks={tasks} statuses={statuses} value={activeFilters}
-              onChange={(f) => updateView(activeId, { filters: f })} />
-            {activeFilterCount > 0 && (
-              <button style={s.clearFilters} onClick={() => updateView(activeId, { filters: emptyFilters() })}>Clear filters</button>
-            )}
+            <button type="button" className="btn" style={{ ...s.filterToggle, ...(filterOpen ? s.filterToggleActive : {}) }}
+              onClick={() => setFilterOpen((o) => !o)}>
+              <IconFilter size={15} /> Filter
+              {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              <span style={{ display: 'inline-flex', transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><IconChevronDown size={13} /></span>
+            </button>
           </div>
           <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
+        </div>
+      )}
+
+      {!isMembersTab && filterOpen && (
+        <div style={{ marginBottom: 14 }}>
+          <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
         </div>
       )}
 
@@ -242,6 +271,10 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
   clearFilters: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' },
+  filterToggle: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, whiteSpace: 'nowrap' },
+  filterToggleActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)' },
+  filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
+    borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
   tabs: { display: 'flex', alignItems: 'center', gap: 4, margin: '16px 0', borderBottom: '1px solid var(--c-border)', flexWrap: 'wrap' },
   tabWrap: { display: 'inline-flex', alignItems: 'center' },
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
