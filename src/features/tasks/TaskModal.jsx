@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../auth/useAuth';
 import { tasksApi, resolveStatuses } from './tasksApi';
+
+const NO_PERM_MSG = 'You do not have permission to perform this action.';
 import { projectsApi } from '../projects/projectsApi';
 import { customFieldsApi, FIELD_TYPE_LABEL } from '../customfields/customFieldsApi';
 import CustomFieldManager from '../customfields/CustomFieldManager';
@@ -30,6 +33,8 @@ const FIELD_CMP = { dropdown: IconFieldDropdown, relationship: IconFieldRelation
  * (status / assignee / due date / priority / tags) and a custom-fields section.
  */
 export default function TaskModal({ open, mode, task, projects, defaultProjectId, listId = null, listName, statuses, onClose, onSaved }) {
+  const { can } = useAuth();
+  const canDo = mode === 'edit' ? can('task.update') : can('task.create');
   const spaceId = (mode === 'edit' && task) ? task.project_id : (defaultProjectId || projects?.[0]?._id);
   const spaceName = projects?.[0]?.name || 'Space';
   const sts = (statuses && statuses.length) ? statuses : resolveStatuses(projects?.[0]);
@@ -104,6 +109,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
   const assigneeName = members.find((m) => m.user_id === form.assignee_id)?.full_name;
 
   const submit = async () => {
+    if (!canDo) { setError(NO_PERM_MSG); return; }
     if (!form.title.trim()) { setError('Task name is required'); return; }
     setSaving(true); setError(null);
     const cf = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v != null && !(Array.isArray(v) && v.length === 0)));
@@ -296,13 +302,14 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
             </div>
           )}
 
-          {error && <p style={{ color: '#ef4444', fontSize: 13, marginTop: 10 }}>{error}</p>}
+          {(error || !canDo) && <p style={{ color: '#ef4444', fontSize: 13, marginTop: 10 }}>{error || NO_PERM_MSG}</p>}
         </div>
 
         {/* Footer */}
         <div style={s.footer}>
           <div style={{ flex: 1 }} />
-          <button style={s.createBtn} onClick={submit} disabled={saving}>
+          <button style={{ ...s.createBtn, ...(canDo ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+            title={canDo ? '' : NO_PERM_MSG} onClick={submit} disabled={saving || !canDo}>
             {saving ? 'Saving…' : (mode === 'edit' ? 'Save' : 'Create Task')}
           </button>
         </div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { projectsApi } from './projectsApi';
 import { DEFAULT_SPACE_STATUSES } from '../tasks/tasksApi';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/useAuth';
 import StatusEditor from './StatusEditor';
 import { Chevron, IconClose } from '../../components/icons';
 
@@ -24,9 +25,13 @@ function suggestKey(name) {
   return key.length >= 2 ? key : (key + 'KEY').slice(0, 3);
 }
 
+const NO_PERM_MSG = 'You do not have permission to perform this action.';
+
 export default function SpaceSetupModal({ open, onClose, onCreated }) {
   const navigate = useNavigate();
   const toast = useToast();
+  const { can } = useAuth();
+  const canCreate = can('project.create');
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
@@ -54,6 +59,7 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
 
   const create = async (e) => {
     e.preventDefault();
+    if (!canCreate) { setError(NO_PERM_MSG); return; }
     setError(null); setSaving(true);
     try {
       const space = await projectsApi.create({
@@ -118,11 +124,12 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
             {VIEWS.map((v) => <Chip key={v}>{v}</Chip>)}
           </Block>
 
-          {error && <p style={{ color: '#ef4444', fontSize: 13 }}>{error}</p>}
+          {(error || !canCreate) && <p style={{ color: '#ef4444', fontSize: 13 }}>{error || NO_PERM_MSG}</p>}
 
           <div style={ov.footer}>
             <button type="button" style={ov.ghost} onClick={onClose}>Cancel</button>
-            <button type="submit" style={ov.primary} disabled={saving}>
+            <button type="submit" style={{ ...ov.primary, ...(canCreate ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              title={canCreate ? '' : NO_PERM_MSG} disabled={saving || !canCreate}>
               {saving ? 'Creating…' : 'Create space'}
             </button>
           </div>

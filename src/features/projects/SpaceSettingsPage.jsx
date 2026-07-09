@@ -9,7 +9,10 @@ import IconPicker from '../../components/IconPicker';
 import AppIcon, { hasIcon } from '../../components/AppIcon';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useAuth } from '../auth/useAuth';
 import { IconArrowLeft } from '../../components/icons';
+
+const NO_PERM_MSG = 'You do not have permission to perform this action.';
 
 const NAV = [
   { id: 'details', label: 'Details' },
@@ -27,6 +30,8 @@ export default function SpaceSettingsPage() {
   const slotEl = useHeaderSlot();
   const toast = useToast();
   const confirm = useConfirm();
+  const { user, can } = useAuth();
+  const me = user?._id || user?.id;
 
   const [section, setSection] = useState('details');
   const [project, setProject] = useState(null);
@@ -36,6 +41,8 @@ export default function SpaceSettingsPage() {
   const [iconOpen, setIconOpen] = useState(false);
   const [form, setForm] = useState({ name: '', key: '', description: '' });
   const [saving, setSaving] = useState(false);
+  // Space owner can manage even without the role permission (matches backend).
+  const canManage = can('project.update') || (!!project?.owner_id && String(project.owner_id) === String(me));
 
   const load = useCallback(async () => {
     const [p, ms] = await Promise.all([
@@ -58,12 +65,14 @@ export default function SpaceSettingsPage() {
 
   const saveIcon = async (icon) => {
     setIconOpen(false);
+    if (!canManage) return toast.error(NO_PERM_MSG);
     try { const p = await projectsApi.update(id, { icon }); setProject(p); toast.success('Icon updated'); }
     catch { toast.error('Could not update icon'); }
   };
 
   const saveDetails = async (e) => {
     e.preventDefault();
+    if (!canManage) { toast.error(NO_PERM_MSG); return; }
     setSaving(true);
     try {
       const p = await projectsApi.update(id, { name: form.name.trim(), key: form.key.trim(), description: form.description });
@@ -74,12 +83,14 @@ export default function SpaceSettingsPage() {
   };
 
   const changeRole = async (m, role) => {
+    if (!canManage) return toast.error(NO_PERM_MSG);
     setMembers((cur) => cur.map((x) => (x.user_id === m.user_id ? { ...x, project_role: role } : x)));
     try { await projectsApi.updateMember(id, m.user_id, { project_role: role }); }
     catch { toast.error('Could not update role'); load(); }
   };
 
   const removeMember = async (m) => {
+    if (!canManage) return toast.error(NO_PERM_MSG);
     if (!(await confirm({ title: 'Remove member', message: `Remove ${m.full_name} from this space?`, confirmLabel: 'Remove', danger: true }))) return;
     try { await projectsApi.removeMember(id, m.user_id); setMembers((cur) => cur.filter((x) => x.user_id !== m.user_id)); toast.success('Member removed'); }
     catch { toast.error('Could not remove member'); }
@@ -128,7 +139,9 @@ export default function SpaceSettingsPage() {
                   ? <AppIcon name={project.icon} size={48} />
                   : <span style={s.iconLetter}>{(project.key || project.name || '?')[0]?.toUpperCase()}</span>}
               </div>
-              <button style={s.ghost} onClick={() => setIconOpen(true)}>Change icon</button>
+              <button style={{ ...s.ghost, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                title={canManage ? '' : NO_PERM_MSG}
+                onClick={() => (canManage ? setIconOpen(true) : toast.error(NO_PERM_MSG))}>Change icon</button>
             </div>
 
             <form onSubmit={saveDetails} style={{ maxWidth: 520 }}>
@@ -149,8 +162,10 @@ export default function SpaceSettingsPage() {
               <textarea style={{ ...s.input, minHeight: 90, resize: 'vertical' }} value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What is this space about?" />
 
+              {!canManage && <p style={{ color: '#ef4444', fontSize: 13, marginTop: 12 }}>{NO_PERM_MSG}</p>}
               <div style={{ marginTop: 16 }}>
-                <button type="submit" style={s.primary} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+                <button type="submit" style={{ ...s.primary, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                  title={canManage ? '' : NO_PERM_MSG} disabled={saving || !canManage}>{saving ? 'Saving…' : 'Save changes'}</button>
               </div>
             </form>
           </div>
@@ -161,8 +176,12 @@ export default function SpaceSettingsPage() {
             <div style={s.accessHead}>
               <h2 style={s.h2}>Access</h2>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button style={s.ghost} onClick={() => setRolesOpen(true)}>Manage roles</button>
-                <button style={s.primary} onClick={() => setAddOpen(true)}>Add people</button>
+                <button style={{ ...s.ghost, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                  title={canManage ? '' : NO_PERM_MSG}
+                  onClick={() => (canManage ? setRolesOpen(true) : toast.error(NO_PERM_MSG))}>Manage roles</button>
+                <button style={{ ...s.primary, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                  title={canManage ? '' : NO_PERM_MSG}
+                  onClick={() => (canManage ? setAddOpen(true) : toast.error(NO_PERM_MSG))}>Add people</button>
               </div>
             </div>
             <p style={s.accessSub}>People who can access this space and their roles.</p>

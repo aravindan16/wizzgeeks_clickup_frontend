@@ -95,7 +95,8 @@ export default function DashboardsMenu({ collapsed }) {
 
   if (collapsed) {
     return (
-      <button title="Dashboards" style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
+      <button title="Dashboards" className={`nav-item${location.pathname.startsWith('/dashboard') ? ' active' : ''}`}
+        style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
         <span style={s.navIcon}><IconDashboard size={18} /></span>
       </button>
     );
@@ -214,7 +215,7 @@ const s = {
 
   // collapsed
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none',
+    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', border: 'none',
     cursor: 'pointer', fontSize: 14 },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
 };

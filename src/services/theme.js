@@ -60,6 +60,15 @@ export function initTheme() {
   }
 }
 
+// Apply the theme prefs stored on the user record (from the DB) so the look
+// follows the user across devices. Falls back to whatever is already applied
+// (localStorage) when the user has no stored preference yet.
+export function syncFromUser(user) {
+  if (!user) return;
+  if (user.theme) applyMode(user.theme);
+  if (user.accent) applyAccent(user.accent);
+}
+
 // --- Back-compat shims for older callers (dark-mode toggle) ---
 export function getTheme() { return resolveMode(getMode()); }
 export function applyTheme(theme) { return applyMode(theme); }

@@ -154,6 +154,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   };
   const deleteCard = async (id) => {
     setCardMenu(null);
+    if (!can('task.delete')) return toast.error('You do not have permission to perform this action.');
     const task = board.find((t) => t._id === id);
     const ok = await confirm({
       title: `Delete: ${task?.title || 'task'}`,
@@ -377,7 +378,9 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
               <span style={s.menuIcon}><IconExpand size={15} /></span> Open
             </button>
             <div style={s.menuDivider} />
-            <button className="wg-menu-item" style={{ ...s.menuItem, color: '#dc2626' }} onClick={() => deleteCard(cardMenu.id)}>
+            <button className="wg-menu-item" title={can('task.delete') ? '' : 'You do not have permission to perform this action.'}
+              style={{ ...s.menuItem, color: '#dc2626', ...(can('task.delete') ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => deleteCard(cardMenu.id)}>
               <span style={{ ...s.menuIcon, color: '#dc2626' }}><IconTrash size={15} /></span> Delete
             </button>
           </div>
