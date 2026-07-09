@@ -277,9 +277,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* --- Sidebar nav (light theme) --- */
 .nav-item {
   position: relative;
+  background: transparent; /* override the native <button> default; hover/.active win via specificity */
   transition: background var(--t-fast), color var(--t-fast);
 }
 .nav-item:hover { background: var(--c-hover); color: var(--c-text-strong); }
+.nav-item.active { background: var(--c-hover); color: var(--c-text-strong); }
 .wg-navrow-active { background: var(--c-hover); }
 .nav-item.active::before,
 .wg-navrow-active::before {
@@ -287,7 +289,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   position: absolute;
   left: 0; top: 50%; transform: translateY(-50%);
   width: 3px; height: 60%;
-  background: var(--c-text-strong);
+  background: var(--c-primary);
   border-radius: 999px;
 }
 
@@ -384,6 +386,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* --- Sidebar rows (Spaces / Lists) --- */
 .wg-sb-row { transition: background var(--t-fast); }
 .wg-sb-row:hover { background: var(--c-hover); }
+.wg-user-chip:hover { background: var(--c-hover); }
 /* Toggle icon: show the item's icon by default, swap to the expand/collapse
    chevron in the SAME spot on hover (ClickUp-style). */
 .wg-nav-toggle { position: relative; width: 20px; height: 20px; display: inline-flex;

@@ -217,7 +217,7 @@ export default function FiltersPage() {
     customFieldsApi.list(contextSpaceId, contextListId || undefined, undefined, { _silent: true })
       .then((fs) => setCustomFields((fs || [])
         .filter((f) => ['dropdown', 'text', 'relationship'].includes(f.type))
-        .map((f) => ({ key: `cf:${f._id}`, id: f._id, label: f.name, type: f.type, config: f.config || {} }))))
+        .map((f) => ({ key: `cf:${f._id}`, id: f._id, label: f.name, type: f.type, config: f.config || {}, location: f.location }))))
       .catch(() => setCustomFields([]));
   }, [contextSpaceId, contextListId]);
 
@@ -241,21 +241,17 @@ export default function FiltersPage() {
     const scan = (n) => { if (n.type === 'group') n.children.forEach(scan); else if (n.field === 'list' && Array.isArray(n.value)) n.value.forEach((id) => listIds.add(String(id))); };
     cards.forEach(scan);
     // Group the statuses BY LIST (each list can have its own custom workflow), so the
-    // dropdown shows e.g. "DEVELOPMENT → its statuses, EPIC → its statuses, …".
-    // Statuses are DEDUPED BY KEY across lists: a task's status is a single key, so
-    // the same key must appear only once (otherwise selecting it would tick every
-    // copy — e.g. DEVELOPMENT's "OPEN" and EPIC's "TO DO" are both key `todo`).
-    const grouped = (srcLists) => {
-      const seen = new Set(); const out = [];
-      srcLists.forEach((l) => listStatuses(l).forEach((st) => {
-        if (seen.has(st.key)) return;
-        seen.add(st.key);
-        out.push({ value: st.key, label: st.name, group: l.name });
-      }));
-      return out;
-    };
+    // dropdown shows e.g. "DEVELOPMENT → its statuses, EPIC → its statuses, …" with
+    // EVERY status listed under each list. Option values are namespaced `${listId}::${key}`
+    // so the SAME status key living in two lists stays independently selectable — ticking
+    // DEVELOPMENT's status must NOT tick EPIC's copy. The status eval below understands
+    // this `list::key` form (it matches the task's list AND status).
+    const grouped = (srcLists) => srcLists.flatMap((l) =>
+      listStatuses(l).map((st) => ({ value: `${l._id}::${st.key}`, label: st.name, group: l.name })));
     if (listIds.size) return grouped(lists.filter((l) => listIds.has(String(l._id))));
     if (contextSpaceId) {
+      // A SPACE is selected (no specific List): show every List of the Space, each with
+      // its full status set, grouped by List.
       const spaceLists = lists.filter((l) => String(l.spaceId) === contextSpaceId);
       if (spaceLists.length) return grouped(spaceLists);
       return (stsBySpace[contextSpaceId] || []).map((st) => ({ value: st.key, label: st.name }));
@@ -383,6 +379,7 @@ export default function FiltersPage() {
           <IconPlus size={14} /> Add filter
         </button>
         <div style={s.footerRight}>
+          <button type="button" className="btn" style={s.cancelBtn} onClick={() => setShowBuilder(false)}>Cancel</button>
           <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
           <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
         </div>
@@ -655,7 +652,14 @@ function evalNode(node, t, ctx) {
     case 'space': m = String(t.project_id) === String(node.value); break;
     case 'list': m = vals.includes(String(t.list_id)); break;
     case 'type': m = vals.includes(String(t.type || 'task')); break;
-    case 'status': m = vals.includes(String(t.status)); break;
+    case 'status': m = vals.some((v) => {
+      // Values may be a bare status key, or `${listId}::${key}` (list-scoped, from
+      // the per-list grouped dropdown). The latter must match BOTH the task's list
+      // and its status so the same key in different lists filters independently.
+      const sep = v.indexOf('::');
+      if (sep === -1) return String(t.status) === v;
+      return String(t.list_id) === v.slice(0, sep) && String(t.status) === v.slice(sep + 2);
+    }); break;
     case 'assignee':
       m = vals.some((v) => v === '__unassigned__' ? !t.assignee_id
         : v === '__me__' ? String(t.assignee_id) === String(ctx.myId)
@@ -715,9 +719,15 @@ function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
   const set = (patch) => setNode(rule.id, (n) => ({ ...n, ...patch }));
   const setVal = (v) => onValue(rule.id, rule.field, v); // cascades Space→List/Status, List→Status
   const cfDefs = options.customFields || [];
+  // A custom field's label carries WHERE it lives, so two same-named fields are
+  // distinguishable — e.g. a list-scoped "epic" (location "EPIC") vs the inherited
+  // space-level "epic" (location "Opbook360AI"). The backend's `location` already
+  // encodes this (its owning List for list-scoped, the Space for inherited), so use
+  // it verbatim — matches the Location column in the Custom Fields manager.
+  const cfLabel = (c) => (c.location ? `${c.location} / ${c.label}` : c.label);
   // Built-in fields + the chosen Space's custom fields; hide fields already used in the card.
   const allFields = [...FIELDS.map((f) => ({ value: f.key, label: f.label })),
-    ...cfDefs.map((c) => ({ value: c.key, label: c.label }))];
+    ...cfDefs.map((c) => ({ value: c.key, label: cfLabel(c) }))];
   const fieldOpts = allFields.filter((f) => f.value === rule.field || !usedFields?.has(f.value));
   // Empty value for a field: text/single = ''; everything multi = [].
   const emptyFor = (v) => {
@@ -1052,6 +1062,7 @@ const s = {
   cardDividerText: { fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: 'var(--c-muted)', paddingLeft: 8 },
   builderFooter: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 },
   clearAllBtn: { fontSize: 13.5, color: 'var(--c-muted)' },
+  cancelBtn: { fontSize: 13.5, color: 'var(--c-text)', border: '1px solid var(--c-border)', background: 'var(--c-surface)' },
   info: { color: 'var(--c-faint)', fontSize: 13, cursor: 'help' },
   results: { padding: 0, overflow: 'visible' },
   resultsHead: { padding: '12px 16px', fontSize: 13, color: 'var(--c-muted)', borderBottom: '1px solid var(--c-border)' },

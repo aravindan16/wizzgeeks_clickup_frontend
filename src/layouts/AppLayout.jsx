@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
@@ -13,6 +14,7 @@ import {
 } from '../components/icons';
 import { ShieldCheck } from 'lucide-react';
 import ThemeCustomizer from '../components/ThemeCustomizer';
+import { syncFromUser } from '../services/theme';
 
 // Sidebar Permission glyph — Lucide, tuned to the app's 1.9 stroke.
 const IconPermission = ({ size = 18 }) => <ShieldCheck size={size} strokeWidth={1.9} />;
@@ -30,6 +32,8 @@ const NAV = [
 const STORAGE_KEY = 'wg_sidebar_collapsed';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+// "super_admin" → "Super admin" for a friendlier role label.
+const prettyRole = (r) => (r || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 export default function AppLayout() {
   const dispatch = useDispatch();
@@ -38,6 +42,9 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(STORAGE_KEY) === '1');
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [slotEl, setSlotEl] = useState(null); // topbar node pages portal their breadcrumb into
+
+  // Restore the user's DB-stored theme/accent on login (follows them across devices).
+  useEffect(() => { syncFromUser(user); }, [user?.theme, user?.accent]);
 
   const toggle = () => {
     setCollapsed((c) => {
@@ -85,11 +92,6 @@ export default function AppLayout() {
 
         {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
         <div style={s.headerSlot} ref={setSlotEl} />
-
-        <div style={s.topRight}>
-          <UserMenu user={user} onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
-            onCustomize={() => setCustomizeOpen(true)} />
-        </div>
       </header>
 
       {/* ===== BODY: sidebar + main ===== */}
@@ -104,9 +106,14 @@ export default function AppLayout() {
             </nav>
           </div>
 
-          {/* Collapse/expand toggle — bottom-right corner of the sidebar. */}
-          <div style={{ ...s.sidebarFooter, justifyContent: collapsed ? 'center' : 'flex-end' }}>
-            <button style={s.panelBtn} onClick={toggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {/* Footer: signed-in user chip → the SAME dropdown (Profile/Customize/
+              Log out) as the top-bar avatar, opening upward; plus the collapse toggle. */}
+          <div style={{ ...s.sidebarFooter, flexDirection: collapsed ? 'column-reverse' : 'row', gap: collapsed ? 6 : 4 }}>
+            <UserMenu user={user} variant="chip" collapsed={collapsed} placement="up"
+              onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
+              onCustomize={() => setCustomizeOpen(true)} />
+            <button className="wg-user-chip" style={s.panelBtn} onClick={(e) => { e.currentTarget.blur(); toggle(); }}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
               <IconPanel size={18} />
             </button>
           </div>
@@ -122,30 +129,92 @@ export default function AppLayout() {
   );
 }
 
-/** Avatar button → dropdown with user info, Profile, Customize, and Log out. */
-function UserMenu({ user, onProfile, onLogout, onCustomize }) {
+/**
+ * Avatar → dropdown with user info, Profile, Customize, and Log out.
+ * variant="avatar" (top bar, round button, opens down-right) or
+ * variant="chip" (sidebar footer, avatar+name+role, opens up-left).
+ */
+function UserMenu({ user, onProfile, onLogout, onCustomize, variant = 'avatar', collapsed = false, placement = 'down' }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState(null); // fixed coords for the portaled chip menu
+  const ref = useRef(null);             // trigger wrapper (outside-click anchor)
+  const menuRef = useRef(null);         // portaled menu (also counts as "inside")
+  const isChip = variant === 'chip';
 
   useEffect(() => {
     if (!open) return undefined;
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // The chip menu is portaled to <body>, so treat clicks inside it as inside too.
+    const onClick = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     const onEsc = (e) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('mousedown', onClick);
     document.addEventListener('keydown', onEsc);
     return () => { document.removeEventListener('mousedown', onClick); document.removeEventListener('keydown', onEsc); };
   }, [open]);
 
-  return (
-    <div style={{ position: 'relative' }} ref={ref}>
-      <button style={{ ...s.avatarBtn, background: user?.avatar_color || s.avatarBtn.background, overflow: 'hidden' }}
-        aria-label={user?.full_name} onClick={() => setOpen((o) => !o)}>
-        {user?.avatar_url
-          ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : initials(user?.full_name)}
+  // The sidebar sits inside an overflow:hidden aside, so the chip menu is portaled
+  // to <body> and positioned (fixed) above-left of the trigger — never clipped.
+  useEffect(() => {
+    if (!open || !isChip) return undefined;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top + 8 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, isChip]);
+
+  const avatar = (
+    <span style={{ ...s.chipAvatar, background: user?.avatar_color || s.chipAvatar.background, overflow: 'hidden' }}>
+      {user?.avatar_url
+        ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : initials(user?.full_name)}
+    </span>
+  );
+
+  // The three actions are shared by both variants' dropdowns.
+  const menuActions = (
+    <>
+      <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onProfile(); }}>
+        <span style={s.menuIcon}><IconUser size={17} /></span> Profile
       </button>
-      {open && (
-        <div style={s.menu}>
+      <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onCustomize(); }}>
+        <span style={s.menuIcon}><IconSettings size={17} /></span> Customize
+      </button>
+      <button className="wg-menu-item" style={{ ...s.menuItem, color: '#ef4444' }} onClick={() => { setOpen(false); onLogout(); }}>
+        <span style={s.menuIcon}><IconLogout size={17} /></span> Log out
+      </button>
+    </>
+  );
+
+  return (
+    <div style={{ position: 'relative', ...(isChip ? { flex: collapsed ? '0 0 auto' : 1, minWidth: 0 } : {}) }} ref={ref}>
+      {isChip ? (
+        <button className="wg-user-chip" title={user?.full_name}
+          style={{ ...s.userChip, width: '100%', justifyContent: collapsed ? 'center' : 'flex-start' }}
+          onClick={() => setOpen((o) => !o)}>
+          {avatar}
+          {!collapsed && (
+            <span style={s.chipMeta}>
+              <span style={s.chipName}>{user?.full_name || 'User'}</span>
+              {(user?.roles || [])[0] && <span style={s.chipRole}>{prettyRole((user.roles || [])[0])}</span>}
+            </span>
+          )}
+        </button>
+      ) : (
+        <button style={{ ...s.avatarBtn, background: user?.avatar_color || s.avatarBtn.background, overflow: 'hidden' }}
+          aria-label={user?.full_name} onClick={() => setOpen((o) => !o)}>
+          {user?.avatar_url
+            ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : initials(user?.full_name)}
+        </button>
+      )}
+      {open && !isChip && (
+        <div style={{ ...s.menu, ...(placement === 'up' ? s.menuUp : {}) }}>
           <div style={s.menuHead}>
             <span style={{ ...s.menuAvatar, background: user?.avatar_color || s.menuAvatar.background, overflow: 'hidden' }}>
               {user?.avatar_url
@@ -157,16 +226,16 @@ function UserMenu({ user, onProfile, onLogout, onCustomize }) {
               <div style={s.menuEmail}>{user?.email}</div>
             </div>
           </div>
-          <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onProfile(); }}>
-            <span style={s.menuIcon}><IconUser size={17} /></span> Profile
-          </button>
-          <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onCustomize(); }}>
-            <span style={s.menuIcon}><IconSettings size={17} /></span> Customize
-          </button>
-          <button className="wg-menu-item" style={{ ...s.menuItem, color: '#ef4444' }} onClick={() => { setOpen(false); onLogout(); }}>
-            <span style={s.menuIcon}><IconLogout size={17} /></span> Log out
-          </button>
+          {menuActions}
         </div>
+      )}
+      {/* Chip menu (sidebar footer): portaled to <body>, fixed above-left of the chip,
+          actions only (the chip already shows the name/avatar). */}
+      {open && isChip && pos && createPortal(
+        <div ref={menuRef} style={{ ...s.menu, position: 'fixed', top: 'auto', right: 'auto', left: pos.left, bottom: pos.bottom, width: 240 }}>
+          {menuActions}
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -184,7 +253,8 @@ const s = {
   brandText: { fontWeight: 700, fontSize: 17, color: 'var(--c-text-strong)', whiteSpace: 'nowrap' },
   brandChevron: { color: 'var(--c-faint)', display: 'inline-flex', marginLeft: 2 },
   panelBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34,
-    flexShrink: 0, border: 'none', background: 'none', color: 'var(--c-muted)', borderRadius: 8, cursor: 'pointer' },
+    flexShrink: 0, border: 'none', background: 'none', color: 'var(--c-muted)', borderRadius: 8, cursor: 'pointer',
+    outline: 'none', transition: 'background .12s' },
   headerSlot: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', padding: '0 16px', overflow: 'hidden' },
   searchArea: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: 320, padding: '0 8px', flexShrink: 0 },
   searchBox: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', maxWidth: 480, height: 38,
@@ -209,23 +279,26 @@ const s = {
   navIcon: { width: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
   navLabel: { flex: 1 },
 
-  sidebarFooter: { display: 'flex', alignItems: 'center', padding: '8px 10px', borderTop: '1px solid var(--c-border)' },
+  sidebarFooter: { display: 'flex', alignItems: 'center', padding: 8 },
 
   // --- user chip ---
-  userChip: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box',
-    padding: '12px 14px', background: 'none', border: 'none', borderTop: '1px solid var(--c-border)',
-    cursor: 'pointer', textAlign: 'left' },
-  chipAvatar: { width: 32, height: 32, borderRadius: '50%', background: '#f59e0b', color: '#fff', flexShrink: 0,
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 },
-  chipMeta: { display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 },
-  chipName: { fontSize: 14, fontWeight: 600, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  chipRole: { fontSize: 12, color: 'var(--c-faint)', whiteSpace: 'nowrap' },
+  userChip: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxSizing: 'border-box',
+    padding: '8px 10px', background: 'none', border: 'none', borderRadius: 10, outline: 'none',
+    cursor: 'pointer', textAlign: 'left', transition: 'background .12s' },
+  chipAvatar: { width: 34, height: 34, borderRadius: '50%', background: '#f59e0b', color: '#fff', flexShrink: 0,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 },
+  chipMeta: { display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, gap: 1 },
+  chipName: { fontSize: 13.5, fontWeight: 600, color: 'var(--c-text-strong)', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  chipRole: { fontSize: 11.5, color: 'var(--c-faint)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   avatarBtn: { width: 30, height: 30, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     border: '2px solid transparent', fontWeight: 700, fontSize: 12, cursor: 'pointer', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center' },
   avatarBtnOpen: { borderColor: 'var(--c-text-strong)' },
   menu: { position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 280, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 70, overflow: 'hidden' },
+  // Sidebar-footer variant: open UP and align to the LEFT edge of the chip.
+  menuUp: { top: 'auto', bottom: 'calc(100% + 8px)' },
+  menuChip: { left: 0, right: 'auto', width: 260 },
   menuHead: { display: 'flex', alignItems: 'center', gap: 12, padding: 16, background: 'var(--c-surface-2)',
     borderBottom: '1px solid var(--c-border-2)' },
   menuAvatar: { width: 44, height: 44, borderRadius: '50%', background: '#f59e0b', color: '#fff',

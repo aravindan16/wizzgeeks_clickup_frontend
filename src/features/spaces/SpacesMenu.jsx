@@ -46,9 +46,16 @@ export default function SpacesMenu({ collapsed }) {
   const toast = useToast();
   const { user, can } = useAuth();
   const me = user?._id || user?.id;
-  // Only the Space's creator (owner) sees the Delete option.
-  // TODO: Re-introduce an admin override (project.delete) when permissions return.
-  const canDeleteSpace = (sp) => !!sp.owner_id && sp.owner_id === me;
+  // Permission gates. Spaces have an OWNER fallback (the creator can edit/delete
+  // even without the role permission), matching the backend's project_service checks.
+  const isSpaceOwner = (sp) => !!sp?.owner_id && sp.owner_id === me;
+  const canDeleteSpace = (sp) => can('project.delete') || isSpaceOwner(sp);
+  const canUpdateSpace = (sp) => can('project.update') || isSpaceOwner(sp);
+  const canCreateSpace = can('project.create');
+  const canCreateList = can('list.create');
+  const canUpdateList = can('list.update');
+  const canDeleteList = can('list.delete');
+  const deny = () => toast.error(NO_DELETE_MSG);
   const [spaces, setSpaces] = useState([]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [listsBySpace, setListsBySpace] = useState({});
@@ -158,14 +165,17 @@ export default function SpacesMenu({ collapsed }) {
   // between the page and devtools/other tabs. Lists refresh on expand and after
   // create/rename/delete, which is enough.)
 
-  // Close any open popover on outside click / Escape.
+  // Close any open ⋯ popover on Escape, or on ANY click that isn't inside the open
+  // menu itself or on a ⋯ trigger. Testing only "outside the whole sidebar" wasn't
+  // enough — clicking another List/Space row (still inside the sidebar) left the
+  // menu open. Triggers are exempt so their own onClick can toggle/switch cleanly.
   useEffect(() => {
     const onClick = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setTopMenu(false);
-        setSpaceMenu(null);
-        setListMenu(null);
-      }
+      const t = e.target;
+      if (t.closest && (t.closest('[role="menu"]') || t.closest("[data-sb-menu-trigger]"))) return;
+      setTopMenu(false);
+      setSpaceMenu(null);
+      setListMenu(null);
     };
     const onEsc = (e) => {
       if (e.key === "Escape") {
@@ -197,6 +207,7 @@ export default function SpacesMenu({ collapsed }) {
   const openCreateList = (spaceId) => {
     setSpaceMenu(null);
     setTopMenu(false);
+    if (!canCreateList) return deny();
     setCreateListSpace(spaceId);
   };
   const openSpaceFields = (sp) => {
@@ -220,6 +231,7 @@ export default function SpacesMenu({ collapsed }) {
   };
   const openListStatuses = (sp, l) => {
     setListMenu(null);
+    if (!canUpdateList) return deny();
     setListStatus({
       list: l,
       spaceStatuses: sp.statuses || [],
@@ -241,6 +253,7 @@ export default function SpacesMenu({ collapsed }) {
   // --- space operation ---
   const deleteSpace = async (sp) => {
     setSpaceMenu(null);
+    if (!canDeleteSpace(sp)) return deny();
     const ok = await confirm({
       title: `Delete: ${sp.name}`,
       message:
@@ -259,7 +272,7 @@ export default function SpacesMenu({ collapsed }) {
 
   // --- per-list operations (instant UI update) ---
   // Inline rename (edit in place in the sidebar) — same UX as the saved-filter rename.
-  const startRenameList = (l) => { setListMenu(null); setListDraft(l.name || ''); setRenamingList(l._id); };
+  const startRenameList = (l) => { setListMenu(null); if (!canUpdateList) return deny(); setListDraft(l.name || ''); setRenamingList(l._id); };
   const commitRenameList = async (l) => {
     const v = (listDraft || '').trim();
     setRenamingList(null);
@@ -274,6 +287,7 @@ export default function SpacesMenu({ collapsed }) {
   };
   const deleteList = async (l) => {
     setListMenu(null);
+    if (!canDeleteList) return deny();
     const ok = await confirm({
       title: `Delete: ${l.name}`,
       message: (
@@ -379,6 +393,7 @@ export default function SpacesMenu({ collapsed }) {
       <>
         <button
           title="Spaces"
+          className={`nav-item${(pathname.startsWith("/projects") || pathname.startsWith("/lists")) ? " active" : ""}`}
           style={{ ...s.navItem, ...s.navItemCollapsed }}
           onClick={() => navigate("/projects")}
         >
@@ -425,6 +440,7 @@ export default function SpacesMenu({ collapsed }) {
             className="icon-btn"
             style={s.iconBtn}
             title="Space actions"
+            data-sb-menu-trigger
             onClick={() => {
               setSpaceMenu(null);
               setListMenu(null);
@@ -435,9 +451,9 @@ export default function SpacesMenu({ collapsed }) {
           </button>
           <button
             className="icon-btn"
-            style={s.iconBtn}
-            title="Create space"
-            onClick={() => setSpaceSetupOpen(true)}
+            title={canCreateSpace ? "Create space" : NO_DELETE_MSG}
+            style={{ ...s.iconBtn, ...(canCreateSpace ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+            onClick={() => (canCreateSpace ? setSpaceSetupOpen(true) : deny())}
           >
             <IconPlus size={16} />
           </button>
@@ -448,6 +464,7 @@ export default function SpacesMenu({ collapsed }) {
                 style={s.dropItem}
                 onClick={() => {
                   setTopMenu(false);
+                  if (!canCreateSpace) return deny();
                   setSpaceSetupOpen(true);
                 }}
               >
@@ -503,6 +520,7 @@ export default function SpacesMenu({ collapsed }) {
                       className="icon-btn"
                       style={s.iconBtn}
                       title="Space actions"
+                      data-sb-menu-trigger
                       onClick={() => {
                         setTopMenu(false);
                         setListMenu(null);
@@ -542,7 +560,7 @@ export default function SpacesMenu({ collapsed }) {
                       <button
                         className="wg-menu-item"
                         style={s.dropItem}
-                        onClick={() => { setSpaceMenu(null); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
+                        onClick={() => { setSpaceMenu(null); if (!canUpdateSpace(sp)) return deny(); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
                       >
                         <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
                       </button>
@@ -647,6 +665,7 @@ export default function SpacesMenu({ collapsed }) {
                             className="icon-btn"
                             style={s.iconBtn}
                             title="List actions"
+                            data-sb-menu-trigger
                             onClick={() => {
                               setTopMenu(false);
                               setSpaceMenu(null);
@@ -690,7 +709,7 @@ export default function SpacesMenu({ collapsed }) {
                             <button
                               className="wg-menu-item"
                               style={s.dropItem}
-                              onClick={() => { setListMenu(null); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
+                              onClick={() => { setListMenu(null); if (!canUpdateList) return deny(); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
                             >
                               <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
                             </button>
@@ -1017,7 +1036,6 @@ const s = {
     padding: "10px 12px",
     borderRadius: 8,
     color: "#475569",
-    background: "none",
     border: "none",
     fontSize: 14,
     cursor: "pointer",

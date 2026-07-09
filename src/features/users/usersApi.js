@@ -11,6 +11,8 @@ export const usersApi = {
   roles: () => apiClient.get('/roles').then((r) => r.data),
   myProfile: () => apiClient.get('/users/me/profile').then((r) => r.data),
   updateMyProfile: (payload) => apiClient.patch('/users/me/profile', payload).then((r) => r.data),
+  // Persist UI/theme prefs (theme, accent) — saved to the DB so they follow the user.
+  updatePreferences: (payload) => apiClient.patch('/users/me/preferences', payload).then((r) => r.data),
   uploadAvatar: (file) => {
     const fd = new FormData();
     fd.append('file', file);

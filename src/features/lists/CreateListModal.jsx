@@ -1,49 +1,41 @@
 import { useEffect, useState } from 'react';
 import { listsApi } from './listsApi';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/useAuth';
 import Select from '../../components/Select';
 
-// Suggest a task-ID prefix (e.g. "Frontend" → "FE", "Weekly Tasks" → "WT").
-function suggestKey(name) {
-  const words = (name || '').trim().split(/\s+/).filter(Boolean);
-  let key = words.length > 1 ? words.map((w) => w[0]).join('') : (words[0] || '');
-  key = key.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
-  return key.length >= 2 ? key : (key + 'LST').slice(0, 3);
-}
+const NO_PERM_MSG = 'You do not have permission to perform this action.';
 
 /**
- * "Create List" dialog: name + key + target Space (preselected). Calls onCreated(newList)
- * so the sidebar can insert it instantly.
+ * "Create List" dialog: name + target Space (preselected). Calls onCreated(newList)
+ * so the sidebar can insert it instantly. (Task IDs use the Space's key, so a List
+ * needs no key of its own.)
  */
 export default function CreateListModal({ open, onClose, onCreated, spaces = [], defaultSpaceId }) {
   const toast = useToast();
+  const { can } = useAuth();
+  const canCreate = can('list.create');
   const [name, setName] = useState('');
-  const [key, setKey] = useState('');
-  const [keyEdited, setKeyEdited] = useState(false);
   const [spaceId, setSpaceId] = useState(defaultSpaceId || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (open) {
-      setName(''); setKey(''); setKeyEdited(false); setError(null);
+      setName(''); setError(null);
       setSpaceId(defaultSpaceId || spaces[0]?._id || '');
     }
   }, [open, defaultSpaceId, spaces]);
-
-  // Auto-suggest the key from the name until the user edits it manually.
-  useEffect(() => {
-    if (!keyEdited) setKey(suggestKey(name));
-  }, [name, keyEdited]);
 
   if (!open) return null;
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !spaceId || key.trim().length < 2) return;
+    if (!canCreate) { setError(NO_PERM_MSG); return; }
+    if (!name.trim() || !spaceId) return;
     setSaving(true); setError(null);
     try {
-      const created = await listsApi.create({ space_id: spaceId, name: name.trim(), key: key.trim().toUpperCase() });
+      const created = await listsApi.create({ space_id: spaceId, name: name.trim() });
       toast.success('List created');
       onCreated?.(created);
       onClose?.();
@@ -69,23 +61,18 @@ export default function CreateListModal({ open, onClose, onCreated, spaces = [],
         </label>
 
         <label style={s.field}>
-          <span style={s.lbl}>Key <span style={{ color: '#9ca3af', fontWeight: 400 }}>· task IDs like {(key || 'FE')}-1</span></span>
-          <input style={s.input} value={key}
-            onChange={(e) => { setKeyEdited(true); setKey(e.target.value.toUpperCase()); }}
-            placeholder="FE" maxLength={10} required />
-        </label>
-
-        <label style={s.field}>
           <span style={s.lbl}>Space</span>
           <Select value={spaceId} onChange={setSpaceId} placeholder="Select a Space…"
             options={spaces.map((sp) => ({ value: sp._id, label: sp.name }))} />
         </label>
 
-        {error && <p style={{ color: '#b91c1c', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
+        {(error || !canCreate) && <p style={{ color: '#b91c1c', fontSize: 13, margin: '4px 0 0' }}>{error || NO_PERM_MSG}</p>}
 
         <div style={s.footer}>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving || !name.trim() || !spaceId || key.trim().length < 2}>
+          <button type="submit" className="btn btn-primary"
+            title={canCreate ? '' : NO_PERM_MSG}
+            disabled={!canCreate || saving || !name.trim() || !spaceId}>
             {saving ? 'Creating…' : 'Create List'}
           </button>
         </div>
