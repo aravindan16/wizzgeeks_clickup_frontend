@@ -26,8 +26,11 @@ const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
 
 // Lightweight fallback shown while a route chunk loads.
+// Fixed, viewport-centered so it sits exactly where the GlobalLoader spinner is —
+// if both the lazy-chunk fallback and an in-flight API request happen at login,
+// the two spinners overlap and read as ONE instead of two at different spots.
 const RouteFallback = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+  <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9998 }}>
     <span className="wg-spinner" />
   </div>
 );

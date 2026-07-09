@@ -17,12 +17,14 @@ export default function GlobalLoader() {
         // A request started — cancel any pending hide so a mutation followed by a
         // refetch keeps ONE continuous loader instead of close→reopen flicker.
         clearTimeout(hideTimer);
-        showTimer = setTimeout(() => setShow(true), 150);
+        showTimer = setTimeout(() => setShow(true), 120);
       } else {
-        // No requests in flight — wait briefly before hiding; if the next request
-        // (e.g. the post-update refetch) starts within this window, we keep showing.
+        // No requests in flight — wait before hiding. On a page load, requests arrive
+        // in WAVES (bootstrap → page data → sidebar prefetch) with short gaps while the
+        // route chunk mounts; a generous window bridges those gaps so the loader stays
+        // continuous and only closes once everything has truly settled.
         clearTimeout(showTimer);
-        hideTimer = setTimeout(() => setShow(false), 250);
+        hideTimer = setTimeout(() => setShow(false), 700);
       }
     });
     return () => { clearTimeout(showTimer); clearTimeout(hideTimer); unsub(); };

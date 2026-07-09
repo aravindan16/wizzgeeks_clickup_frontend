@@ -37,7 +37,7 @@ export default function ThemeCustomizer({ open, onClose }) {
             <h3 style={s.title}>Customize</h3>
             <p style={s.sub}>Personalize the look of your workspace</p>
           </div>
-          <button style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+          <button className="icon-btn wg-x-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
         </div>
 
         <div style={s.sectionLabel}>Appearance</div>

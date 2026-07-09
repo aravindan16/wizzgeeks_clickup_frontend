@@ -138,14 +138,20 @@ function UserMenu({ user, onProfile, onLogout, onCustomize }) {
 
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button style={s.avatarBtn}
-        title={user?.full_name} onClick={() => setOpen((o) => !o)}>
-        {initials(user?.full_name)}
+      <button style={{ ...s.avatarBtn, background: user?.avatar_color || s.avatarBtn.background, overflow: 'hidden' }}
+        aria-label={user?.full_name} onClick={() => setOpen((o) => !o)}>
+        {user?.avatar_url
+          ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : initials(user?.full_name)}
       </button>
       {open && (
         <div style={s.menu}>
           <div style={s.menuHead}>
-            <span style={s.menuAvatar}>{initials(user?.full_name)}</span>
+            <span style={{ ...s.menuAvatar, background: user?.avatar_color || s.menuAvatar.background, overflow: 'hidden' }}>
+              {user?.avatar_url
+                ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : initials(user?.full_name)}
+            </span>
             <div style={{ minWidth: 0 }}>
               <div style={s.menuName}>{user?.full_name || 'User'}</div>
               <div style={s.menuEmail}>{user?.email}</div>

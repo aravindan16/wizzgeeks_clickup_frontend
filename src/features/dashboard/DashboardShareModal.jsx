@@ -19,12 +19,15 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
     dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
   }, [open, dashboardId]);
 
-  // Server-side user search (accessible to any authenticated user), debounced.
+  // Server-side user search, debounced. Only search once the user actually types —
+  // opening the modal shouldn't fire an empty search (and it's silent, so no loader).
   useEffect(() => {
     if (!open) return undefined;
+    const q = query.trim();
+    if (!q) { setUsers([]); return undefined; }
     const h = setTimeout(() => {
-      dashboardsApi.searchUsers(query).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
-    }, 200);
+      dashboardsApi.searchUsers(q).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
+    }, 250);
     return () => clearTimeout(h);
   }, [open, query]);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -38,7 +38,10 @@ const FIELDS = [
 const MULTI_FIELDS = new Set(['list', 'type', 'status', 'assignee', 'reporter', 'label']);
 const emptyValue = (field) => (MULTI_FIELDS.has(field) ? [] : '');
 let _seq = 0;
-const nid = () => `n${_seq++}`;
+// Collision-proof node id: a session counter PLUS a random suffix, so freshly
+// added rules never share an id with the sequential ids (n0, n1…) baked into a
+// previously-saved filter — which was causing edits/deletes to hit two nodes.
+const nid = () => `n${_seq++}_${Math.random().toString(36).slice(2, 9)}`;
 const mkRule = (field = 'status') => ({ id: nid(), type: 'rule', field, op: 'is', value: emptyValue(field) });
 const mkGroup = (field) => ({ id: nid(), type: 'group', conj: 'AND', children: [mkRule(field)] });
 const newRule = () => mkRule('status');
@@ -68,6 +71,11 @@ const removeFromTree = (node, id) => {
 };
 const ruleActive = (r) => (Array.isArray(r.value) ? r.value.length > 0 : (r.value !== '' && r.value != null));
 const nodeActive = (n) => (n.type === 'group' ? n.children.some(nodeActive) : ruleActive(n));
+// Deep-clone a loaded tree with fresh unique ids — heals any duplicate ids saved
+// by the old (colliding) id generator so edits/deletes only ever hit one node.
+const reId = (node) => (node.type === 'group'
+  ? { ...node, id: nid(), children: (node.children || []).map(reId) }
+  : { ...node, id: nid() });
 
 // Result-table columns (defaults; widths/visibility persisted in localStorage).
 const COLS_LS = 'wg_filter_cols';
@@ -167,7 +175,7 @@ export default function FiltersPage() {
   useEffect(() => {
     if (routeId && routeId !== 'new') {
       savedFiltersApi.get(routeId).then((sf) => {
-        setCards(sf.cards?.length ? sf.cards : [newGroup()]);
+        setCards(sf.cards?.length ? sf.cards.map(reId) : [newGroup()]);
         setCardsConj(sf.conj || 'AND');
         setFilterName(sf.name || '');
         markActiveFilter(routeId);
@@ -232,17 +240,48 @@ export default function FiltersPage() {
     const listIds = new Set();
     const scan = (n) => { if (n.type === 'group') n.children.forEach(scan); else if (n.field === 'list' && Array.isArray(n.value)) n.value.forEach((id) => listIds.add(String(id))); };
     cards.forEach(scan);
-    const seen = {}; const out = [];
-    const add = (arr) => arr.forEach((st) => { if (!seen[st.key]) { seen[st.key] = 1; out.push({ value: st.key, label: st.name }); } });
-    if (listIds.size) { lists.filter((l) => listIds.has(String(l._id))).forEach((l) => add(listStatuses(l))); return out; }
-    if (contextSpaceId) { add(stsBySpace[contextSpaceId] || []); return out; }
-    Object.values(stsBySpace).forEach(add);
-    return out;
-  }, [cards, lists, contextSpaceId, stsBySpace]);
+    // Group the statuses BY LIST (each list can have its own custom workflow), so the
+    // dropdown shows e.g. "DEVELOPMENT → its statuses, EPIC → its statuses, …".
+    // Statuses are DEDUPED BY KEY across lists: a task's status is a single key, so
+    // the same key must appear only once (otherwise selecting it would tick every
+    // copy — e.g. DEVELOPMENT's "OPEN" and EPIC's "TO DO" are both key `todo`).
+    const grouped = (srcLists) => {
+      const seen = new Set(); const out = [];
+      srcLists.forEach((l) => listStatuses(l).forEach((st) => {
+        if (seen.has(st.key)) return;
+        seen.add(st.key);
+        out.push({ value: st.key, label: st.name, group: l.name });
+      }));
+      return out;
+    };
+    if (listIds.size) return grouped(lists.filter((l) => listIds.has(String(l._id))));
+    if (contextSpaceId) {
+      const spaceLists = lists.filter((l) => String(l.spaceId) === contextSpaceId);
+      if (spaceLists.length) return grouped(spaceLists);
+      return (stsBySpace[contextSpaceId] || []).map((st) => ({ value: st.key, label: st.name }));
+    }
+    // No space/list chosen → every space's statuses, grouped by SPACE. Each space
+    // shows the UNION of its lists' statuses (custom + inherited), deduped per space,
+    // so custom statuses like "Ready for deployment" show up too — not just the 3 defaults.
+    return projects.flatMap((p) => {
+      const spaceLists = lists.filter((l) => String(l.spaceId) === p._id);
+      const seen = {}; const out = [];
+      const add = (arr) => arr.forEach((st) => { if (!seen[st.key]) { seen[st.key] = 1; out.push({ value: st.key, label: st.name, group: p.name || p.key }); } });
+      if (spaceLists.length) spaceLists.forEach((l) => add(listStatuses(l)));
+      else add(stsBySpace[p._id] || []);
+      return out;
+    });
+  }, [cards, lists, contextSpaceId, stsBySpace, projects]);
 
   const listOptions = useMemo(() => {
-    const src = contextSpaceId ? lists.filter((l) => String(l.spaceId) === contextSpaceId) : lists;
-    return src.map((l) => ({ value: l._id, label: contextSpaceId ? l.name : `${l.spaceName} / ${l.name}` }));
+    // A Space is chosen → just its Lists (flat). Otherwise group the Lists BY SPACE
+    // (space name as the header) so the dropdown reads "Opbook360AI → its lists, …".
+    if (contextSpaceId) {
+      return lists.filter((l) => String(l.spaceId) === contextSpaceId).map((l) => ({ value: l._id, label: l.name }));
+    }
+    return [...lists]
+      .sort((a, b) => (a.spaceName || '').localeCompare(b.spaceName || '') || (a.name || '').localeCompare(b.name || ''))
+      .map((l) => ({ value: l._id, label: l.name, group: l.spaceName }));
   }, [contextSpaceId, lists]);
   const userName = (id) => users.find((u) => String(u.user_id) === String(id))?.full_name || users.find((u) => String(u.user_id) === String(id))?.email || '—';
   const spaceName = (id) => projects.find((p) => String(p._id) === String(id))?.name || projects.find((p) => String(p._id) === String(id))?.key || '—';
@@ -724,7 +763,7 @@ function ValueEditor({ rule, setVal, options }) {
     return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" />;
   }
   if (rule.field === 'space')
-    return <Select placeholder="Select option" highlight={active} value={rule.value} onChange={setVal}
+    return <Select placeholder="Select option" value={rule.value} onChange={setVal}
       options={options.projects.map((p) => ({ value: p._id, label: p.name || p.key }))} />;
   if (rule.field === 'type')
     return <MultiSelect active={active} value={arr} onChange={setVal} options={TASK_TYPES} placeholder="Select types" />;
@@ -740,10 +779,10 @@ function ValueEditor({ rule, setVal, options }) {
 }
 
 // Free-text value editor for a text custom field (matches "contains").
-function TextFilter({ value, onChange, active }) {
+function TextFilter({ value, onChange }) {
   return (
     <input value={value || ''} placeholder="Contains text…" onChange={(e) => onChange(e.target.value)}
-      style={{ ...g.trigger, ...(active ? g.triggerActive : {}), cursor: 'text' }} />
+      className="wg-select-trigger" style={{ ...g.trigger, cursor: 'text' }} />
   );
 }
 
@@ -762,19 +801,25 @@ function MultiSelect({ value, onChange, options, placeholder, active }) {
     ? (options.find((o) => o.value === value[0])?.label || '1 selected') : `${value.length} selected`;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(active ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
         <span style={{ color: value.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         <IconChevronDown size={14} />
       </button>
       {open && (
         <div style={g.pop}>
-          {options.length === 0 && <div style={g.popEmpty}>No lists</div>}
-          {options.map((o) => (
-            <button key={o.value} type="button" style={g.popItem} onClick={() => toggle(o.value)}>
-              <span style={{ ...g.checkbox, ...(value.includes(o.value) ? g.checkboxOn : {}) }}>{value.includes(o.value) ? '✓' : ''}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
-            </button>
-          ))}
+          {options.length === 0 && <div style={g.popEmpty}>No options</div>}
+          {(() => { let prev = null; return options.map((o, i) => {
+            const showHeader = o.group && o.group !== prev; prev = o.group;
+            return (
+              <Fragment key={`${o.group || ''}::${o.value}::${i}`}>
+                {showHeader && <div style={g.groupHeader}>{o.group}</div>}
+                <button type="button" style={g.popItem} onClick={() => toggle(o.value)}>
+                  <span style={{ ...g.checkbox, ...(value.includes(o.value) ? g.checkboxOn : {}) }}>{value.includes(o.value) ? '✓' : ''}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                </button>
+              </Fragment>
+            );
+          }); })()}
         </div>
       )}
     </div>
@@ -804,7 +849,7 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
   const Box = ({ on }) => <span style={{ ...g.checkbox, ...(on ? g.checkboxOn : {}) }}>{on ? '✓' : ''}</span>;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(active ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: sel.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <IconUser size={14} />{label}
         </span>
@@ -906,6 +951,7 @@ const g = {
   popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', background: 'none', border: 'none',
     padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   popEmpty: { padding: '10px 12px', fontSize: 13, color: 'var(--c-muted)' },
+  groupHeader: { padding: '8px 10px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-faint)' },
   popDivider: { height: 1, background: 'var(--c-border)', margin: '4px 0' },
   checkbox: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center',
     justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },

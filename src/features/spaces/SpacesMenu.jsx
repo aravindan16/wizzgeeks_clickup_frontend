@@ -58,6 +58,8 @@ export default function SpacesMenu({ collapsed }) {
   const [spaceSetupOpen, setSpaceSetupOpen] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(null); // spaceId with open ⋯ menu
   const [listMenu, setListMenu] = useState(null); // { id, spaceId } with open ⋯ menu
+  const [renamingList, setRenamingList] = useState(null); // list _id being renamed inline
+  const [listDraft, setListDraft] = useState('');
   const [createListSpace, setCreateListSpace] = useState(null); // spaceId for create-list modal
   const [cfManager, setCfManager] = useState(null); // { scope, spaceId, listId, spaceName, listName }
   const [iconFor, setIconFor] = useState(null); // { kind: 'space'|'list', id, icon } — icon picker target
@@ -256,12 +258,19 @@ export default function SpacesMenu({ collapsed }) {
   };
 
   // --- per-list operations (instant UI update) ---
-  const renameList = async (l) => {
-    setListMenu(null);
-    const name = await prompt({ title: "Rename list", defaultValue: l.name, placeholder: "List name", confirmLabel: "Rename" });
-    if (!name || name.trim() === l.name) return;
-    await listsApi.update(l._id, { name: name.trim() });
-    loadLists(l.space_id);
+  // Inline rename (edit in place in the sidebar) — same UX as the saved-filter rename.
+  const startRenameList = (l) => { setListMenu(null); setListDraft(l.name || ''); setRenamingList(l._id); };
+  const commitRenameList = async (l) => {
+    const v = (listDraft || '').trim();
+    setRenamingList(null);
+    if (!v || v === l.name) return;
+    setListsBySpace((m) => {
+      const n = { ...m };
+      for (const k of Object.keys(n)) n[k] = (n[k] || []).map((x) => (x._id === l._id ? { ...x, name: v } : x));
+      return n;
+    });
+    try { await listsApi.update(l._id, { name: v }); window.dispatchEvent(new CustomEvent("wg:list-updated", { detail: { listId: l._id } })); }
+    catch { toast.error("Could not rename list"); loadLists(l.space_id); }
   };
   const deleteList = async (l) => {
     setListMenu(null);
@@ -595,6 +604,25 @@ export default function SpacesMenu({ collapsed }) {
                         }}
                         className="wg-sb-row"
                       >
+                        {renamingList === l._id ? (
+                          <div style={s.listItem} onClick={(e) => e.stopPropagation()}>
+                            <span style={s.listIcon}>
+                              {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconList size={15} />}
+                            </span>
+                            <input
+                              autoFocus
+                              style={s.renameInput}
+                              value={listDraft}
+                              onChange={(e) => setListDraft(e.target.value)}
+                              onBlur={() => commitRenameList(l)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRenameList(l);
+                                if (e.key === "Escape") setRenamingList(null);
+                              }}
+                              onFocus={(e) => e.target.select()}
+                            />
+                          </div>
+                        ) : (
                         <NavLink
                           to={`/lists/${l._id}`}
                           title={l.name}
@@ -613,6 +641,7 @@ export default function SpacesMenu({ collapsed }) {
                             </span>
                           )}
                         </NavLink>
+                        )}
                         <span className="wg-sb-actions" style={s.rowActions}>
                           <button
                             className="icon-btn"
@@ -651,7 +680,7 @@ export default function SpacesMenu({ collapsed }) {
                             <button
                               className="wg-menu-item"
                               style={s.dropItem}
-                              onClick={() => renameList(l)}
+                              onClick={() => startRenameList(l)}
                             >
                               <span style={s.dropIcon}>
                                 <IconEdit size={16} />
@@ -921,6 +950,19 @@ const s = {
     letterSpacing: "-0.01em",
     flex: 1,
     minWidth: 0,
+  },
+  renameInput: {
+    flex: 1,
+    minWidth: 0,
+    font: "inherit",
+    fontSize: 13.5,
+    fontWeight: 500,
+    padding: "3px 6px",
+    border: "1px solid var(--c-primary)",
+    borderRadius: 6,
+    background: "var(--c-surface)",
+    color: "var(--c-text-strong)",
+    outline: "none",
   },
   listIcon: {
     display: "inline-flex",

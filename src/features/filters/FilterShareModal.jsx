@@ -21,9 +21,11 @@ export default function FilterShareModal({ open, filterId, onClose, onChanged })
 
   useEffect(() => {
     if (!open) return undefined;
+    const q = query.trim();
+    if (!q) { setUsers([]); return undefined; }
     const h = setTimeout(() => {
-      savedFiltersApi.searchUsers(query).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
-    }, 200);
+      savedFiltersApi.searchUsers(q).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
+    }, 250);
     return () => clearTimeout(h);
   }, [open, query]);
 
