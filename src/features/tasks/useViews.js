@@ -24,7 +24,13 @@ export function useViews(scopeId) {
   }, [scopeId]);
 
   const save = (next) => { setViews(next); saveViews(scopeId, next); };
-  const updateView = (vid, patch) => save(views.map((v) => (v.id === vid ? { ...v, ...patch } : v)));
+  // Functional update so several updateView() calls in the same tick compose
+  // (e.g. Clear all patches both fcards and fconj) instead of clobbering each other.
+  const updateView = (vid, patch) => setViews((prev) => {
+    const next = prev.map((v) => (v.id === vid ? { ...v, ...patch } : v));
+    saveViews(scopeId, next);
+    return next;
+  });
   const addView = (type) => { const v = newView(type); save([...views, v]); setActiveId(v.id); };
   const removeView = (vid) => {
     if (isBuiltinView(views.find((v) => v.id === vid))) return;

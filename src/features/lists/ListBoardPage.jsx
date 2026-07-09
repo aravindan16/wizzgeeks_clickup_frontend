@@ -17,11 +17,13 @@ import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import { useAuth } from '../auth/useAuth';
 import { useToast } from '../../components/Toast';
-import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconSearch, IconEdit } from '../../components/icons';
+import FilterBuilder, { newGroup, activeRuleCount } from '../filters/FilterBuilder';
+import { filterTasks } from '../filters/filterEval';
+import { labelsApi } from '../labels/labelsApi';
+import { IconSearch, IconEdit, IconFilter, IconChevronDown } from '../../components/icons';
 import { SkeletonBoard } from '../../components/Skeleton';
 
-const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
+const DEFAULT_CARDS = [newGroup()]; // stable default builder tree (one empty rule)
 
 /**
  * A List inside a Space: shows only this List's tasks. Reuses the Board / List
@@ -32,8 +34,11 @@ export default function ListBoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const slotEl = useHeaderSlot();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const myId = user?._id || user?.id;
   const toast = useToast();
+  const [labels, setLabels] = useState([]);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -52,7 +57,14 @@ export default function ListBoardPage() {
   // Views (List/Board/Table) — persisted per List in localStorage; filters per view.
   const vs = useViews(id);
   const { activeId, updateView, activeView } = vs;
-  const activeFilters = activeView?.filters || EMPTY_FILTERS;
+
+  // Filter builder (same as the Filters tab), persisted per view under fcards/fconj.
+  const fcards = activeView?.fcards?.length ? activeView.fcards : DEFAULT_CARDS;
+  const fconj = activeView?.fconj || 'AND';
+  const setFcards = (updater) => updateView(activeId, { fcards: typeof updater === 'function' ? updater(fcards) : updater });
+  const setFconj = (v) => updateView(activeId, { fconj: v });
+
+  useEffect(() => { labelsApi.list().then(setLabels).catch(() => setLabels([])); }, []);
 
   // Inline rename of the List from the header breadcrumb (like the dashboard header).
   const startRename = () => { setNameDraft(list?.name || ''); setEditingName(true); };
@@ -122,16 +134,18 @@ export default function ListBoardPage() {
   const tq = taskQuery.trim().toLowerCase();
   const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
     nameOf(t.assignee_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
-  const matchesFilters = (t) => {
-    if (activeFilters.assignee.length && !activeFilters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-    if (activeFilters.status.length && !activeFilters.status.includes(t.status)) return false;
-    if (activeFilters.type.length && !activeFilters.type.includes(t.type)) return false;
-    if ((activeFilters.priority || []).length && !activeFilters.priority.includes(t.priority)) return false;
-    if ((activeFilters.label || []).length && !(t.labels || []).some((l) => activeFilters.label.includes(l))) return false;
-    return true;
+  // Filter the board with the shared filter-builder engine, then the search box.
+  const filterOptions = {
+    projects: space ? [space] : [],
+    lists: list ? [{ value: list._id, label: list.name }] : [],
+    statuses: statuses.map((st) => ({ value: st.key, label: st.name })),
+    users: members.map((m) => ({ user_id: m.user_id, full_name: m.full_name, email: m.email })),
+    labels: labels.map((l) => ({ value: l.name, label: l.name })),
+    customFields: cardCustomFields.map((c) => ({ key: `cf:${c._id}`, label: c.name, type: c.type, config: c.config })),
+    tasks, myId,
   };
-  const visibleTasks = tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
-  const activeFilterCount = countFilters(activeFilters);
+  const visibleTasks = filterTasks(tasks, fcards, fconj, { myId }).filter(matchesSearch);
+  const activeFilterCount = activeRuleCount(fcards);
 
   return (
     <div style={s.page}>
@@ -167,14 +181,21 @@ export default function ListBoardPage() {
             <input style={s.searchInput} placeholder={`Search ${activeView?.name?.toLowerCase() || 'tasks'}`} value={taskQuery}
               onChange={(e) => setTaskQuery(e.target.value)} />
           </div>
-          <BoardFilter members={members} tasks={tasks} statuses={statuses} value={activeFilters}
-            onChange={(f) => updateView(activeId, { filters: f })} />
-          {activeFilterCount > 0 && (
-            <button style={s.clearFilters} onClick={() => updateView(activeId, { filters: emptyFilters() })}>Clear filters</button>
-          )}
+          <button type="button" className="btn" style={{ ...s.filterToggle, ...(filterOpen ? s.filterToggleActive : {}) }}
+            onClick={() => setFilterOpen((o) => !o)}>
+            <IconFilter size={15} /> Filter
+            {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+            <span style={{ display: 'inline-flex', transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><IconChevronDown size={13} /></span>
+          </button>
         </div>
         <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
       </div>
+
+      {filterOpen && (
+        <div style={{ marginBottom: 14 }}>
+          <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
+        </div>
+      )}
 
       <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
         {activeView?.type === 'board' && (
@@ -219,5 +240,9 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
   clearFilters: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' },
+  filterToggle: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, whiteSpace: 'nowrap' },
+  filterToggleActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)' },
+  filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
+    borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
 };

@@ -420,8 +420,16 @@ export default function FiltersPage() {
             onOpenTask={(id) => navigate(`/tasks/${id}`)} />
         </>
       ) : (
-        // Brand-new (unsaved) filter: just the builder so you can create + save it.
-        builderCard
+        // Brand-new (unsaved) filter: builder + a live results preview once a
+        // filter rule is set (so you can see matches before saving).
+        <>
+          {builderCard}
+          {activeCount > 0 && (
+            <ResultsTable columns={columns} rows={filtered} loading={loading}
+              colState={colState} onResizeStart={startColResize}
+              onOpenTask={(id) => navigate(`/tasks/${id}`)} />
+          )}
+        </>
       )}
 
       <FilterShareModal open={mShare} filterId={routeId}
@@ -834,7 +842,10 @@ function SaveFilterButton({ cards, conj, routeId }) {
   const toast = useToast();
   const navigate = useNavigate();
   const isExisting = routeId && routeId !== 'new';
+  // Nothing to save until at least one filter rule has a value.
+  const hasFilters = (cards || []).some(nodeActive);
   const save = async () => {
+    if (!hasFilters) return;
     if (isExisting) {
       try {
         await savedFiltersApi.update(routeId, { cards, conj });
@@ -853,7 +864,8 @@ function SaveFilterButton({ cards, conj, routeId }) {
     } catch { toast.error('Could not create filter'); }
   };
   return (
-    <button type="button" className="btn btn-primary" style={g.saveBtn} onClick={save}>Save filter</button>
+    <button type="button" className="btn btn-primary" style={{ ...g.saveBtn, ...(!hasFilters ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+      onClick={save} disabled={!hasFilters} title={hasFilters ? 'Save filter' : 'Add a filter first'}>Save filter</button>
   );
 }
 
