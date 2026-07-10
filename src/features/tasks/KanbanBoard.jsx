@@ -1,6 +1,22 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR, isDoneStatus } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
+
+// Title clamped to 2 lines — only expose a hover tooltip when it actually overflows.
+function CardTitle({ text, style }) {
+  const ref = useRef(null);
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [text]);
+  return <span ref={ref} style={style} title={clamped ? text : undefined}>{text}</span>;
+}
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash,
@@ -271,7 +287,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   style={dragId === t._id ? s.cardDragging : undefined}
                   onClick={() => open(t._id)}>
                   <div style={s.cardTop}>
-                    <span style={s.cardTitle}>{t.title}</span>
+                    <CardTitle style={s.cardTitle} text={t.title} />
                     <button className="icon-btn wg-quick" title="Actions" onClick={(e) => openCardMenu(t, e)}>⋯</button>
                   </div>
 

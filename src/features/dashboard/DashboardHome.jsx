@@ -174,7 +174,7 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => { if (e.key === 'Enter') commitRename(d); if (e.key === 'Escape') setRenaming(null); }} />
               ) : (
-                <button style={s.nameBtn} onClick={() => onOpen(d.id)} title="Open dashboard">
+                <button style={s.nameBtn} onClick={() => onOpen(d.id)}>
                   <span style={s.dashIcon}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
                   <span style={s.dashName}>{d.name}</span>
                 </button>
@@ -276,7 +276,17 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   };
 
   const saveCard = (card) => {
-    setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
+    if (cards.some((c) => c.id === card.id)) {
+      setCards(cards.map((c) => (c.id === card.id ? card : c)));
+    } else {
+      // Place a brand-new card just below the LOWEST existing card (its real y+h),
+      // so it never lands in a fixed index-based slot far below the resized layout.
+      const bottom = cards.reduce((m, c, i) => {
+        const d = defaultLayout(c, i);
+        return Math.max(m, (c.y ?? d.y) + (c.h ?? d.h));
+      }, 0);
+      setCards([...cards, { ...card, x: 0, y: bottom, w: card.w ?? 6, h: card.h ?? 9 }]);
+    }
     setAdding(false); setEditing(null);
   };
   const removeCard = async (id) => {
@@ -336,13 +346,7 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
       {tab === 'members' ? (
         <DashboardMembers dashboardId={dashboard.id} reloadKey={mReload} />
       ) : cards.length === 0 ? (
-        <div style={s.emptyGrid}>
-          <button style={s.scratch} onClick={() => setAdding(true)}>
-            <span style={s.scratchIcon}><IconPlus size={26} /></span>
-            <span style={s.scratchTitle}>Add a card</span>
-            <span style={s.scratchDesc}>Portfolio — more card types coming soon.</span>
-          </button>
-        </div>
+        <div style={s.emptyState}>No cards yet — use “+ Add card” to create one.</div>
       ) : (
         <Grid
           className="wg-dash-grid"
@@ -473,6 +477,7 @@ const s = {
 
   // shared empty state
   emptyGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 320px))', gap: 16 },
+  emptyState: { padding: '40px 4px', color: 'var(--c-muted)', fontSize: 14 },
   scratch: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14, minHeight: 200,
     background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 14, padding: 24, cursor: 'pointer', boxShadow: 'var(--sh-xs)' },
   scratchIcon: { width: 48, height: 48, borderRadius: '50%', background: 'var(--c-surface-3)', color: 'var(--c-muted)',

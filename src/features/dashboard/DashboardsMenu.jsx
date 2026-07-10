@@ -68,6 +68,7 @@ export default function DashboardsMenu({ collapsed }) {
   };
 
   const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
+  const addCardTo = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
 
   const startRename = (d) => { setRowMenu(null); setDraft(d.name || ''); setRenaming(d.id); };
   const commitRename = async (d) => {
@@ -155,6 +156,9 @@ export default function DashboardsMenu({ collapsed }) {
                     onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === d.id ? null : d.id); }}><IconDots size={16} /></button>
                   {rowMenu === d.id && (
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
+                      <button className="wg-menu-item" style={s.dropItem} onClick={() => addCardTo(d)}>
+                        <span style={s.dropIcon}><IconPlus size={15} /></span> Add card
+                      </button>
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => startRename(d)}>
                         <span style={s.dropIcon}><IconEdit size={15} /></span> Rename
                       </button>

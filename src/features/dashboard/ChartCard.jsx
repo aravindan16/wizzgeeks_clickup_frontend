@@ -182,7 +182,7 @@ const s = {
 
   calcWrap: { padding: '32px 16px', minHeight: 140, display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center', gap: 4 },
-  calcNum: { fontSize: 56, fontWeight: 800, color: 'var(--c-text-strong)', lineHeight: 1 },
+  calcNum: { fontSize: 56, fontWeight: 800, color: 'var(--c-primary)', lineHeight: 1 },
   calcLabel: { fontSize: 13, color: 'var(--c-muted)', marginTop: 8 },
   calcRow: { display: 'flex', gap: 28 },
   stat: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 },
