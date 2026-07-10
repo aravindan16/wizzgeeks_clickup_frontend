@@ -141,7 +141,7 @@ export default function SpaceSettingsPage() {
               </div>
               <button style={{ ...s.ghost, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
                 title={canManage ? '' : NO_PERM_MSG}
-                onClick={() => (canManage ? setIconOpen(true) : toast.error(NO_PERM_MSG))}>Change icon</button>
+                onClick={() => (canManage ? setIconOpen(true) : toast.error(NO_PERM_MSG))}>Color &amp; Icon</button>
             </div>
 
             <form onSubmit={saveDetails} style={{ maxWidth: 520 }}>

@@ -8,6 +8,7 @@ import ListStatusModal from "../lists/ListStatusModal";
 import CustomFieldManager from "../customfields/CustomFieldManager";
 import IconPicker from "../../components/IconPicker";
 import AppIcon, { hasIcon } from "../../components/AppIcon";
+import { Droplet } from "lucide-react";
 import { useConfirm, usePrompt } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { useAuth } from "../auth/useAuth";
@@ -562,7 +563,7 @@ export default function SpacesMenu({ collapsed }) {
                         style={s.dropItem}
                         onClick={() => { setSpaceMenu(null); if (!canUpdateSpace(sp)) return deny(); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
                       >
-                        <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
+                        <span style={s.dropIcon}><Droplet size={15} strokeWidth={1.9} /></span> Color &amp; Icon
                       </button>
                       <button
                         className="wg-menu-item"
@@ -711,7 +712,7 @@ export default function SpacesMenu({ collapsed }) {
                               style={s.dropItem}
                               onClick={() => { setListMenu(null); if (!canUpdateList) return deny(); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
                             >
-                              <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
+                              <span style={s.dropIcon}><Droplet size={15} strokeWidth={1.9} /></span> Color &amp; Icon
                             </button>
                             <button
                               className="wg-menu-item"
