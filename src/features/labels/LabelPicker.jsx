@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { labelsApi } from './labelsApi';
-import { IconPlus, IconClose, IconSearch } from '../../components/icons';
+import { IconPlus, IconClose, IconSearch, Chevron } from '../../components/icons';
 
 /**
  * Label editor for a task: shows the task's labels as colored chips (each with a
@@ -11,8 +11,9 @@ import { IconPlus, IconClose, IconSearch } from '../../components/icons';
  *   value:    string[]  — the task's current label names
  *   onChange: (names)   — called with the new array
  */
-export default function LabelPicker({ value = [], onChange }) {
+export default function LabelPicker({ value = [], onChange, variant = 'chips' }) {
   const names = Array.isArray(value) ? value : [];
+  const field = variant === 'field'; // render a Select-style trigger box
   const [catalog, setCatalog] = useState([]); // [{id,name,color}]
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -61,16 +62,20 @@ export default function LabelPicker({ value = [], onChange }) {
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      <div style={s.row}>
+      <div style={field ? s.fieldTrigger : s.row}
+        onClick={field ? () => setOpen((o) => !o) : undefined}>
         <div style={s.chips}>
+          {field && names.length === 0 && <span style={s.placeholder}>Select labels…</span>}
           {names.map((n) => (
             <span key={n} style={s.chip}>
               <span style={s.chipText}>{n}</span>
-              <button style={s.chipX} title="Remove" onClick={() => remove(n)}><IconClose size={11} /></button>
+              <button style={s.chipX} title="Remove" onClick={(e) => { e.stopPropagation(); remove(n); }}><IconClose size={11} /></button>
             </span>
           ))}
         </div>
-        <button type="button" style={s.addBtn} title="Add label" onClick={() => setOpen((o) => !o)}><IconPlus size={15} /></button>
+        {field
+          ? <span style={s.caret}><Chevron open={open} size={13} /></span>
+          : <button type="button" style={s.addBtn} title="Add label" onClick={() => setOpen((o) => !o)}><IconPlus size={15} /></button>}
       </div>
 
       {open && (
@@ -104,6 +109,12 @@ const s = {
   // Single row: chips clip to one line (fade on the right when they overflow);
   // the "+ Label" button sits outside the clipped area so it's always visible.
   row: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  // Select-style trigger box (variant="field") — matches the app's dropdowns.
+  fieldTrigger: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box',
+    padding: '9px 12px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10,
+    boxShadow: '0 1px 2px rgba(16,24,40,.06)', cursor: 'pointer', minHeight: 40 },
+  placeholder: { color: 'var(--c-faint)', fontSize: 13.5 },
+  caret: { color: 'var(--c-muted)', display: 'inline-flex', flexShrink: 0 },
   chips: { display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1, minWidth: 0,
     WebkitMaskImage: 'linear-gradient(to right, #000 calc(100% - 14px), transparent)',
     maskImage: 'linear-gradient(to right, #000 calc(100% - 14px), transparent)' },

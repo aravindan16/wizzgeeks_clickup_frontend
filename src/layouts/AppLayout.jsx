@@ -96,7 +96,9 @@ export default function AppLayout() {
 
       {/* ===== BODY: sidebar + main ===== */}
       <div style={s.body}>
-        <aside style={{ ...s.sidebar, width }} data-no-tip>
+        {/* Collapsed: allow hover tooltips (icons only, so labels aren't visible).
+            Expanded: suppress them — the text labels are already shown. */}
+        <aside style={{ ...s.sidebar, width }} {...(collapsed ? {} : { 'data-no-tip': true })}>
           <div style={s.navScroll}>
             <nav style={s.nav}>
               <DashboardsMenu collapsed={collapsed} />
@@ -248,7 +250,8 @@ const s = {
   topbar: { display: 'flex', alignItems: 'center', height: 56, flexShrink: 0,
     borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface)', zIndex: 50 },
   brand: { display: 'flex', alignItems: 'center', gap: 8, height: '100%', padding: '0 14px',
-    borderRight: '1px solid var(--c-border)', boxSizing: 'border-box', flexShrink: 0, overflow: 'hidden' },
+    borderRight: '1px solid var(--c-border)', boxSizing: 'border-box', flexShrink: 0, overflow: 'hidden',
+    transition: 'width .32s cubic-bezier(.4,0,.2,1)' },
   brandLeft: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
   brandText: { fontWeight: 700, fontSize: 17, color: 'var(--c-text-strong)', whiteSpace: 'nowrap' },
   brandChevron: { color: 'var(--c-faint)', display: 'inline-flex', marginLeft: 2 },
@@ -267,7 +270,7 @@ const s = {
 
   // --- body / sidebar ---
   body: { flex: 1, minHeight: 0, display: 'flex' },
-  sidebar: { background: 'var(--c-surface)', color: 'var(--c-text)', transition: 'width .2s cubic-bezier(.4,0,.2,1)',
+  sidebar: { background: 'var(--c-surface)', color: 'var(--c-text)', transition: 'width .32s cubic-bezier(.4,0,.2,1)',
     flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)', overflow: 'hidden' },
   navScroll: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' },
   nav: { display: 'flex', flexDirection: 'column', gap: 2 },

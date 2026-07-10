@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
 import { tasksApi, resolveStatuses } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import CustomFieldValue from '../customfields/CustomFieldValue';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
 import { useToast } from '../../components/Toast';
 import Select from '../../components/Select';
@@ -35,8 +37,35 @@ export default function FilterBulkPage() {
     reporterOn: false, reporter: '', dueOn: false, due: '', labelsOn: false, labels: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Custom fields (dropdown/text) available across the selected tasks' Spaces, plus
+  // the per-field bulk change: { [fieldId]: { on, value } }.
+  const [customFields, setCustomFields] = useState([]);
+  const [cf, setCf] = useState({});
 
   useEffect(() => { dashboardsApi.searchUsers('').then((u) => setUsers(Array.isArray(u) ? u : (u?.items || []))).catch(() => setUsers([])); }, []);
+
+  // Gather the union of custom fields (text / dropdown / relationship) across every
+  // (Space, List) the selected tasks belong to — list-scoped fields need the list_id.
+  useEffect(() => {
+    const combos = {};
+    initial.forEach((t) => {
+      const pid = String(t.project_id); const lid = t.list_id ? String(t.list_id) : '';
+      combos[`${pid}|${lid}`] = { pid, lid };
+    });
+    const reqs = Object.values(combos);
+    if (!reqs.length) return;
+    Promise.all(reqs.map(({ pid, lid }) => customFieldsApi.list(pid, lid || undefined, undefined, { _silent: true }).catch(() => [])))
+      .then((lists) => {
+        const seen = new Set(); const out = [];
+        lists.flat().forEach((f) => { if (seen.has(f._id)) return; seen.add(f._id); out.push(f); });
+        setCustomFields(out);
+      });
+  }, []); // eslint-disable-line
+
+  // Does a custom field apply to a given task? (list-scoped → same list; space-scoped → same space.)
+  const cfAppliesTo = (f, t) => (f.scope === 'list'
+    ? String(f.list_id) === String(t.list_id)
+    : String(f.space_id) === String(t.project_id));
 
   // Load each selected task's Space statuses → union of options (a status is only
   // applied to tasks whose Space actually has it).
@@ -76,8 +105,14 @@ export default function FilterBulkPage() {
     if (edit.reporterOn) out.push({ name: 'Reporter', action: 'Change to', value: edit.reporter ? userName(edit.reporter) : 'None' });
     if (edit.dueOn) out.push({ name: 'Due date', action: 'Change to', value: edit.due || 'None' });
     if (edit.labelsOn) out.push({ name: 'Labels', action: 'Add to existing', value: edit.labels.length ? edit.labels.join(', ') : 'None' });
+    customFields.forEach((f) => {
+      const e = cf[f._id];
+      if (!e?.on) return;
+      const v = Array.isArray(e.value) ? (e.value.length ? `${e.value.length} selected` : 'None') : (e.value || 'None');
+      out.push({ name: f.name, action: 'Change to', value: v });
+    });
     return out;
-  }, [operation, edit, chosen.length, users]);
+  }, [operation, edit, cf, customFields, chosen.length, users]);
 
   const confirm = async () => {
     if (busy) return;
@@ -95,6 +130,14 @@ export default function FilterBulkPage() {
           if (edit.reporterOn) patch.reporter_id = edit.reporter || null;
           // Labels: add the chosen labels to each task's existing labels (dedup).
           if (edit.labelsOn) patch.labels = Array.from(new Set([...(t.labels || []), ...edit.labels]));
+          // Custom fields: merge the chosen values into the task's existing custom_fields
+          // (update REPLACES the whole map), only for fields that apply to this task.
+          const cfApplicable = customFields.filter((f) => cf[f._id]?.on && cfAppliesTo(f, t));
+          if (cfApplicable.length) {
+            const merged = { ...(t.custom_fields || {}) };
+            cfApplicable.forEach((f) => { merged[f._id] = cf[f._id].value; });
+            patch.custom_fields = merged;
+          }
           if (Object.keys(patch).length) await tasksApi.update(t._id, patch);
           if (edit.assigneeOn) await tasksApi.assign(t._id, edit.assignee || null);
           // Status: only change it on tasks whose Space actually has that status.
@@ -146,21 +189,25 @@ export default function FilterBulkPage() {
 
           {step === 0 && (
             <>
-              <table style={s.table}>
-                <thead><tr><Th w={36} /><Th>Key</Th><Th>Summary</Th><Th>Status</Th><Th>Assignee</Th><Th>Priority</Th></tr></thead>
-                <tbody>
-                  {items.map((t) => (
-                    <tr key={t._id} style={s.row}>
-                      <Td><input type="checkbox" checked={t._sel} onChange={() => toggle(t._id)} /></Td>
-                      <Td><span style={s.key}>{t.key}</span></Td>
-                      <Td>{t.title}</Td>
-                      <Td><span style={s.muted}>{t.status}</span></Td>
-                      <Td><span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span></Td>
-                      <Td><span style={s.muted}>{cap(t.priority) || '—'}</span></Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* The list scrolls INSIDE this bounded box (sticky header) so the page
+                  itself doesn't grow with 100s of rows — the Next button stays in view. */}
+              <div style={s.tableScroll}>
+                <table style={s.table}>
+                  <thead><tr><Th w={36} /><Th>Key</Th><Th>Summary</Th><Th>Status</Th><Th>Assignee</Th><Th>Priority</Th></tr></thead>
+                  <tbody>
+                    {items.map((t) => (
+                      <tr key={t._id} style={s.row}>
+                        <Td><input type="checkbox" checked={t._sel} onChange={() => toggle(t._id)} /></Td>
+                        <Td><span style={s.key}>{t.key}</span></Td>
+                        <Td>{t.title}</Td>
+                        <Td><span style={s.muted}>{t.status}</span></Td>
+                        <Td><span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span></Td>
+                        <Td><span style={s.muted}>{cap(t.priority) || '—'}</span></Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <Footer onNext={next} nextLabel="Next" />
             </>
           )}
@@ -190,25 +237,25 @@ export default function FilterBulkPage() {
                   <div style={s.fieldRow}>
                     <input type="checkbox" checked={edit.statusOn} onChange={(e) => setEdit((v) => ({ ...v, statusOn: e.target.checked }))} />
                     <span style={s.fieldLbl}>Change Status</span>
-                    <span style={{ width: 220 }}><Select value={edit.status} placeholder="Select status" onChange={(v) => setEdit((x) => ({ ...x, statusOn: true, status: v }))}
+                    <span style={s.valCol}><Select value={edit.status} placeholder="Select status" onChange={(v) => setEdit((x) => ({ ...x, statusOn: true, status: v }))}
                       options={statusOpts} /></span>
                   </div>
                   <div style={s.fieldRow}>
                     <input type="checkbox" checked={edit.priorityOn} onChange={(e) => setEdit((v) => ({ ...v, priorityOn: e.target.checked }))} />
                     <span style={s.fieldLbl}>Change Priority</span>
-                    <span style={{ width: 220 }}><Select value={edit.priority} onChange={(v) => setEdit((x) => ({ ...x, priorityOn: true, priority: v }))}
+                    <span style={s.valCol}><Select value={edit.priority} onChange={(v) => setEdit((x) => ({ ...x, priorityOn: true, priority: v }))}
                       options={PRIORITIES.map((p) => ({ value: p, label: cap(p) }))} /></span>
                   </div>
                   <div style={s.fieldRow}>
                     <input type="checkbox" checked={edit.assigneeOn} onChange={(e) => setEdit((v) => ({ ...v, assigneeOn: e.target.checked }))} />
                     <span style={s.fieldLbl}>Change Assignee</span>
-                    <span style={{ width: 220 }}><Select value={edit.assignee} onChange={(v) => setEdit((x) => ({ ...x, assigneeOn: true, assignee: v }))}
+                    <span style={s.valCol}><Select value={edit.assignee} onChange={(v) => setEdit((x) => ({ ...x, assigneeOn: true, assignee: v }))}
                       options={[{ value: '', label: 'Unassigned' }, ...users.map((u) => ({ value: u.user_id, label: u.full_name || u.email }))]} /></span>
                   </div>
                   <div style={s.fieldRow}>
                     <input type="checkbox" checked={edit.reporterOn} onChange={(e) => setEdit((v) => ({ ...v, reporterOn: e.target.checked }))} />
                     <span style={s.fieldLbl}>Change Reporter</span>
-                    <span style={{ width: 220 }}><Select value={edit.reporter} onChange={(v) => setEdit((x) => ({ ...x, reporterOn: true, reporter: v }))}
+                    <span style={s.valCol}><Select value={edit.reporter} onChange={(v) => setEdit((x) => ({ ...x, reporterOn: true, reporter: v }))}
                       options={[{ value: '', label: 'None' }, ...users.map((u) => ({ value: u.user_id, label: u.full_name || u.email }))]} /></span>
                   </div>
                   <div style={s.fieldRow}>
@@ -217,13 +264,35 @@ export default function FilterBulkPage() {
                     <input type="date" style={s.date} value={edit.due} onChange={(e) => setEdit((x) => ({ ...x, dueOn: true, due: e.target.value }))} />
                   </div>
                   <div style={{ ...s.fieldRow, alignItems: 'flex-start' }}>
-                    <input type="checkbox" style={{ marginTop: 8 }} checked={edit.labelsOn} onChange={(e) => setEdit((v) => ({ ...v, labelsOn: e.target.checked }))} />
-                    <span style={{ ...s.fieldLbl, marginTop: 6 }}>Change Labels</span>
-                    <span style={{ flex: 1, maxWidth: 320 }}>
-                      <LabelPicker value={edit.labels} onChange={(labels) => setEdit((x) => ({ ...x, labelsOn: true, labels }))} />
+                    <input type="checkbox" style={{ marginTop: 12 }} checked={edit.labelsOn} onChange={(e) => setEdit((v) => ({ ...v, labelsOn: e.target.checked }))} />
+                    <span style={{ ...s.fieldLbl, marginTop: 10 }}>Change Labels</span>
+                    <span style={{ width: 260 }}>
+                      <LabelPicker variant="field" value={edit.labels} onChange={(labels) => setEdit((x) => ({ ...x, labelsOn: true, labels }))} />
                       <div style={s.hint}>Added to each task's existing labels.</div>
                     </span>
                   </div>
+
+                  {/* Custom fields (text / dropdown / relationship) — set a value across the selected tasks. */}
+                  {customFields.map((f) => {
+                    const on = !!cf[f._id]?.on;
+                    const val = cf[f._id]?.value;
+                    const setVal = (value) => setCf((c) => ({ ...c, [f._id]: { on: true, value } }));
+                    return (
+                      <div key={f._id} style={{ ...s.fieldRow, alignItems: 'flex-start' }}>
+                        <input type="checkbox" style={{ marginTop: 12 }} checked={on}
+                          onChange={(e) => setCf((c) => ({ ...c, [f._id]: { on: e.target.checked, value: c[f._id]?.value } }))} />
+                        <span style={{ ...s.fieldLbl, marginTop: 10 }}>Change {f.name}</span>
+                        <span style={s.valCell}>
+                          {/* Relationship shows a "+ Add" chip — frame it so it matches the
+                              other fields' box; dropdown/text bring their own controls. */}
+                          <span style={f.type === 'relationship' ? s.valBox : s.valCol}>
+                            <CustomFieldValue field={f} value={val} onChange={setVal} spaceId={f.space_id} />
+                          </span>
+                          {f.type === 'relationship' && <div style={s.hint}>Links each selected task to the chosen item.</div>}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </>
               )}
               <Footer onBack={back} onNext={next} nextLabel="Next" />
@@ -234,12 +303,14 @@ export default function FilterBulkPage() {
             <>
               <h3 style={s.h3}>{operation === 'delete' ? 'Confirm deletion' : 'Updated Fields'}</h3>
               {changes.length > 0 ? (
-                <table style={s.table}>
-                  <thead><tr><Th>Field Name</Th><Th>Field Action</Th><Th>Field Value</Th></tr></thead>
-                  <tbody>{changes.map((c) => (
-                    <tr key={c.name} style={s.row}><Td><b>{c.name}</b></Td><Td>{c.action}</Td><Td>{c.value}</Td></tr>
-                  ))}</tbody>
-                </table>
+                <div style={s.tableScroll}>
+                  <table style={s.table}>
+                    <thead><tr><Th>Field Name</Th><Th>Field Action</Th><Th>Field Value</Th></tr></thead>
+                    <tbody>{changes.map((c) => (
+                      <tr key={c.name} style={s.row}><Td><b>{c.name}</b></Td><Td>{c.action}</Td><Td>{c.value}</Td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
               ) : <p style={s.p}>No changes selected — go back and pick at least one field.</p>}
               <p style={s.p}>The above summarizes the changes for the following <b>{chosen.length}</b> work item{chosen.length === 1 ? '' : 's'}. Do you wish to continue?</p>
               <div style={s.footer}>
@@ -290,8 +361,12 @@ const s = {
   h3: { margin: '0 0 10px', fontSize: 17, color: 'var(--c-text-strong)' },
   p: { fontSize: 14, color: 'var(--c-text)', margin: '0 0 14px' },
   err: { background: 'color-mix(in srgb, #dc2626 12%, transparent)', color: '#b91c1c', padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: 14 },
-  table: { width: '100%', borderCollapse: 'collapse', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 },
-  th: { textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)' },
+  // Bounded, internally-scrolling list so the page height stays fixed regardless of row count.
+  tableScroll: { maxHeight: 'calc(100vh - 270px)', overflowY: 'auto', background: 'var(--c-surface)',
+    border: '1px solid var(--c-border)', borderRadius: 10, marginBottom: 16 },
+  table: { width: '100%', borderCollapse: 'collapse', background: 'var(--c-surface)' },
+  th: { textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em',
+    color: 'var(--c-muted)', background: 'var(--c-surface-2)', position: 'sticky', top: 0, zIndex: 1 },
   td: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', borderTop: '1px solid var(--c-border-2)', verticalAlign: 'middle' },
   row: {},
   key: { color: 'var(--c-primary)', fontWeight: 700, fontSize: 13 },
@@ -299,9 +374,15 @@ const s = {
   opRow: { display: 'grid', gridTemplateColumns: '22px 200px 1fr', alignItems: 'center', gap: 8, padding: '10px 4px', cursor: 'pointer', borderTop: '1px solid var(--c-border-2)' },
   opTitle: { fontSize: 14, fontWeight: 600, color: 'var(--c-text-strong)' },
   opDesc: { fontSize: 13.5, color: 'var(--c-muted)' },
-  fieldRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', maxWidth: 520 },
+  fieldRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', maxWidth: 520 },
   fieldLbl: { width: 160, fontSize: 14, color: 'var(--c-text)' },
-  date: { padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  // One uniform value column: same width + height across every field type.
+  valCol: { width: 260, boxSizing: 'border-box' },
+  valCell: { display: 'flex', flexDirection: 'column', gap: 4, width: 260 },
+  valBox: { width: 260, minHeight: 40, boxSizing: 'border-box', display: 'flex', alignItems: 'center',
+    padding: '3px 10px', border: '1px solid var(--c-border)', borderRadius: 10, background: 'var(--c-surface)' },
+  date: { width: 260, minHeight: 40, boxSizing: 'border-box', padding: '9px 12px', border: '1px solid var(--c-border)',
+    borderRadius: 10, background: 'var(--c-surface)', color: 'var(--c-text)', fontSize: 13.5 },
   footer: { display: 'flex', gap: 10, marginTop: 18 },
   btn: { fontSize: 14, padding: '9px 18px' },
   btnPrimary: { fontSize: 14, fontWeight: 600, padding: '9px 20px' },
