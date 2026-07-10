@@ -379,7 +379,8 @@ export default function FiltersPage() {
           <IconPlus size={14} /> Add filter
         </button>
         <div style={s.footerRight}>
-          <button type="button" className="btn" style={s.cancelBtn} onClick={() => setShowBuilder(false)}>Cancel</button>
+          <button type="button" className="btn" style={s.cancelBtn}
+            onClick={() => (isSaved ? setShowBuilder(false) : navigate('/filters'))}>Cancel</button>
           <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
           <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
         </div>

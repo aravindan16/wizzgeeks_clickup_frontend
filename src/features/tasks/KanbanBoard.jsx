@@ -109,6 +109,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
 
   const typeIcon = (t) => (TYPE_ICON[t] || '☑️');
   const assigneeName = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+  const assigneeMember = (uid) => members.find((m) => m.user_id === uid);
 
   // Inline relationship picker for a card's relationship custom field (link tasks
   // without opening the task detail).
@@ -150,6 +151,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   // Inline assignee picker for an existing card (assigns directly, no task detail).
   const openAssign = (task, e) => {
     e.stopPropagation();
+    if (!can('task.assign')) return toast.error("You don't have permission to assign tasks.");
     const r = e.currentTarget.getBoundingClientRect();
     setCardMenu(null); setPicker(null); setAssignQuery('');
     setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
@@ -332,7 +334,17 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                       )}
                     </span>
                     {cfv.assignee && (t.assignee_id
-                      ? <button style={{ ...s.cardAvatar, cursor: 'pointer', border: 'none' }} title={assigneeName(t.assignee_id) || 'Assignee'} onClick={(e) => openAssign(t, e)}>{initials(assigneeName(t.assignee_id) || '?')}</button>
+                      ? (() => {
+                        const m = assigneeMember(t.assignee_id);
+                        return (
+                          <button style={{ ...s.cardAvatar, background: m?.avatar_color || s.cardAvatar.background, cursor: 'pointer', border: 'none', overflow: 'hidden' }}
+                            title={m?.full_name || 'Assignee'} onClick={(e) => openAssign(t, e)}>
+                            {m?.avatar_url
+                              ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : initials(m?.full_name || '?')}
+                          </button>
+                        );
+                      })()
                       : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>)}
                   </div>
                 </div>
@@ -365,7 +377,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                       </label>
 
                       <button style={s.tbtn} title={assigneeLabel || 'Assignee'} onClick={(e) => openPick('assignee', e)}>
-                        {assigneeLabel ? <span style={s.miniAvatar}>{initials(assigneeLabel)}</span> : <IconUser size={15} />}
+                        {assigneeLabel ? <span style={{ ...s.miniAvatar, background: assignee?.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{assignee?.avatar_url ? <img src={assignee.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(assigneeLabel)}</span> : <IconUser size={15} />}
                       </button>
                     </div>
 
@@ -419,7 +431,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
               <div style={{ maxHeight: 240, overflowY: 'auto' }}>
                 {list.map((m) => (
                   <button key={m.user_id} style={s.popItem} onClick={() => chooseAssignee(m.user_id)}>
-                    <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                    <span style={{ ...s.miniAvatar, background: m.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{m.avatar_url ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(m.full_name)}</span>
                     <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                       <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
                       {m.email && <span style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>}
@@ -482,7 +494,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   {filteredMembers.map((m) => (
                     <button key={m.user_id} style={s.popItem}
                       onClick={() => { setAssigneeId(m.user_id); setPicker(null); }}>
-                      <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                      <span style={{ ...s.miniAvatar, background: m.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{m.avatar_url ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(m.full_name)}</span>
                       <span style={{ display: 'flex', flexDirection: 'column' }}>
                         <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
                         {m.email && <span style={{ fontSize: 11, color: '#6b7280' }}>{m.email}</span>}

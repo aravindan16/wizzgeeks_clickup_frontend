@@ -107,6 +107,9 @@ body { margin: 0; background: var(--c-bg); color: var(--c-text); }
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* Suppress the browser's default (often black) focus ring on mouse click — keep the
+   accent ring above only for keyboard focus-visible. */
+:focus:not(:focus-visible) { outline: none; }
 
 /* --- Consistent dropdowns (native <select>) across the whole app --- */
 select {
@@ -372,7 +375,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
   background: var(--c-primary-weak);
   color: var(--c-text-strong);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--c-text-strong);
 }
 
 /* --- Generic table/list row hover (any clickable row) --- */
@@ -391,6 +393,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
    chevron in the SAME spot on hover (ClickUp-style). */
 .wg-nav-toggle { position: relative; width: 20px; height: 20px; display: inline-flex;
   align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 0; color: inherit; flex-shrink: 0; }
+/* Sidebar badge/toggle buttons: no focus ring (it showed a black rounded outline
+   around the space/list badge on click). */
+.wg-nav-toggle:focus, .wg-nav-toggle:focus-visible { outline: none; box-shadow: none; }
 .wg-nav-toggle .wg-nav-icon { display: inline-flex; align-items: center; justify-content: center; }
 .wg-nav-toggle .wg-nav-caret { display: none; align-items: center; justify-content: center; }
 .wg-sb-row:hover .wg-nav-toggle .wg-nav-icon { display: none; }
@@ -407,6 +412,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* The saved-filter search input sits inside its own bordered wrapper — never draw
    its own focus outline/border (that produced a doubled inner border). */
 .sf-search-input:focus, .sf-search-input:focus-visible { outline: none; border: none; box-shadow: none; }
+/* Label picker search: the input has no border of its own; the wrapper shows the
+   focus ring, so kill the input's default focus outline (avoids a doubled border). */
+.wg-label-search:focus, .wg-label-search:focus-visible { outline: none; border: none; box-shadow: none; }
+.wg-label-search-row:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-weak); }
 
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two

@@ -207,7 +207,6 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
             </div>
             <Select value={typeFilter} onChange={setTypeFilter} style={{ minWidth: 140 }}
               options={[{ value: 'all', label: 'Field type' }, ...FIELD_TYPES.map((t) => ({ value: t.value, label: t.label }))]} />
-            <button style={s.filterBtn} title="Filter"><IconFilter size={15} /> Filter</button>
             <div style={{ flex: 1 }} />
             <div style={{ position: 'relative' }} ref={createRef}>
               <button style={{ ...s.createBtn, ...(canCreate ? {} : s.createBtnDisabled) }}
