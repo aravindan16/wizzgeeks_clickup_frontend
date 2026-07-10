@@ -407,6 +407,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--c-primary); }
 /* The saved-filter search input sits inside its own bordered wrapper — never draw
    its own focus outline/border (that produced a doubled inner border). */
 .sf-search-input:focus, .sf-search-input:focus-visible { outline: none; border: none; box-shadow: none; }
+/* Label picker search: the input has no border of its own; the wrapper shows the
+   focus ring, so kill the input's default focus outline (avoids a doubled border). */
+.wg-label-search:focus, .wg-label-search:focus-visible { outline: none; border: none; box-shadow: none; }
+.wg-label-search-row:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-weak); }
 
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two

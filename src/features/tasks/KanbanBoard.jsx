@@ -151,6 +151,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   // Inline assignee picker for an existing card (assigns directly, no task detail).
   const openAssign = (task, e) => {
     e.stopPropagation();
+    if (!can('task.assign')) return toast.error("You don't have permission to assign tasks.");
     const r = e.currentTarget.getBoundingClientRect();
     setCardMenu(null); setPicker(null); setAssignQuery('');
     setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
