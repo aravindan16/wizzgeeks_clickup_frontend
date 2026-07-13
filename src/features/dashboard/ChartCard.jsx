@@ -1,3 +1,5 @@
+import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useCardData } from './useCardData';
 import CardFrame from './CardFrame';
 
@@ -59,6 +61,7 @@ const niceCeil = (v) => {
 /* ------------------------------------------------------------------- Pie */
 function Pie({ data, xMeasure, xShow }) {
   const items = series(data, xMeasure, xShow).filter((i) => i.count > 0);
+  const [hover, setHover] = useState(null); // { key, cx, cy }
   const total = items.reduce((s2, i) => s2 + i.count, 0);
   if (!total) return <div style={s.msg}>No tasks to chart.</div>;
 
@@ -75,27 +78,44 @@ function Pie({ data, xMeasure, xShow }) {
     });
   }
 
+  const pct = (c) => Math.round((c / total) * 100);
+  const track = (key) => (e) => setHover({ key, cx: e.clientX, cy: e.clientY });
+  const dim = (key) => hover && hover.key !== key ? 0.35 : 1;
+  const hv = hover ? items.find((i) => i.key === hover.key) : null;
+
   return (
     <div style={s.pieWrap}>
-      <svg width={180} height={180} viewBox="0 0 180 180" style={{ flexShrink: 0 }}>
+      <svg width={180} height={180} viewBox="0 0 180 180" style={{ flexShrink: 0 }}
+        onMouseLeave={() => setHover(null)}>
         {items.length === 1 ? (
           <>
-            <circle cx={90} cy={90} r={70} fill={items[0].color} />
-            <circle cx={90} cy={90} r={44} fill="var(--c-surface)" />
+            <circle cx={90} cy={90} r={70} fill={items[0].color} onMouseMove={track(items[0].key)} style={{ cursor: 'default' }} />
+            <circle cx={90} cy={90} r={44} fill="var(--c-surface)" pointerEvents="none" />
           </>
-        ) : arcs.map((it) => <path key={it.key} d={it.path} fill={it.color} />)}
-        <text x={90} y={86} textAnchor="middle" style={s.pieCenterNum}>{total}</text>
-        <text x={90} y={104} textAnchor="middle" style={s.pieCenterLabel}>tasks</text>
+        ) : arcs.map((it) => (
+          <path key={it.key} d={it.path} fill={it.color} opacity={dim(it.key)}
+            onMouseMove={track(it.key)} style={{ cursor: 'default', transition: 'opacity .12s' }} />
+        ))}
+        <text x={90} y={86} textAnchor="middle" style={s.pieCenterNum} pointerEvents="none">{hv ? hv.count : total}</text>
+        <text x={90} y={104} textAnchor="middle" style={s.pieCenterLabel} pointerEvents="none">{hv ? `${pct(hv.count)}%` : 'tasks'}</text>
       </svg>
       <div style={s.legend}>
         {items.map((it) => (
-          <div key={it.key} style={s.legendRow}>
+          <div key={it.key} style={{ ...s.legendRow, opacity: dim(it.key) }}
+            onMouseEnter={(e) => setHover({ key: it.key, cx: e.clientX, cy: e.clientY })} onMouseLeave={() => setHover(null)}>
             <span style={{ ...s.dot, background: it.color }} />
             <span style={s.legendLabel}>{it.label}</span>
-            <span style={s.legendVal}>{it.count} · {Math.round((it.count / total) * 100)}%</span>
+            <span style={s.legendVal}>{it.count} · {pct(it.count)}%</span>
           </div>
         ))}
       </div>
+      {hv && createPortal(
+        <div style={{ ...s.lineTip, left: hover.cx, top: hover.cy - 12 }}>
+          <div style={s.lineTipVal}>{hv.count} task{hv.count === 1 ? '' : 's'} · {pct(hv.count)}%</div>
+          <div style={s.lineTipDate}>{hv.label}</div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -103,6 +123,8 @@ function Pie({ data, xMeasure, xShow }) {
 /* ------------------------------------------------------------------- Bar */
 function Bar({ data, xMeasure, xShow }) {
   const items = series(data, xMeasure, xShow);
+  const [hover, setHover] = useState(null); // { i, cx, cy } client coords
+  const svgRef = useRef(null);
   if (!items.length) return <div style={s.msg}>No data to chart.</div>;
   const maxV = Math.max(1, ...items.map((i) => i.count));
   const niceMax = niceCeil(maxV);
@@ -112,10 +134,19 @@ function Bar({ data, xMeasure, xShow }) {
   const barW = Math.min(56, band * 0.55);
   const ticks = 5;
   const yOf = (v) => padT + plotH - (v / niceMax) * plotH;
+  // Anchor the tooltip to the hovered bar's top-centre, in client coords for the portal.
+  const showTip = (i) => (e) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = padL + band * i + band / 2;
+    const bh = (items[i].count / niceMax) * plotH;
+    setHover({ i, cx: rect.left + (cx / W) * rect.width, cy: rect.top + ((padT + plotH - bh) / H) * rect.height });
+  };
+  const hv = hover ? items[hover.i] : null;
   return (
     <div style={s.barWrap}>
       <div style={s.axisTitle}>Tasks</div>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 360, overflow: 'visible' }}>
+      <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 360, overflow: 'visible' }}>
         {Array.from({ length: ticks + 1 }).map((_, i) => {
           const v = (niceMax * i) / ticks;
           const yy = yOf(v);
@@ -131,36 +162,110 @@ function Bar({ data, xMeasure, xShow }) {
           const bh = (it.count / niceMax) * plotH;
           return (
             <g key={it.key}>
-              <rect x={cx - barW / 2} y={padT + plotH - bh} width={barW} height={Math.max(bh, 0)} rx={4} fill={it.color}>
-                <title>{`${it.label}: ${it.count}`}</title>
-              </rect>
-              <text x={cx} y={H - padB + 16} textAnchor="middle" fontSize={11} fill="var(--c-muted)">{it.label}</text>
+              {/* full-height hover zone so the tooltip triggers over the whole column */}
+              <rect x={cx - band / 2} y={padT} width={band} height={plotH} fill="transparent"
+                onMouseEnter={showTip(i)} onMouseMove={showTip(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'default' }} />
+              <rect x={cx - barW / 2} y={padT + plotH - bh} width={barW} height={Math.max(bh, 0)} rx={4}
+                fill={it.color} opacity={hover && hover.i !== i ? 0.55 : 1} pointerEvents="none" />
+              <text x={cx} y={H - padB + 16} textAnchor="middle" fontSize={11} fill="var(--c-muted)" pointerEvents="none">{it.label}</text>
             </g>
           );
         })}
       </svg>
+      {hv && createPortal(
+        <div style={{ ...s.lineTip, left: hover.cx, top: hover.cy }}>
+          <div style={s.lineTipVal}>{hv.count} task{hv.count === 1 ? '' : 's'}</div>
+          <div style={s.lineTipDate}>{hv.label}</div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ Line */
+const fmtDate = (d) => {
+  const [y, m, day] = String(d).split('-').map(Number);
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (!m || !day) return String(d);
+  return `${MON[m - 1]} ${day}`;
+};
 function Line({ data }) {
   const pts = data.timeline;
+  const [hover, setHover] = useState(null); // { i, cx, cy } in client (fixed) coords
+  const svgRef = useRef(null);
   if (pts.length < 2) return <div style={s.msg}>Not enough dated tasks to chart a trend.</div>;
-  const W = 520, H = 200, pad = 28;
+  const W = 560, H = 300, padL = 40, padR = 16, padT = 18, padB = 46;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
   const maxV = Math.max(...pts.map((p) => p.value));
-  const x = (i) => pad + (i * (W - 2 * pad)) / (pts.length - 1);
-  const y = (v) => H - pad - (v / maxV) * (H - 2 * pad);
+  const niceMax = niceCeil(maxV);
+  const ticks = 5;
+  const x = (i) => padL + (i * plotW) / (pts.length - 1);
+  const y = (v) => padT + plotH - (v / niceMax) * plotH;
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
-  const area = `${line} L${x(pts.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
+  const area = `${line} L${x(pts.length - 1).toFixed(1)},${padT + plotH} L${x(0).toFixed(1)},${padT + plotH} Z`;
+  const color = chartColor(0);
+  // Show at most ~6 evenly spaced date labels so the axis never crowds.
+  const step = Math.max(1, Math.ceil(pts.length / 6));
+  const xLabels = pts.map((p, i) => ({ p, i })).filter(({ i }) => i % step === 0 || i === pts.length - 1);
+
+  // Map the cursor to the nearest data point and record its pixel position for the tooltip.
+  const onMove = (e) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const vx = ((e.clientX - rect.left) / rect.width) * W; // pixel → viewBox x
+    let i = Math.round(((vx - padL) / plotW) * (pts.length - 1));
+    i = Math.max(0, Math.min(pts.length - 1, i));
+    // anchor the tooltip to the data point, in client coords (for the fixed-position portal)
+    setHover({ i, cx: rect.left + (x(i) / W) * rect.width, cy: rect.top + (y(pts[i].value) / H) * rect.height });
+  };
+  const hv = hover ? pts[hover.i] : null;
+
   return (
     <div style={s.lineWrap}>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 240 }}>
-        <path d={area} fill={chartColor(0)} opacity={0.12} />
-        <path d={line} fill="none" stroke={chartColor(0)} strokeWidth={2.5} strokeLinejoin="round" />
-        {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.value)} r={2.6} fill={chartColor(0)} />)}
-      </svg>
-      <div style={s.lineMeta}>Cumulative tasks created · {pts[pts.length - 1].value} total</div>
+      <div style={s.axisTitle}>Total tasks (running total)</div>
+      <div style={{ position: 'relative' }}>
+        <svg ref={svgRef} width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 340, overflow: 'visible', display: 'block' }}
+          onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+          {/* horizontal gridlines + Y-axis value labels */}
+          {Array.from({ length: ticks + 1 }).map((_, i) => {
+            const v = (niceMax * i) / ticks;
+            const yy = y(v);
+            return (
+              <g key={i}>
+                <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="var(--c-border-2)" strokeWidth={1} />
+                <text x={padL - 8} y={yy + 4} textAnchor="end" fontSize={11} fill="var(--c-muted)">{Math.round(v)}</text>
+              </g>
+            );
+          })}
+          <path d={area} fill={color} opacity={0.12} />
+          <path d={line} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" />
+          {/* hover guide line + emphasised point */}
+          {hv && (
+            <g>
+              <line x1={x(hover.i)} y1={padT} x2={x(hover.i)} y2={padT + plotH} stroke={color} strokeWidth={1} strokeDasharray="4 4" opacity={0.5} />
+              <circle cx={x(hover.i)} cy={y(hv.value)} r={5.5} fill={color} stroke="var(--c-surface)" strokeWidth={2} />
+            </g>
+          )}
+          {pts.map((p, i) => (
+            <circle key={i} cx={x(i)} cy={y(p.value)} r={3.2} fill="var(--c-surface)" stroke={color} strokeWidth={2} />
+          ))}
+          {/* X-axis date labels */}
+          {xLabels.map(({ p, i }) => (
+            <text key={i} x={x(i)} y={padT + plotH + 20} textAnchor="middle" fontSize={11} fill="var(--c-muted)">{fmtDate(p.date)}</text>
+          ))}
+        </svg>
+        {hv && createPortal(
+          <div style={{ ...s.lineTip, left: hover.cx, top: hover.cy }}>
+            <div style={s.lineTipVal}>{hv.value} task{hv.value === 1 ? '' : 's'}</div>
+            <div style={s.lineTipDate}>{fmtDate(hv.date)}</div>
+          </div>,
+          document.body,
+        )}
+      </div>
+      <div style={s.lineMeta}>
+        {pts[pts.length - 1].value} tasks created by {fmtDate(pts[pts.length - 1].date)} · hover the chart to see each day
+      </div>
     </div>
   );
 }
@@ -210,4 +315,9 @@ const s = {
 
   lineWrap: { padding: '16px 16px 12px' },
   lineMeta: { fontSize: 12.5, color: 'var(--c-muted)', textAlign: 'center', marginTop: 6 },
+  lineTip: { position: 'fixed', transform: 'translate(-50%, -125%)', pointerEvents: 'none',
+    background: 'var(--c-text-strong)', color: 'var(--c-surface)', padding: '5px 9px', borderRadius: 7,
+    fontSize: 12, lineHeight: 1.25, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(0,0,0,.22)', zIndex: 9999 },
+  lineTipVal: { fontWeight: 700 },
+  lineTipDate: { opacity: 0.75, fontSize: 11 },
 };
