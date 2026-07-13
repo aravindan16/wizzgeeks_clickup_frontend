@@ -56,8 +56,9 @@ export default function ThemeCustomizer({ open, onClose }) {
         <div style={s.sectionLabel}>Appearance</div>
         <div style={s.modes}>
           {MODES.map((m) => (
-            <button key={m.key} type="button"
+            <button key={m.key} type="button" className="wg-theme-opt"
               style={{ ...s.modeCard, ...(mode === m.key ? s.modeCardActive : {}) }}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => chooseMode(m.key)}>
               <div style={s.modePreview(m.key)}>
                 <span style={s.previewBar} />
@@ -74,8 +75,9 @@ export default function ThemeCustomizer({ open, onClose }) {
         <div style={s.sectionLabel}>Theme color</div>
         <div style={s.accents}>
           {ACCENTS.map((a) => (
-            <button key={a.key} type="button"
+            <button key={a.key} type="button" className="wg-theme-opt"
               style={{ ...s.accentRow, ...(accent === a.key ? s.accentRowActive : {}) }}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => chooseAccent(a.key)}>
               <span style={{ ...s.swatch, background: a.color }}>
                 {accent === a.key && <span style={s.swatchCheck}><IconCheck size={12} /></span>}

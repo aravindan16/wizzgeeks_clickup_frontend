@@ -44,7 +44,9 @@ export default function AppLayout() {
   const [slotEl, setSlotEl] = useState(null); // topbar node pages portal their breadcrumb into
 
   // Restore the user's DB-stored theme/accent on login (follows them across devices).
-  useEffect(() => { syncFromUser(user); }, [user?.theme, user?.accent]);
+  // Keyed on user id too, so switching accounts always re-applies even when the two
+  // users' theme/accent values happen to coincide.
+  useEffect(() => { syncFromUser(user); }, [user?.id, user?._id, user?.theme, user?.accent]);
 
   const toggle = () => {
     setCollapsed((c) => {
@@ -196,13 +198,13 @@ function UserMenu({ user, onProfile, onLogout, onCustomize, variant = 'avatar', 
   return (
     <div style={{ position: 'relative', ...(isChip ? { flex: collapsed ? '0 0 auto' : 1, minWidth: 0 } : {}) }} ref={ref}>
       {isChip ? (
-        <button className="wg-user-chip" title={user?.full_name}
+        <button className="wg-user-chip"
           style={{ ...s.userChip, width: '100%', justifyContent: collapsed ? 'center' : 'flex-start' }}
           onClick={() => setOpen((o) => !o)}>
           {avatar}
           {!collapsed && (
             <span style={s.chipMeta}>
-              <span style={s.chipName}>{user?.full_name || 'User'}</span>
+              <OverflowName text={user?.full_name || 'User'} style={s.chipName} />
               {(user?.roles || [])[0] && <span style={s.chipRole}>{prettyRole((user.roles || [])[0])}</span>}
             </span>
           )}
@@ -240,6 +242,32 @@ function UserMenu({ user, onProfile, onLogout, onCustomize, variant = 'avatar', 
         document.body,
       )}
     </div>
+  );
+}
+
+// Renders text with an ellipsis; a tooltip appears ONLY when the text is actually
+// truncated (so short names don't get a redundant tooltip). Measured at hover time
+// — reliable regardless of when flex layout settles — and portaled so it can't clip.
+function OverflowName({ text, style }) {
+  const ref = useRef(null);
+  const [tip, setTip] = useState(null); // { x, y }
+  const onEnter = () => {
+    const el = ref.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return; // not truncated → no tooltip
+    const r = el.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <>
+      <span ref={ref} style={style} onMouseEnter={onEnter} onMouseLeave={() => setTip(null)}>{text}</span>
+      {tip && createPortal(
+        <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: 'translate(-50%, -125%)',
+          pointerEvents: 'none', background: 'var(--c-text-strong)', color: 'var(--c-surface)',
+          padding: '5px 9px', borderRadius: 7, fontSize: 12, lineHeight: 1.25, whiteSpace: 'nowrap',
+          boxShadow: '0 4px 14px rgba(0,0,0,.22)', zIndex: 9999 }}>{text}</div>,
+        document.body,
+      )}
+    </>
   );
 }
 

@@ -68,6 +68,8 @@ export default function ProjectListPage() {
     await projectsApi.remove(p._id);
     toast.success('Space deleted');
     load();
+    // Refresh the sidebar Spaces list too, wherever the delete happened.
+    window.dispatchEvent(new CustomEvent('wg:spaces-changed'));
   };
 
   return (

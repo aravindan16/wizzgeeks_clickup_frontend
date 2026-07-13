@@ -67,6 +67,9 @@ export default function SpaceSetupModal({ open, onClose, onCreated }) {
       });
       toast.success('Space created');
       onCreated?.();
+      // Notify the sidebar (and any other listeners) so the new Space appears
+      // immediately, even when created from a page that isn't the sidebar.
+      window.dispatchEvent(new CustomEvent('wg:spaces-changed'));
       onClose?.();               // close the modal (esp. when opened from the persistent sidebar)
       navigate(`/projects/${space._id}`);
     } catch (err) {

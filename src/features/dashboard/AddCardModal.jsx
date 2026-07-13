@@ -220,10 +220,10 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
                 <button className="icon-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
               </div>
               <div style={s.grid}>
-                {CARD_TYPES.map((ct, i) => (
+                {CARD_TYPES.map((ct) => (
                   <button key={ct.type} style={s.tile} onClick={() => pick(ct.type)}>
-                    {/* On-brand: each tile is a shade of the theme accent (darker down the list). */}
-                    <span style={{ ...s.thumb, background: `color-mix(in srgb, var(--c-primary) ${100 - i * 12}%, #0f172a)` }}><Thumb type={ct.type} /></span>
+                    {/* Each tile uses its card type's own colour (a subtle gradient of it). */}
+                    <span style={{ ...s.thumb, background: `linear-gradient(135deg, ${ct.color}, color-mix(in srgb, ${ct.color} 70%, #0f172a))` }}><Thumb type={ct.type} /></span>
                     <span style={s.tileTitle}>{ct.title}</span>
                     <span style={s.tileDesc}>{ct.desc}</span>
                   </button>

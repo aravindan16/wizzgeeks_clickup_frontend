@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usersApi } from './usersApi';
 import UserModal from './UserModal';
@@ -55,9 +55,9 @@ export default function UserManagementPage() {
   };
 
   const columns = useMemo(() => [
-    { key: 'name', label: 'Name', width: 180, render: (u) => u.full_name },
-    { key: 'email', label: 'Email', width: 240, render: (u) => u.email },
-    { key: 'roles', label: 'Roles', width: 150, render: (u) => (u.roles || []).join(', ') },
+    { key: 'name', label: 'Name', width: 180, render: (u) => <OverflowText text={u.full_name} /> },
+    { key: 'email', label: 'Email', width: 240, render: (u) => <OverflowText text={u.email} /> },
+    { key: 'roles', label: 'Roles', width: 150, render: (u) => <OverflowText text={(u.roles || []).join(', ')} /> },
     { key: 'status', label: 'Status', width: 110, render: (u) => (
       <span className={`badge ${u.status === 'active' ? 'badge-ok' : 'badge-err'}`}>{u.status}</span>
     ) },
@@ -130,6 +130,33 @@ export default function UserManagementPage() {
         onClose={() => setPwUser(null)}
       />
     </div>
+  );
+}
+
+// Table cell that ellipsises its text and shows a tooltip with the full value
+// ONLY when the text is actually truncated. Measured at hover time (reliable) and
+// portaled to body so it can't be clipped by the table's overflow.
+function OverflowText({ text }) {
+  const ref = useRef(null);
+  const [tip, setTip] = useState(null); // { x, y }
+  const onEnter = () => {
+    const el = ref.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const r = el.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <>
+      <span ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setTip(null)}
+        style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
+      {tip && createPortal(
+        <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: 'translate(-50%, -125%)',
+          pointerEvents: 'none', background: 'var(--c-text-strong)', color: 'var(--c-surface)',
+          padding: '5px 9px', borderRadius: 7, fontSize: 12, lineHeight: 1.25, whiteSpace: 'nowrap',
+          boxShadow: '0 4px 14px rgba(0,0,0,.22)', zIndex: 9999 }}>{text}</div>,
+        document.body,
+      )}
+    </>
   );
 }
 
