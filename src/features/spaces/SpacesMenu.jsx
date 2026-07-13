@@ -126,6 +126,14 @@ export default function SpacesMenu({ collapsed }) {
     loadSpaces();
   }, [loadSpaces]);
 
+  // Keep the sidebar in sync when a Space is created/renamed/deleted anywhere
+  // else in the app (e.g. the Spaces list page), not just from this menu.
+  useEffect(() => {
+    const onChanged = () => loadSpaces();
+    window.addEventListener("wg:spaces-changed", onChanged);
+    return () => window.removeEventListener("wg:spaces-changed", onChanged);
+  }, [loadSpaces]);
+
   // Prefetch ONLY the (lightweight) Lists of each Space right after login, so
   // expanding a Space shows its Lists instantly instead of waiting on a request.
   // Tasks are NOT prefetched — those are heavy and load on demand when a Space or
@@ -268,6 +276,7 @@ export default function SpacesMenu({ collapsed }) {
       toast.error("Could not delete space");
     }
     await loadSpaces();
+    window.dispatchEvent(new CustomEvent("wg:spaces-changed"));
     navigate("/projects");
   };
 

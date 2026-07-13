@@ -61,12 +61,20 @@ export function initTheme() {
 }
 
 // Apply the theme prefs stored on the user record (from the DB) so the look
-// follows the user across devices. Falls back to whatever is already applied
-// (localStorage) when the user has no stored preference yet.
+// follows the user across devices. ALWAYS applies (defaulting to light/black when
+// the user has no stored preference) so a freshly-logged-in user never inherits the
+// PREVIOUS user's theme left in localStorage.
 export function syncFromUser(user) {
   if (!user) return;
-  if (user.theme) applyMode(user.theme);
-  if (user.accent) applyAccent(user.accent);
+  applyMode(user.theme || 'light');
+  applyAccent(user.accent || 'black');
+}
+
+// Reset to the default look (used on logout) so the login screen and the next user
+// start neutral instead of showing the previous user's accent.
+export function resetTheme() {
+  applyMode('light');
+  applyAccent('black');
 }
 
 // --- Back-compat shims for older callers (dark-mode toggle) ---
