@@ -2,6 +2,12 @@ import { useCardData } from './useCardData';
 import CardFrame from './CardFrame';
 import { IconListCheck } from '../../components/icons';
 
+// Distinct progress-bar colours per row (colourful, not theme-based).
+const PROG_COLORS = [
+  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899',
+  '#8b5cf6', '#14b8a6', '#f97316', '#3b82f6', '#a855f7', '#22c55e',
+];
+
 /**
  * Portfolio card: for each tracked List/EPIC, a progress bar (done / total),
  * the Done count, and the # of overdue (Due) tasks.
@@ -26,7 +32,7 @@ export default function PortfolioCard({ card, onRemove, onEdit, onExpand, fill =
         <tbody>
           {rows === null && <tr><td colSpan={4} style={s.empty}>Loading…</td></tr>}
           {rows && rows.length === 0 && <tr><td colSpan={4} style={s.empty}>No lists selected.</td></tr>}
-          {rows && rows.map((r) => {
+          {rows && rows.map((r, i) => {
             const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
             return (
               <tr key={r.id} style={s.row}>
@@ -41,7 +47,7 @@ export default function PortfolioCard({ card, onRemove, onEdit, onExpand, fill =
                 </td>
                 <td style={s.td}>
                   <div style={s.progWrap}>
-                    <div style={s.progBar}><div style={{ ...s.progFill, width: `${pct}%` }} /></div>
+                    <div style={s.progBar}><div style={{ ...s.progFill, width: `${pct}%`, background: PROG_COLORS[i % PROG_COLORS.length] }} /></div>
                     <span style={s.progText}>{r.done}/{r.total}</span>
                   </div>
                 </td>

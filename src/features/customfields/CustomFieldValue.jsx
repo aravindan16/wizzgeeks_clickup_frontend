@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { tasksApi, PRIORITY_COLOR, resolveStatuses, isDoneStatus } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
@@ -93,6 +93,7 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
   const [space, setSpace] = useState(null); // full Space object (for the Create-Task modal)
   const [targetListObj, setTargetListObj] = useState(null); // the field's target List (may have custom statuses)
   const [createOpen, setCreateOpen] = useState(false);
+  const [visible, setVisible] = useState(10); // "Show more" paging for the linked list
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const addRef = useRef(null);   // the "+ Add" button (popover anchor)
@@ -239,13 +240,13 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
             <span style={t.relColSm}>Priority</span>
             <span style={{ width: 22 }} />
           </div>
-          {ids.map((id) => {
+          {ids.slice(0, visible).map((id) => {
             const m = meta[id] || {};
             return (
               <div key={id} className="wg-rel-row" style={t.relRow}>
-                <span style={t.relName} onClick={() => onOpenTask?.(id)} title="Open task">
-                  <span style={t.relKey}>{m.key || '…'}</span>
-                  <span style={t.relTitle}>{m.title || ''}</span>
+                <span style={t.relName} onClick={() => onOpenTask?.(id)}>
+                  <span style={t.relKey} title="Open task">{m.key || '…'}</span>
+                  <RelTitle text={m.title || ''} style={t.relTitle} />
                 </span>
                 <span style={t.relCol}>{m.due_date ? shortDate(m.due_date) : '—'}</span>
                 <span style={t.relColSm}>
@@ -257,6 +258,11 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
               </div>
             );
           })}
+          {ids.length > visible && (
+            <button style={t.relShowMore} onClick={() => setVisible((n) => n + 10)}>
+              Show more ({ids.length - visible})
+            </button>
+          )}
         </div>
       )}
       <button ref={addRef} style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add</button>
@@ -305,6 +311,23 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
   );
 }
 
+// Linked-task title: only exposes a hover tooltip when the text is actually clipped
+// (ellipsis), not for every row.
+function RelTitle({ text, style }) {
+  const ref = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [text]);
+  return <span ref={ref} style={style} title={truncated ? text : undefined}>{text}</span>;
+}
+
 const t = {
   text: { minWidth: 150, maxWidth: 240, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14 },
   textArea: { minWidth: 200, maxWidth: 300, minHeight: 56, padding: '7px 9px', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' },
@@ -332,6 +355,8 @@ const t = {
   relColSm: { width: 80, flexShrink: 0 },
   priChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', textTransform: 'capitalize' },
   relX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, width: 22, flexShrink: 0 },
+  relShowMore: { width: '100%', padding: '9px 12px', background: 'var(--c-surface-2, #f8fafc)', border: 'none', borderTop: '1px solid #f3f4f6',
+    color: 'var(--c-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center' },
   addTask: { border: '1px dashed #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#6b7280', cursor: 'pointer', background: '#fff' },
   relPop: { width: 300, maxWidth: '100%', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 2100, padding: 8 },
   relSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },

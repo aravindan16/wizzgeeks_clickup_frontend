@@ -154,7 +154,16 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
     if (!can('task.assign')) return toast.error("You don't have permission to assign tasks.");
     const r = e.currentTarget.getBoundingClientRect();
     setCardMenu(null); setPicker(null); setAssignQuery('');
-    setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
+    if (assignFor?.id === task._id) { setAssignFor(null); return; }
+    // Flip up when there isn't room below, and cap the height to the space available
+    // so a card near the bottom of the board still shows a fully-visible, scrollable list.
+    const below = window.innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    const openUp = below < 300 && above > below;
+    const maxHeight = Math.max(180, Math.min(340, openUp ? above : below));
+    setAssignFor(openUp
+      ? { id: task._id, x: r.right, bottom: window.innerHeight - r.top + 6, maxHeight }
+      : { id: task._id, x: r.right, y: r.bottom + 6, maxHeight });
   };
   const chooseAssignee = async (uid) => {
     const id = assignFor?.id;
@@ -424,11 +433,11 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
         return (
           <>
             <div style={s.pickBackdrop} onClick={() => setAssignFor(null)} />
-            <div style={{ ...s.popFixed, top: assignFor.y, left: Math.max(8, assignFor.x - 240), width: 240 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ ...s.popFixed, top: assignFor.y, bottom: assignFor.bottom, left: Math.max(8, assignFor.x - 240), width: 240, maxHeight: assignFor.maxHeight, display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
               <input autoFocus style={s.popSearch} placeholder="Search or enter email…"
                 value={assignQuery} onChange={(e) => setAssignQuery(e.target.value)} />
               <button style={s.popItem} onClick={() => chooseAssignee('')}>👤 Unassigned</button>
-              <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 {list.map((m) => (
                   <button key={m.user_id} style={s.popItem} onClick={() => chooseAssignee(m.user_id)}>
                     <span style={{ ...s.miniAvatar, background: m.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{m.avatar_url ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(m.full_name)}</span>
