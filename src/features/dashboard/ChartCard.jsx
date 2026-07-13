@@ -29,25 +29,24 @@ function Calculation({ data }) {
   );
 }
 
-// Monochromatic palette derived from the app accent (var(--c-primary)), so charts
-// always match the current theme colour. color-mix over the surface keeps it
-// readable in both light and dark themes.
-function accentColor(i, n) {
-  if (n <= 1) return 'var(--c-primary)';
-  const pct = Math.round(100 - (i * (55 / (n - 1)))); // 100% accent → 45% for the last slice
-  return `color-mix(in srgb, var(--c-primary) ${pct}%, var(--c-surface))`;
-}
+// Distinct, colourful palette (each series/segment gets its own colour) — cycles
+// if there are more categories than colours.
+const CHART_COLORS = [
+  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899',
+  '#8b5cf6', '#14b8a6', '#f97316', '#3b82f6', '#a855f7', '#22c55e',
+];
+const chartColor = (i) => CHART_COLORS[i % CHART_COLORS.length];
 
 // Build the chart series [{key,label,count,color}] for the chosen X-axis measure,
 // optionally filtered to the categories in `xShow` (empty/undefined = show all).
-// Every series is recoloured with the accent palette so charts follow the theme.
+// Each category gets a distinct colour from the palette.
 function series(data, xMeasure, xShow) {
   let arr;
   if (xMeasure === 'priority') arr = data.byPriority || [];
   else if (xMeasure === 'list') arr = (data.byList || []).map((l) => ({ key: l.name, label: l.name, count: l.total }));
   else arr = data.byStatusGroup || []; // default: status group (Not started/Active/Done/Closed)
   if (Array.isArray(xShow) && xShow.length) arr = arr.filter((a) => xShow.includes(a.key));
-  return arr.map((a, i) => ({ ...a, color: accentColor(i, arr.length) }));
+  return arr.map((a, i) => ({ ...a, color: chartColor(i) }));
 }
 const niceCeil = (v) => {
   if (v <= 5) return 5;
@@ -157,9 +156,9 @@ function Line({ data }) {
   return (
     <div style={s.lineWrap}>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ maxHeight: 240 }}>
-        <path d={area} fill="var(--c-primary-weak)" opacity={0.5} />
-        <path d={line} fill="none" stroke="var(--c-primary)" strokeWidth={2.5} strokeLinejoin="round" />
-        {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.value)} r={2.6} fill="var(--c-primary)" />)}
+        <path d={area} fill={chartColor(0)} opacity={0.12} />
+        <path d={line} fill="none" stroke={chartColor(0)} strokeWidth={2.5} strokeLinejoin="round" />
+        {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.value)} r={2.6} fill={chartColor(0)} />)}
       </svg>
       <div style={s.lineMeta}>Cumulative tasks created · {pts[pts.length - 1].value} total</div>
     </div>
@@ -182,7 +181,7 @@ const s = {
 
   calcWrap: { padding: '32px 16px', minHeight: 140, display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center', gap: 4 },
-  calcNum: { fontSize: 56, fontWeight: 800, color: 'var(--c-primary)', lineHeight: 1 },
+  calcNum: { fontSize: 56, fontWeight: 800, color: CHART_COLORS[0], lineHeight: 1 },
   calcLabel: { fontSize: 13, color: 'var(--c-muted)', marginTop: 8 },
   calcRow: { display: 'flex', gap: 28 },
   stat: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 },
