@@ -835,6 +835,39 @@ input[type="radio"] {
   background: var(--c-hover);
 }
 
+/* "Clear all" (filter modal footer): subtle text button that highlights on hover. */
+.wg-clear-btn {
+  background: none;
+  border: none;
+  color: var(--c-muted);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.wg-clear-btn:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+
+/* Task title (detail view): ClickUp-style editable affordance — a subtle rounded
+   highlight on hover so it's clear the field is click-to-edit. Negative margins keep
+   the text aligned with the content below despite the added padding. */
+.wg-editable-title {
+  border-radius: 8px;
+  padding: 2px 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.wg-editable-title:hover {
+  background: var(--c-hover);
+  box-shadow: inset 0 0 0 1px var(--c-border);
+}
+
 /* Customize (theme) modal option cards: only the selected appearance/colour should
    look highlighted — suppress the accent focus-outline ring that otherwise sticks on
    the last-clicked card and reads as a second selection. */

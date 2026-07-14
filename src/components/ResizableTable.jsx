@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconChevronDown } from './icons';
+import Select from './Select';
 
 const PAGE_SIZES = [10, 20, 50, 100];
 
@@ -106,12 +106,8 @@ export default function ResizableTable({
         <div style={s.pager}>
           <label style={s.pagerLeft}>
             Rows per page:
-            <span style={s.pageSelectWrap}>
-              <select style={s.pageSelect} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
-            </span>
+            <Select value={pageSize} onChange={(v) => setPageSize(Number(v))} style={s.pageSelect}
+              options={PAGE_SIZES.map((n) => ({ value: n, label: String(n) }))} />
           </label>
           <div style={s.pagerRight}>
             <span style={s.pagerRange}>{from}–{to} of {total}</span>
@@ -145,12 +141,7 @@ const s = {
   pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
     padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
   pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
-  pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
-  pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
-    padding: '5px 28px 5px 10px', border: '1px solid var(--c-border)', borderRadius: 7, background: 'var(--c-surface)',
-    color: 'var(--c-text)', fontSize: 13, cursor: 'pointer' },
-  pageSelectCaret: { position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex',
-    color: 'var(--c-muted)', pointerEvents: 'none' },
+  pageSelect: { minWidth: 72, padding: '2px 10px', fontSize: 13, lineHeight: 1.3, borderRadius: 8 },
   pagerRight: { display: 'inline-flex', alignItems: 'center', gap: 8 },
   pagerRange: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
   pagerPage: { fontSize: 13, color: 'var(--c-text)', minWidth: 54, textAlign: 'center' },

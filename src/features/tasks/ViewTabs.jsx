@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AddViewMenu from './AddViewMenu';
 import { isBuiltinView } from './viewsStore';
 import { IconBoard, IconList, IconListCheck, IconEdit, IconTrash } from '../../components/icons';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 const viewIcon = (type) =>
   (type === 'board' ? <IconBoard size={16} /> : type === 'table' ? <IconListCheck size={16} /> : <IconList size={16} />);
@@ -16,6 +17,18 @@ export default function ViewTabs({ vs, extraTabs = [], rightSlot = null }) {
   const { views, activeId, setActiveId, renaming, setRenaming, updateView, addView, removeView } = vs;
   const [addOpen, setAddOpen] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
+  const confirm = useConfirm();
+
+  const deleteView = async (v) => {
+    setMenu(null);
+    const ok = await confirm({
+      title: `Delete view: ${v.name}`,
+      message: 'This view and its saved filters/layout will be removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok) removeView(v.id);
+  };
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -76,7 +89,7 @@ export default function ViewTabs({ vs, extraTabs = [], rightSlot = null }) {
                 style={{ ...s.viewMenuItem, ...(builtin ? s.disabled : { color: '#ef4444' }) }}
                 disabled={builtin}
                 title={builtin ? "Default views can't be deleted" : 'Delete this view'}
-                onClick={() => { if (!builtin) { removeView(v.id); setMenu(null); } }}>
+                onClick={() => { if (!builtin) deleteView(v); }}>
                 <IconTrash size={15} /> Delete view
               </button>
             </div>
@@ -98,7 +111,7 @@ const s = {
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
   viewMenu: { position: 'fixed', zIndex: 401, minWidth: 180, background: 'var(--c-surface)', color: 'var(--c-text)',
     border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.18)', padding: 6 },
-  viewMenuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none',
+  viewMenuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
     border: 'none', padding: '9px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   disabled: { color: 'var(--c-faint)', cursor: 'not-allowed' },
 };
