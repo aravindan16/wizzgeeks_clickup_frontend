@@ -55,6 +55,21 @@ const collectFields = (node, set = new Set()) => {
 const hasId = (node, id) => node.id === id || (node.type === 'group' && node.children.some((c) => hasId(c, id)));
 const firstUnusedField = (used) => (FIELDS.find((f) => !used.has(f.key)) || FIELDS[0]).key;
 
+// Merge `next` into `prev` by `key`, keeping existing entries (union, no duplicates).
+const unionById = (prev, next, key) => {
+  const seen = new Set((prev || []).map((x) => String(x[key])));
+  const add = (next || []).filter((x) => !seen.has(String(x[key])));
+  return add.length ? [...(prev || []), ...add] : (prev || []);
+};
+// Structural signature of a rule tree (ignores node ids) — used to tell whether the
+// results we already have still match the current tree, so we don't re-evaluate needlessly.
+const ruleSig = (cards, conj) => {
+  const norm = (n) => (n.type === 'group'
+    ? { t: 'g', c: n.conj, ch: (n.children || []).map(norm) }
+    : { t: 'r', f: n.field, o: n.op, v: n.value });
+  return JSON.stringify({ conj, cards: (cards || []).map(norm) });
+};
+
 /* ---------- immutable tree helpers (find/replace/remove by id) ---------- */
 const mapTree = (node, id, fn) => {
   if (node.id === id) return fn(node);
@@ -135,55 +150,82 @@ export default function FiltersPage() {
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
   const [labels, setLabels] = useState([]);   // global label catalog {id, name, color}
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState([]);       // server-evaluated RESULT tasks (already filtered)
+  const [allTasks, setAllTasks] = useState([]); // full task set — only the builder's relationship picker needs it
+  const [loading, setLoading] = useState(false);
   // Each "card" is an independent filter group; the bottom "+ Add filter" adds a card.
   const [cards, setCards] = useState(() => [newGroup()]);
   const [cardsConj, setCardsConj] = useState('AND'); // AND / OR join BETWEEN cards
 
-  useEffect(() => {
-    (async () => {
-      const ps = (await projectsApi.list({ limit: 200 }).catch(() => ({ items: [] }))).items || [];
-      setProjects(ps);
-      const perSpace = await Promise.all(ps.map((p) =>
-        listsApi.forSpace(p._id).then((ls) => (ls || []).map((l) => ({ ...l, spaceId: p._id, spaceName: p.name || p.key }))).catch(() => [])));
-      setLists(perSpace.flat());
-      dashboardsApi.searchUsers('').then((u) => setUsers(Array.isArray(u) ? u : (u?.items || []))).catch(() => setUsers([]));
-      labelsApi.list().then(setLabels).catch(() => setLabels([]));
-    })();
+  // --- Lazy loaders for the BUILDER's option dropdowns. Results no longer need these —
+  // the server evaluate/results call bundles the reference data for the table — so each
+  // loads at most once, only when its dropdown is opened. ---
+  const loadedRef = useRef({ spaces: false, users: false, labels: false, tasks: false });
+  const ensureSpaces = useCallback(async () => {
+    if (loadedRef.current.spaces) return;
+    loadedRef.current.spaces = true;
+    const ps = (await projectsApi.list({ limit: 200 }).catch(() => ({ items: [] }))).items || [];
+    setProjects((prev) => unionById(prev, ps, '_id'));
+    const perSpace = await Promise.all(ps.map((p) =>
+      listsApi.forSpace(p._id).then((ls) => (ls || []).map((l) => ({ ...l, spaceId: p._id, spaceName: p.name || p.key }))).catch(() => [])));
+    setLists((prev) => unionById(prev, perSpace.flat(), '_id'));
+  }, []);
+  const ensureUsers = useCallback(async () => {
+    if (loadedRef.current.users) return;
+    loadedRef.current.users = true;
+    dashboardsApi.searchUsers('')
+      .then((u) => setUsers((prev) => unionById(prev, Array.isArray(u) ? u : (u?.items || []), 'user_id')))
+      .catch(() => {});
+  }, []);
+  const ensureLabels = useCallback(async () => {
+    if (loadedRef.current.labels) return;
+    loadedRef.current.labels = true;
+    labelsApi.list().then(setLabels).catch(() => setLabels([]));
+  }, []);
+  const ensureTasks = useCallback(async () => {
+    if (loadedRef.current.tasks) return;
+    loadedRef.current.tasks = true;
+    const PAGE = 200, CAP = 2000; const all = [];
+    for (let skip = 0; skip < CAP; skip += PAGE) {
+      const r = await tasksApi.list({ limit: PAGE, skip }).catch(() => ({ items: [], total: 0 }));
+      const items = r.items || []; all.push(...items);
+      if (items.length < PAGE || all.length >= (r.total || 0)) break;
+    }
+    setAllTasks(all);
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      // The list endpoint caps limit at 200 — page through so filtering sees every task.
-      const PAGE = 200, CAP = 2000;
-      const all = [];
-      for (let skip = 0; skip < CAP; skip += PAGE) {
-        const r = await tasksApi.list({ limit: PAGE, skip }).catch(() => ({ items: [], total: 0 }));
-        const items = r.items || [];
-        all.push(...items);
-        if (items.length < PAGE || all.length >= (r.total || 0)) break;
-      }
-      setTasks(all);
-    } finally { setLoading(false); }
+  // Absorb the reference data the server bundles with results into shared state (union
+  // so the builder's fuller sets, when later loaded, aren't clobbered).
+  const absorbRefs = useCallback((res) => {
+    setTasks(res.items || []);
+    if (res.spaces) setProjects((p) => unionById(p, res.spaces, '_id'));
+    if (res.lists) setLists((p) => unionById(p, res.lists, '_id'));
+    if (res.users) setUsers((p) => unionById(p, res.users, 'user_id'));
   }, []);
-  useEffect(() => { load(); }, [load]);
 
-  // Route-driven: /filters/:id loads that saved filter; /filters/new is a fresh
-  // builder. Each saved filter has its OWN url so they don't collide.
+  // Route-driven: /filters/:id loads that saved filter AND its results in ONE call;
+  // /filters/new is a fresh builder. `lastSigRef` marks the rule tree we already have
+  // results for, so the live-evaluate effect below doesn't re-fetch the same thing.
+  const lastSigRef = useRef(null);
   useEffect(() => {
     if (routeId && routeId !== 'new') {
-      savedFiltersApi.get(routeId).then((sf) => {
-        setCards(sf.cards?.length ? sf.cards.map(reId) : [newGroup()]);
-        setCardsConj(sf.conj || 'AND');
-        setFilterName(sf.name || '');
+      setLoading(true);
+      savedFiltersApi.results(routeId).then((res) => {
+        const rc = res.filter?.cards?.length ? res.filter.cards.map(reId) : [newGroup()];
+        setCards(rc);
+        setCardsConj(res.filter?.conj || 'AND');
+        setFilterName(res.filter?.name || '');
+        lastSigRef.current = ruleSig(rc, res.filter?.conj || 'AND');
+        absorbRefs(res);
         markActiveFilter(routeId);
-      }).catch(() => { navigate('/filters', { replace: true }); });
+      }).catch(() => { navigate('/filters', { replace: true }); })
+        .finally(() => setLoading(false));
     } else {
       setCards([newGroup()]);
       setCardsConj('AND');
       setFilterName('');
+      setTasks([]);
+      lastSigRef.current = null;
       markActiveFilter('');
     }
     setTab('filters');
@@ -211,15 +253,33 @@ export default function FiltersPage() {
   }, [cards]);
 
   // Custom fields (dropdown/text/relationship) of the chosen Space — filterable too.
+  // Builder-only (never shown in the results table), so skip the fetch when the builder
+  // isn't visible (e.g. a saved filter whose builder is collapsed).
   const [customFields, setCustomFields] = useState([]);
+  const builderShown = !routeId || routeId === 'new' || showBuilder;
   useEffect(() => {
-    if (!contextSpaceId) { setCustomFields([]); return; }
+    if (!builderShown || !contextSpaceId) { setCustomFields([]); return; }
     customFieldsApi.list(contextSpaceId, contextListId || undefined, undefined, { _silent: true })
       .then((fs) => setCustomFields((fs || [])
         .filter((f) => ['dropdown', 'text', 'relationship'].includes(f.type))
         .map((f) => ({ key: `cf:${f._id}`, id: f._id, label: f.name, type: f.type, config: f.config || {}, location: f.location }))))
       .catch(() => setCustomFields([]));
-  }, [contextSpaceId, contextListId]);
+  }, [contextSpaceId, contextListId, builderShown]);
+
+  // When the builder is visible, preload the FULL reference data for any field that
+  // already has a selection — so an existing pick (e.g. a chosen List) shows up in its
+  // dropdown as checked, instead of being invisible because only the results' partial
+  // reference data was loaded. Empty fields still lazy-load when their dropdown opens.
+  useEffect(() => {
+    if (!builderShown) return;
+    const need = new Set();
+    const scan = (n) => { if (n.type === 'group') n.children.forEach(scan); else if (ruleActive(n)) need.add(n.field); };
+    cards.forEach(scan);
+    const arr = [...need];
+    if (arr.some((f) => ['space', 'list', 'status'].includes(f))) ensureSpaces();
+    if (arr.some((f) => ['assignee', 'reporter'].includes(f))) ensureUsers();
+    if (need.has('label')) ensureLabels();
+  }, [builderShown, cards, ensureSpaces, ensureUsers, ensureLabels]);
 
   const stsBySpace = useMemo(() => { const m = {}; projects.forEach((p) => { m[p._id] = resolveStatuses(p); }); return m; }, [projects]);
   // A List can have its own custom status set; otherwise it inherits its Space's.
@@ -282,15 +342,9 @@ export default function FiltersPage() {
   const userName = (id) => users.find((u) => String(u.user_id) === String(id))?.full_name || users.find((u) => String(u.user_id) === String(id))?.email || '—';
   const spaceName = (id) => projects.find((p) => String(p._id) === String(id))?.name || projects.find((p) => String(p._id) === String(id))?.key || '—';
 
-  const ctx = { myId, lists };
-  const filtered = useMemo(() => {
-    const active = cards.filter(nodeActive);
-    if (!active.length) return tasks;
-    // Cards are joined by the chosen AND/OR conjunction.
-    return tasks.filter((t) => cardsConj === 'OR'
-      ? active.some((c) => evalNode(c, t, ctx))
-      : active.every((c) => evalNode(c, t, ctx)));
-  }, [tasks, cards, cardsConj, myId, lists]);
+  // Results now come pre-filtered from the server (evaluate/results), so the table just
+  // renders `tasks` directly — no client-side re-evaluation over the whole task set.
+  const filtered = tasks;
 
   /* card + tree mutations (ids are unique across all cards) */
   const setNode = (id, fn) => setCards((cs) => cs.map((c) => mapTree(c, id, fn)));
@@ -334,8 +388,9 @@ export default function FiltersPage() {
     catch { toast.error('Could not rename filter'); }
   };
 
-  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks,
-    labels: labels.map((l) => ({ value: l.name, label: l.name })) };
+  const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks: allTasks,
+    labels: labels.map((l) => ({ value: l.name, label: l.name })),
+    ensureSpaces, ensureUsers, ensureLabels, ensureTasks };
 
   // Active rule count (for the "Filter" toggle badge).
   const activeCount = useMemo(() => {
@@ -344,6 +399,25 @@ export default function FiltersPage() {
     cards.forEach(scan);
     return n;
   }, [cards]);
+
+  // Live server-side results whenever the rule tree changes (a new filter being built,
+  // or a saved filter edited in the builder). Debounced. Skipped when the current tree
+  // already has results (e.g. right after the saved-filter results() load), so a saved
+  // filter view stays a SINGLE request.
+  useEffect(() => {
+    if (activeCount === 0) { setTasks([]); lastSigRef.current = null; return undefined; }
+    const sig = ruleSig(cards, cardsConj);
+    if (sig === lastSigRef.current) return undefined;
+    let alive = true;
+    setLoading(true);
+    const t = setTimeout(() => {
+      savedFiltersApi.evaluate(cards, cardsConj)
+        .then((res) => { if (alive) { lastSigRef.current = sig; absorbRefs(res); } })
+        .catch(() => { if (alive) setTasks([]); })
+        .finally(() => { if (alive) setLoading(false); });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [activeCount, cards, cardsConj, absorbRefs]);
 
   // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
   const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
@@ -771,22 +845,27 @@ function ValueEditor({ rule, setVal, options }) {
       .filter((t) => !relList || String(t.list_id) === relList)
       .slice(0, 300)
       .map((t) => ({ value: t._id, label: `${t.key ? t.key + ' · ' : ''}${t.title || ''}` }));
-    return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" />;
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" onOpen={options.ensureTasks} />;
   }
   if (rule.field === 'space')
-    return <Select placeholder="Select option" value={rule.value} onChange={setVal}
-      options={options.projects.map((p) => ({ value: p._id, label: p.name || p.key }))} />;
+    // Wrapper's onMouseDown fires before the Select opens → load Spaces on demand.
+    return (
+      <span style={{ display: 'block' }} onMouseDown={() => options.ensureSpaces?.()}>
+        <Select placeholder="Select option" value={rule.value} onChange={setVal}
+          options={options.projects.map((p) => ({ value: p._id, label: p.name || p.key }))} />
+      </span>
+    );
   if (rule.field === 'type')
     return <MultiSelect active={active} value={arr} onChange={setVal} options={TASK_TYPES} placeholder="Select types" />;
   if (rule.field === 'status')
-    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.statuses} placeholder="Select statuses" />;
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.statuses} placeholder="Select statuses" onOpen={options.ensureSpaces} />;
   if (rule.field === 'list')
-    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.lists} placeholder="Select lists" />;
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.lists} placeholder="Select lists" onOpen={options.ensureSpaces} />;
   if (rule.field === 'label')
-    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.labels} placeholder="Select labels" />;
+    return <MultiSelect active={active} value={arr} onChange={setVal} options={options.labels} placeholder="Select labels" onOpen={options.ensureLabels} />;
   // assignee / reporter — multi-select people
   return <UserPicker active={active} value={arr} onChange={setVal} users={options.users}
-    myId={options.myId} allowUnassigned={rule.field === 'assignee'} />;
+    myId={options.myId} allowUnassigned={rule.field === 'assignee'} onOpen={options.ensureUsers} />;
 }
 
 // Free-text value editor for a text custom field (matches "contains").
@@ -798,7 +877,7 @@ function TextFilter({ value, onChange }) {
 }
 
 /* --------------------------------------------------------------- MultiSelect */
-function MultiSelect({ value, onChange, options, placeholder, active }) {
+function MultiSelect({ value, onChange, options, placeholder, active, onOpen }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -812,7 +891,8 @@ function MultiSelect({ value, onChange, options, placeholder, active }) {
     ? (options.find((o) => o.value === value[0])?.label || '1 selected') : `${value.length} selected`;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }}
+        onClick={() => { if (!open) onOpen?.(); setOpen((o) => !o); }}>
         <span style={{ color: value.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         <IconChevronDown size={14} />
       </button>
@@ -838,7 +918,7 @@ function MultiSelect({ value, onChange, options, placeholder, active }) {
 }
 
 /* -------------------------------------------------- UserPicker (multi-select) */
-function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
+function UserPicker({ value, onChange, users, myId, allowUnassigned, active, onOpen }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef(null);
@@ -860,7 +940,8 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active }) {
   const Box = ({ on }) => <span style={{ ...g.checkbox, ...(on ? g.checkboxOn : {}) }}>{on ? '✓' : ''}</span>;
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="wg-select-trigger" style={{ ...g.trigger, ...(open ? g.triggerActive : {}) }}
+        onClick={() => { if (!open) onOpen?.(); setOpen((o) => !o); }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: sel.length ? 'var(--c-text)' : 'var(--c-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           <IconUser size={14} />{label}
         </span>

@@ -55,6 +55,14 @@ export default function ProjectDetailsPage() {
   const [spaceFields, setSpaceFields] = useState([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Close the filter modal on Escape.
+  useEffect(() => {
+    if (!filterOpen) return undefined;
+    const onEsc = (e) => e.key === 'Escape' && setFilterOpen(false);
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [filterOpen]);
+
   // Views (List/Board/Table tabs) — persisted per Space, shared with the List board.
   const vs = useViews(id);
   const { activeId, setActiveId, updateView, activeView } = vs;
@@ -203,10 +211,28 @@ export default function ProjectDetailsPage() {
         </div>
       )}
 
-      {!isMembersTab && filterOpen && (
-        <div style={{ marginBottom: 14 }}>
-          <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
-        </div>
+      {!isMembersTab && filterOpen && createPortal(
+        <div style={s.filterBackdrop} onClick={() => setFilterOpen(false)}>
+          <div style={s.filterModal} onClick={(e) => e.stopPropagation()}>
+            <div style={s.filterModalHead}>
+              <span style={s.filterModalTitle}>
+                <IconFilter size={16} /> Filters
+                {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              </span>
+              <button type="button" className="icon-btn wg-x-btn" style={s.filterModalClose}
+                onClick={() => setFilterOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div style={s.filterModalBody}>
+              <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
+            </div>
+            <div style={s.filterModalFoot}>
+              <button type="button" className="wg-clear-btn"
+                onClick={() => { setFcards([newGroup()]); setFconj('AND'); }}>Clear all</button>
+              <button type="button" className="btn btn-primary" onClick={() => setFilterOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
@@ -303,4 +329,18 @@ const s = {
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
   link: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
+
+  // Filter modal (opens as a centered dialog instead of pushing the board down).
+  filterBackdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 80,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' },
+  filterModal: { width: 720, maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+    background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)',
+    borderRadius: 14, boxShadow: 'var(--sh-lg)', overflow: 'hidden' },
+  filterModalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '14px 18px', borderBottom: '1px solid var(--c-border-2)' },
+  filterModalTitle: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  filterModalClose: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 4 },
+  filterModalBody: { padding: 18, overflowY: 'auto' },
+  filterModalFoot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '12px 18px', borderTop: '1px solid var(--c-border-2)' },
 };

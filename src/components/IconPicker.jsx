@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom';
 import { ICON_COLORS, DEFAULT_ICON_COLOR, encodeIcon, decodeIcon } from './iconCodec';
 import { useIconMap } from './useIconMap';
 import { IconClose } from './icons';
+import apiClient from '../services/apiClient';
+
+// The palette now lives in the DB (editable). Fetched once per session; the hardcoded
+// ICON_COLORS is only a fallback if the request fails. Cached at module scope so
+// re-opening the picker doesn't refetch.
+let PALETTE_CACHE = null;
 
 /**
  * ClickUp-style icon picker: the full Font Awesome 6 set (loaded lazily), monochrome
@@ -19,10 +25,19 @@ export default function IconPicker({ open, current, onSelect, onClose }) {
   const [color, setColor] = useState(DEFAULT_ICON_COLOR);
   const [showColors, setShowColors] = useState(false);
   const [limit, setLimit] = useState(PAGE);
+  const [palette, setPalette] = useState(PALETTE_CACHE || ICON_COLORS);
   const colorRef = useRef(null);
 
   const { name: curName, color: curColor } = decodeIcon(current);
   useEffect(() => { if (open) { setColor(curColor || DEFAULT_ICON_COLOR); setQ(''); setLimit(PAGE); } }, [open]); // eslint-disable-line
+
+  // Load the DB-driven palette once (falls back to the hardcoded ICON_COLORS on error).
+  useEffect(() => {
+    if (PALETTE_CACHE) return;
+    apiClient.get('/admin/icon-colors', { _silent: true })
+      .then((r) => { const cs = r.data?.colors; if (Array.isArray(cs) && cs.length) { PALETTE_CACHE = cs; setPalette(cs); } })
+      .catch(() => {});
+  }, []);
   useEffect(() => { setLimit(PAGE); }, [q]);
   useEffect(() => {
     if (!showColors) return undefined;
@@ -61,7 +76,7 @@ export default function IconPicker({ open, current, onSelect, onClose }) {
             {showColors && (
               <div style={s.colorPop} onMouseDown={(e) => e.stopPropagation()}>
                 <div style={s.swatchGrid}>
-                  {ICON_COLORS.map((c) => (
+                  {palette.map((c) => (
                     <button key={c} type="button" title={c} onClick={() => { setColor(c); setShowColors(false); }}
                       style={{ ...s.swatch, background: c, color: c, ...(color === c ? s.swatchActive : {}) }} />
                   ))}
