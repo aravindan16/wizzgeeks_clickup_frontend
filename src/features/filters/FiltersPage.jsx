@@ -150,7 +150,10 @@ export default function FiltersPage() {
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
   const [labels, setLabels] = useState([]);   // global label catalog {id, name, color}
-  const [tasks, setTasks] = useState([]);       // server-evaluated RESULT tasks (already filtered)
+  const [tasks, setTasks] = useState([]);       // the CURRENT PAGE of matched tasks (server-paginated)
+  const [total, setTotal] = useState(0);        // grand total of matched tasks (for the pager)
+  const [page, setPage] = useState(0);          // 0-based current page
+  const [pageSize, setPageSize] = useState(10); // rows per page
   const [allTasks, setAllTasks] = useState([]); // full task set — only the builder's relationship picker needs it
   const [loading, setLoading] = useState(false);
   // Each "card" is an independent filter group; the bottom "+ Add filter" adds a card.
@@ -194,10 +197,11 @@ export default function FiltersPage() {
     setAllTasks(all);
   }, []);
 
-  // Absorb the reference data the server bundles with results into shared state (union
-  // so the builder's fuller sets, when later loaded, aren't clobbered).
+  // Absorb one page of server results: the page rows + total, plus the reference data
+  // (union so the builder's fuller sets, when later loaded, aren't clobbered).
   const absorbRefs = useCallback((res) => {
     setTasks(res.items || []);
+    setTotal(res.total || 0);
     if (res.spaces) setProjects((p) => unionById(p, res.spaces, '_id'));
     if (res.lists) setLists((p) => unionById(p, res.lists, '_id'));
     if (res.users) setUsers((p) => unionById(p, res.users, 'user_id'));
@@ -208,14 +212,15 @@ export default function FiltersPage() {
   // results for, so the live-evaluate effect below doesn't re-fetch the same thing.
   const lastSigRef = useRef(null);
   useEffect(() => {
+    setPage(0); // new route → first page
     if (routeId && routeId !== 'new') {
       setLoading(true);
-      savedFiltersApi.results(routeId).then((res) => {
+      savedFiltersApi.results(routeId, { skip: 0, limit: pageSize }).then((res) => {
         const rc = res.filter?.cards?.length ? res.filter.cards.map(reId) : [newGroup()];
         setCards(rc);
         setCardsConj(res.filter?.conj || 'AND');
         setFilterName(res.filter?.name || '');
-        lastSigRef.current = ruleSig(rc, res.filter?.conj || 'AND');
+        lastSigRef.current = `${ruleSig(rc, res.filter?.conj || 'AND')}|0|${pageSize}`;
         absorbRefs(res);
         markActiveFilter(routeId);
       }).catch(() => { navigate('/filters', { replace: true }); })
@@ -225,6 +230,7 @@ export default function FiltersPage() {
       setCardsConj('AND');
       setFilterName('');
       setTasks([]);
+      setTotal(0);
       lastSigRef.current = null;
       markActiveFilter('');
     }
@@ -342,9 +348,6 @@ export default function FiltersPage() {
   const userName = (id) => users.find((u) => String(u.user_id) === String(id))?.full_name || users.find((u) => String(u.user_id) === String(id))?.email || '—';
   const spaceName = (id) => projects.find((p) => String(p._id) === String(id))?.name || projects.find((p) => String(p._id) === String(id))?.key || '—';
 
-  // Results now come pre-filtered from the server (evaluate/results), so the table just
-  // renders `tasks` directly — no client-side re-evaluation over the whole task set.
-  const filtered = tasks;
 
   /* card + tree mutations (ids are unique across all cards) */
   const setNode = (id, fn) => setCards((cs) => cs.map((c) => mapTree(c, id, fn)));
@@ -400,24 +403,28 @@ export default function FiltersPage() {
     return n;
   }, [cards]);
 
-  // Live server-side results whenever the rule tree changes (a new filter being built,
-  // or a saved filter edited in the builder). Debounced. Skipped when the current tree
-  // already has results (e.g. right after the saved-filter results() load), so a saved
-  // filter view stays a SINGLE request.
+  // Reset to the first page whenever the filter rules change (so a new filter's results
+  // start at page 1, not a stale page index).
+  const treeSig = useMemo(() => ruleSig(cards, cardsConj), [cards, cardsConj]);
+  useEffect(() => { setPage(0); }, [treeSig]);
+
+  // Live server-side results: fetch the CURRENT PAGE whenever the rule tree OR the page/
+  // size changes. Debounced. Skipped when we already have exactly this page (e.g. right
+  // after the saved-filter results() load), so a saved-filter view stays one request per page.
   useEffect(() => {
-    if (activeCount === 0) { setTasks([]); lastSigRef.current = null; return undefined; }
-    const sig = ruleSig(cards, cardsConj);
+    if (activeCount === 0) { setTasks([]); setTotal(0); lastSigRef.current = null; return undefined; }
+    const sig = `${treeSig}|${page}|${pageSize}`;
     if (sig === lastSigRef.current) return undefined;
     let alive = true;
     setLoading(true);
     const t = setTimeout(() => {
-      savedFiltersApi.evaluate(cards, cardsConj)
+      savedFiltersApi.evaluate(cards, cardsConj, { skip: page * pageSize, limit: pageSize })
         .then((res) => { if (alive) { lastSigRef.current = sig; absorbRefs(res); } })
-        .catch(() => { if (alive) setTasks([]); })
+        .catch(() => { if (alive) { setTasks([]); setTotal(0); } })
         .finally(() => { if (alive) setLoading(false); });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
-  }, [activeCount, cards, cardsConj, absorbRefs]);
+  }, [activeCount, treeSig, cards, cardsConj, page, pageSize, absorbRefs]);
 
   // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
   const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
@@ -472,7 +479,7 @@ export default function FiltersPage() {
   );
 
   return (
-    <div>
+    <div style={s.page}>
       {/* Breadcrumb ("Filters › <saved filter name>") lives in the shared topbar. */}
       {slotEl && createPortal(
         <span style={s.crumbs}>
@@ -522,25 +529,29 @@ export default function FiltersPage() {
         <FilterMembers filterId={routeId} reloadKey={mReload} />
       ) : isSaved ? (
         // Saved filter View tab: builder (when toggled) then the results table.
-        <>
+        <div style={s.viewArea}>
           {showBuilder && builderCard}
           {/* Only show tasks once a filter is actually applied; otherwise the empty
               "No tasks found" state (avoids dumping every task with no filter). */}
-          <ResultsTable columns={columns} rows={activeCount > 0 ? filtered : []} loading={loading}
+          <ResultsTable columns={columns} rows={activeCount > 0 ? tasks : []} total={activeCount > 0 ? total : 0}
+            page={page} pageSize={pageSize} onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
             colState={colState} onResizeStart={startColResize}
             onOpenTask={(id) => navigate(`/tasks/${id}`)} />
-        </>
+        </div>
       ) : (
         // Brand-new (unsaved) filter: builder + a live results preview once a
         // filter rule is set (so you can see matches before saving).
-        <>
+        <div style={s.viewArea}>
           {builderCard}
           {activeCount > 0 && (
-            <ResultsTable columns={columns} rows={filtered} loading={loading}
+            <ResultsTable columns={columns} rows={tasks} total={total}
+              page={page} pageSize={pageSize} onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
               colState={colState} onResizeStart={startColResize}
               onOpenTask={(id) => navigate(`/tasks/${id}`)} />
           )}
-        </>
+        </div>
       )}
 
       <FilterShareModal open={mShare} filterId={routeId}
@@ -610,18 +621,15 @@ function ColumnsMenu({ columns, colState, onToggle }) {
 
 /* ---------------------------------------- Results table (resizable columns) */
 const PAGE_SIZES = [10, 20, 50, 100];
-function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
+function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPageSizeChange, loading, colState, onResizeStart, onOpenTask }) {
   const navigate = useNavigate();
   const shown = columns.filter((c) => colState.visible[c.key]);
-  const [pageSize, setPageSize] = useState(10);
-  const [page, setPage] = useState(0);
-  const total = rows.length;
+  // Server-side pagination: `rows` IS the current page; the parent refetches on page change.
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  useEffect(() => { setPage(0); }, [total, pageSize]);
-  const pageRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const pageRows = rows;
   const from = total === 0 ? 0 : safePage * pageSize + 1;
-  const to = Math.min(total, (safePage + 1) * pageSize);
+  const to = Math.min(total, safePage * pageSize + rows.length);
 
   // --- bulk selection --- (opens the step-by-step Bulk Operation page)
   const [selected, setSelected] = useState(() => new Set());
@@ -645,7 +653,7 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <button type="button" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
         </div>
       )}
-      <div style={{ overflowX: 'auto' }}>
+      <div style={s.rScroll}>
         <table style={s.rTable}>
           <colgroup><col style={{ width: 42 }} />{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
           <thead>
@@ -679,7 +687,7 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <label style={s.pagerLeft}>
             Rows per page:
             <span style={s.pageSelectWrap}>
-              <select style={s.pageSelect} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              <select style={s.pageSelect} value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
                 {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
               <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
@@ -688,10 +696,10 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <div style={s.pagerRight}>
             <span style={s.pagerRange}>{from}–{to} of {total}</span>
             <button type="button" style={{ ...s.pagerBtn, ...(safePage === 0 ? s.pagerDisabled : {}) }}
-              disabled={safePage === 0} onClick={() => setPage(safePage - 1)} title="Previous">‹</button>
+              disabled={safePage === 0} onClick={() => onPageChange(safePage - 1)} title="Previous">‹</button>
             <span style={s.pagerPage}>{safePage + 1} / {pageCount}</span>
             <button type="button" style={{ ...s.pagerBtn, ...(safePage >= pageCount - 1 ? s.pagerDisabled : {}) }}
-              disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)} title="Next">›</button>
+              disabled={safePage >= pageCount - 1} onClick={() => onPageChange(safePage + 1)} title="Next">›</button>
           </div>
         </div>
       )}
@@ -1056,6 +1064,10 @@ const g = {
 };
 
 const s = {
+  // Full-height column: tabs stay at the top, the results area (viewArea) fills the
+  // rest so its pager pins to the bottom of the screen (inset by the app's padding).
+  page: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 },
+  viewArea: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
   crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
@@ -1100,18 +1112,26 @@ const s = {
   colCheck: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },
   colCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
   // Results table (fixed layout so column widths apply; resize handles on headers)
-  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  // Fill the remaining viewport height and lay out as a column: the rows scroll
+  // internally (rScroll) while the pager stays pinned at the card's bottom.
+  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12,
+    boxShadow: 'var(--sh-xs)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
+  rScroll: { flex: 1, minHeight: 0, overflow: 'auto' },
   rTable: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
-  rTh: { position: 'relative', textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase',
-    letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  // Sticky header: stays pinned at the top while the rows scroll inside rScroll.
+  // (sticky still establishes a positioning context for the absolute resize handle.)
+  rTh: { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', padding: '10px 14px', fontSize: 12,
+    textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
   rThLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   rResize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
   rColLine: { borderRight: '1px solid var(--c-border-2)' },
   rRow: { borderTop: '1px solid var(--c-border-2)', cursor: 'pointer' },
   rTd: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
   rClip: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  // Sits at the bottom of the flex column (the card fills the viewport height), so
+  // it's always pinned to the bottom of the screen regardless of the row count.
   pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
+    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)', flexShrink: 0 },
   pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
   pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
   pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
