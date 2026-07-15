@@ -61,7 +61,6 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [activity, setActivity] = useState([]);
   const [subtasks, setSubtasks] = useState([]);
   const [links, setLinks] = useState([]);
-  const [worklogs, setWorklogs] = useState([]);
   const [siblings, setSiblings] = useState([]); // candidate tasks for linking
   const [customFields, setCustomFields] = useState([]);
   const [fieldValues, setFieldValues] = useState({});
@@ -79,10 +78,8 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [newComment, setNewComment] = useState('');
   const [editingComment, setEditingComment] = useState(null);
 
-  const [activityTab, setActivityTab] = useState('all'); // all | comments | history | worklog
+  const [activityTab, setActivityTab] = useState('all'); // all | comments | history
   const [visibleCount, setVisibleCount] = useState(10);  // "Show more" paging for All/History
-  const [worklog, setWorklog] = useState('');
-  const [worklogNote, setWorklogNote] = useState('');
 
   const [addingSub, setAddingSub] = useState(false);
   const [newSub, setNewSub] = useState('');
@@ -99,19 +96,18 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       setTask(t);
       setTitleVal(t.title); setDescVal(t.description || ''); setLabelsVal((t.labels || []).join(', '));
       setFieldValues(t.custom_fields || {});
-      const [ms, cs, act, subs, lks, wls, sibs, proj, cf] = await Promise.all([
+      const [ms, cs, act, subs, lks, sibs, proj, cf] = await Promise.all([
         projectsApi.members(t.project_id).catch(() => []),
         tasksApi.comments(taskId).catch(() => []),
         tasksApi.activity(taskId).catch(() => []),
         tasksApi.subtasks(taskId).catch(() => []),
         tasksApi.links(taskId).catch(() => []),
-        tasksApi.worklogs(taskId).catch(() => []),
         tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
         statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
         customFieldsApi.list(t.project_id, t.list_id, t._id).catch(() => []),
       ]);
       setFetchedMembers(ms); setComments(cs); setActivity(act);
-      setSubtasks(subs); setLinks(lks); setWorklogs(wls); setSiblings(sibs); setFetchedProject(proj);
+      setSubtasks(subs); setLinks(lks); setSiblings(sibs); setFetchedProject(proj);
       // Hide inherited Space fields disabled for this List.
       setCustomFields((cf || []).filter((f) => f.enabled !== false));
     } catch (err) {
@@ -186,11 +182,6 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
     setTask((t) => ({ ...t, assignee_id: uid || null })); // optimistic
     try { await tasksApi.assign(taskId, uid || null, { _silent: true }); onChanged?.(); refreshActivity(); }
     catch (err) { toast.error(err.response?.data?.error?.message || 'Assign failed'); load(); }
-  };
-  const addWork = async (e) => {
-    e.preventDefault(); if (!worklog) return;
-    await tasksApi.logWork(taskId, Number(worklog), worklogNote || null);
-    setWorklog(''); setWorklogNote(''); after();
   };
   // Comment actions only refresh the comment list (not the whole task) — no need
   // to refetch members/subtasks/links/etc. on every comment.
@@ -443,27 +434,6 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               </div>
             )}
 
-            {activityTab === 'worklog' && (
-              <div>
-                <form onSubmit={addWork} style={s.worklogForm}>
-                  <input style={{ ...s.inlineInput, width: 90 }} type="number" min="0.5" step="0.5" placeholder="Hours" value={worklog} onChange={(e) => setWorklog(e.target.value)} />
-                  <input style={s.inlineInput} placeholder="What did you work on? (optional)" value={worklogNote} onChange={(e) => setWorklogNote(e.target.value)} />
-                  <button style={s.btn} type="submit">Log time</button>
-                </form>
-                {worklogs.length === 0 ? <Empty text="No time was logged for this task yet." /> : (
-                  worklogs.slice().reverse().map((w) => (
-                    <div key={w._id} style={s.feedRow}>
-                      <span style={s.avatar}>{initials(w.user_name)}</span>
-                      <div style={{ flex: 1 }}>
-                        <div><strong>{w.user_name || 'User'}</strong> logged <strong>{w.hours}h</strong> <span style={s.muted}>· {timeAgo(w.created_at)}</span></div>
-                        {w.note && <div style={{ fontSize: 14, marginTop: 2 }}>{w.note}</div>}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
             {activityTab === 'all' && (
               <div>
                 {feed.length === 0 && <Empty text="No activity yet." />}
@@ -631,8 +601,6 @@ function describeActivity(a, nameOf) {
       const labels = fields.map((f) => FIELD_LABEL[f] || f);
       return { verb: <>updated {labels.length ? <strong>{labels.join(', ')}</strong> : 'the work item'}</> };
     }
-    case 'task.worklog':
-      return { verb: <>logged <strong>{m.hours}h</strong> of work</> };
     case 'task.link_added':
       return { verb: <>linked a work item</> };
     case 'task.link_removed':
@@ -733,7 +701,6 @@ const s = {
   tab: { padding: '5px 12px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)' },
   tabActive: { background: 'var(--c-hover)', color: 'var(--c-text-strong)', fontWeight: 600, border: '1px solid #bfdbfe' },
   feedRow: { display: 'flex', gap: 10, padding: '12px 0', borderTop: '1px solid var(--c-border)' },
-  worklogForm: { display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' },
   muted: { color: 'var(--c-faint)', fontWeight: 400, fontSize: 12 },
   badge: { fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, letterSpacing: 0.3, flexShrink: 0 },
 

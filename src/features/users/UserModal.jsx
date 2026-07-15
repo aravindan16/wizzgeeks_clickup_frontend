@@ -61,6 +61,7 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
     try {
       if (mode === 'edit') {
         await usersApi.update(user._id, {
+          email: form.email,
           full_name: form.full_name,
           role_keys: form.role_keys,
         });
@@ -94,7 +95,7 @@ export default function UserModal({ open, mode, user, roles, onClose, onSaved })
           </Field>
 
           <Field label="Email">
-            <input style={ov.input} type="email" value={form.email} disabled={mode === 'edit'}
+            <input style={ov.input} type="email" value={form.email}
               onChange={(e) => setField('email', e.target.value)} required />
           </Field>
 

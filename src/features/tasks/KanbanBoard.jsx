@@ -342,19 +342,21 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                         </>
                       )}
                     </span>
-                    {cfv.assignee && (t.assignee_id
-                      ? (() => {
-                        const m = assigneeMember(t.assignee_id);
-                        return (
-                          <button style={{ ...s.cardAvatar, background: m?.avatar_color || s.cardAvatar.background, cursor: 'pointer', border: 'none', overflow: 'hidden' }}
-                            title={m?.full_name || 'Assignee'} onClick={(e) => openAssign(t, e)}>
-                            {m?.avatar_url
+                    {cfv.assignee && (() => {
+                      // Only resolve to an avatar when the assignee is still an ACTIVE member.
+                      // If unassigned OR assigned to a removed/suspended user, show the "+".
+                      const m = t.assignee_id ? assigneeMember(t.assignee_id) : null;
+                      return m
+                        ? (
+                          <button style={{ ...s.cardAvatar, background: m.avatar_color || s.cardAvatar.background, cursor: 'pointer', border: 'none', overflow: 'hidden' }}
+                            title={m.full_name || 'Assignee'} onClick={(e) => openAssign(t, e)}>
+                            {m.avatar_url
                               ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : initials(m?.full_name || '?')}
+                              : initials(m.full_name)}
                           </button>
-                        );
-                      })()
-                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>)}
+                        )
+                        : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>;
+                    })()}
                   </div>
                 </div>
                 );
