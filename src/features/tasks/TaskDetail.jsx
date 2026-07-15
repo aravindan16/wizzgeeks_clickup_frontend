@@ -287,7 +287,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               onBlur={() => { setEditingTitle(false); if (titleVal.trim() && titleVal !== task.title) save({ title: titleVal.trim() }); }}
               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
           ) : (
-            <h1 style={{ ...s.title, cursor: canEdit ? 'text' : 'default' }} onClick={() => canEdit && setEditingTitle(true)} title={canEdit ? 'Click to edit' : ''}>{task.title}</h1>
+            <h1 className={canEdit ? 'wg-editable-title' : undefined} style={{ ...s.title, cursor: canEdit ? 'text' : 'default' }} onClick={() => canEdit && setEditingTitle(true)} title={canEdit ? 'Click to edit' : ''}>{task.title}</h1>
           )}
 
           <div style={s.section}>

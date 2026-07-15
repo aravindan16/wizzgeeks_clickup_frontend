@@ -15,6 +15,7 @@ import { beginSilent, endSilent } from '../../services/apiClient';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
 import DashboardShareModal from './DashboardShareModal';
+import { clearDashboardCache } from './useCardData';
 import { IconPlus, IconEdit, IconTrash, IconMembers, IconBoard, IconGrip, Chevron } from '../../components/icons';
 
 const Grid = WidthProvider(GridLayout);
@@ -37,6 +38,10 @@ export default function DashboardHome() {
   const { id: openId } = useParams(); // /dashboard/:id — the open dashboard, if any
   const [dashboards, setDashboards] = useState(null); // null = loading
   const creatingRef = useRef(false);
+
+  // Drop the shared card-data cache when leaving the dashboards area so the next
+  // visit is fresh; within a visit the cache dedupes every card's fetches.
+  useEffect(() => () => clearDashboardCache(), []);
 
   // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
