@@ -8,9 +8,11 @@ import { useAuth } from '../auth/useAuth';
 import { useHeaderSlot } from '../../layouts/headerSlot';
 import Select from '../../components/Select';
 import ResizableTable from '../../components/ResizableTable';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 export default function UserManagementPage() {
   const { can } = useAuth();
+  const confirm = useConfirm();
   const slotEl = useHeaderSlot();
   const [users, setUsers] = useState([]);      // the current page from the API
   const [total, setTotal] = useState(0);       // total matching rows (for the pager)
@@ -49,7 +51,17 @@ export default function UserManagementPage() {
   useEffect(() => { usersApi.roles().then(setRoles).catch(() => setRoles([])); }, []);
 
   const toggleStatus = async (u) => {
-    if (u.status === 'active') await usersApi.disable(u._id);
+    const disabling = u.status === 'active';
+    const ok = await confirm({
+      title: disabling ? `Disable ${u.full_name || 'user'}?` : `Activate ${u.full_name || 'user'}?`,
+      message: disabling
+        ? 'This user will be suspended and won’t be able to sign in until reactivated.'
+        : 'This user will be able to sign in again.',
+      confirmLabel: disabling ? 'Disable' : 'Activate',
+      danger: disabling,
+    });
+    if (!ok) return;
+    if (disabling) await usersApi.disable(u._id);
     else await usersApi.activate(u._id);
     load();
   };
