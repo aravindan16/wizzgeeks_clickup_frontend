@@ -94,7 +94,7 @@ export default function UserManagementPage() {
   ], [can]);
 
   return (
-    <div>
+    <div style={s.page}>
       {slotEl && createPortal(<span style={s.headerTitle}>User Management</span>, slotEl)}
 
       <div style={s.filters}>
@@ -113,19 +113,22 @@ export default function UserManagementPage() {
 
       {error && <p style={{ color: '#991b1b' }}>{error}</p>}
 
-      <ResizableTable
-        columns={columns}
-        rows={users}
-        rowKey={(u) => u._id}
-        persistKey="wg-users-table"
-        emptyText={loading ? 'Loading…' : 'No users found.'}
-        serverMode
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        onPageChange={setPage}
-        onPageSizeChange={(n) => { setPageSize(n); setPage(0); }}
-      />
+      <div style={s.tableWrap}>
+        <ResizableTable
+          columns={columns}
+          rows={users}
+          rowKey={(u) => u._id}
+          persistKey="wg-users-table"
+          emptyText={loading ? 'Loading…' : 'No users found.'}
+          fillHeight
+          serverMode
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(0); }}
+        />
+      </div>
 
       <UserModal
         open={modal.open}
@@ -173,6 +176,11 @@ function OverflowText({ text }) {
 }
 
 const s = {
+  // Full-height column: filters stay on top, the table fills the rest so its pager pins
+  // to the bottom. The extra 24px (with marginBottom -24) consumes the app main's bottom
+  // padding so the pager sits flush at the very bottom of the screen.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', minHeight: 0, marginBottom: -24 },
+  tableWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
   filters: { display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' },
   input: { padding: '8px 11px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)',
