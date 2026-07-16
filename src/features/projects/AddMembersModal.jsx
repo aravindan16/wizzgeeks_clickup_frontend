@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { projectsApi } from './projectsApi';
-import { usersApi } from '../users/usersApi';
+import { dashboardsApi } from '../dashboard/dashboardsApi';
 import { useToast } from '../../components/Toast';
 
 /**
@@ -12,28 +12,40 @@ const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
 export default function AddMembersModal({ open, project, projectId, existingMemberIds, onClose, onAdded }) {
   const toast = useToast();
-  const [allUsers, setAllUsers] = useState([]);
+  const [results, setResults] = useState([]); // {_id, full_name, email} from the directory search
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState([]); // [{id,name,email}]
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => { if (open) { setQuery(''); setSelected([]); setError(null); setResults([]); } }, [open]);
+
+  // Search the user directory as you type via an AUTH-ONLY endpoint, so managing space
+  // members doesn't require the broader `user.read` permission (a space manager who
+  // lacks user.read can still find and add people).
   useEffect(() => {
-    if (open) {
-      setQuery(''); setSelected([]); setError(null);
-      usersApi.list({ limit: 500, status: 'active' }).then((d) => setAllUsers(d.items)).catch(() => setAllUsers([]));
-    }
-  }, [open]);
+    if (!open) return undefined;
+    const term = query.trim();
+    if (!term) { setResults([]); return undefined; }
+    let alive = true;
+    const t = setTimeout(() => {
+      dashboardsApi.searchUsers(term)
+        .then((r) => {
+          const items = Array.isArray(r) ? r : (r?.items || []);
+          if (alive) setResults(items.map((u) => ({ _id: u.user_id, full_name: u.full_name, email: u.email })));
+        })
+        .catch(() => { if (alive) setResults([]); });
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query, open]);
 
   if (!open) return null;
 
   const selectedIds = new Set(selected.map((s) => s.id));
   const q = query.trim().toLowerCase();
+  // Server already matched by the query; just hide existing members / already-picked.
   const matches = q
-    ? allUsers.filter((u) =>
-        !existingMemberIds.has(u._id) && !selectedIds.has(u._id) &&
-        ((u.full_name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)))
-        .slice(0, 6)
+    ? results.filter((u) => !existingMemberIds.has(u._id) && !selectedIds.has(u._id)).slice(0, 6)
     : [];
 
   const addChip = (u) => { setSelected((s) => [...s, { id: u._id, name: u.full_name, email: u.email }]); setQuery(''); };

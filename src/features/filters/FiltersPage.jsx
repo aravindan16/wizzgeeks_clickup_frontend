@@ -110,8 +110,9 @@ export default function FiltersPage() {
   const navigate = useNavigate();
   const { id: routeId } = useParams();
   const slotEl = useHeaderSlot();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const myId = user?._id || user?.id || '';
+  const canAddMembers = can('filter.member.add');
   const [filterName, setFilterName] = useState(''); // saved filter's name (for the header breadcrumb)
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -530,7 +531,8 @@ export default function FiltersPage() {
           </div>
           {/* Right corner: Add people on Members, Filter + count + Columns on View. */}
           {tab === 'members' ? (
-            <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+            <button style={{ ...s.addBtn, ...(canAddMembers ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => (canAddMembers ? setMShare(true) : toast.error("You don't have permission to add members"))}><IconPlus size={16} /> Add people</button>
           ) : (
             <div style={s.tabsRight}>
               {filterToggle}
@@ -580,6 +582,8 @@ export default function FiltersPage() {
 function FilterMembers({ filterId, reloadKey }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const canRemove = can('filter.member.remove');
   const [members, setMembers] = useState([]);
 
   const load = () => savedFiltersApi.members(filterId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
@@ -600,7 +604,9 @@ function FilterMembers({ filterId, reloadKey }) {
         { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
           render: (m) => (m.is_owner
             ? <span style={s.ownerTag}>Owner</span>
-            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+            : (canRemove
+                ? <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>
+                : <span style={s.muted}>—</span>)) },
       ]} />
   );
 }

@@ -144,6 +144,10 @@ export default function ProjectDetailsPage() {
   // space can manage members (add/remove/change role) — no specific role needed.
   const isMember = memberIds.has(me);
   const canManage = isOwner || isMember || canManageGlobal;
+  // Adding / removing people is separately gated (backend requires these). Mirror the
+  // backend so the buttons only show when the action will actually succeed.
+  const canAddPeople = can('project.member.add') || canManageGlobal;
+  const canRemovePeople = can('project.member.remove') || canManageGlobal;
   const canArchive = can('project.update') || isOwner;
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
@@ -185,7 +189,8 @@ export default function ProjectDetailsPage() {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <SpaceSettingsMenu onSpaceSetting={() => navigate(`/projects/${id}/settings`)} />
           {isMembersTab
-            ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
+            ? <button className="btn btn-primary" style={{ ...s.taskBtn, ...(canAddPeople ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                onClick={() => (canAddPeople ? setAddPeopleOpen(true) : toast.error("You don't have permission to add members"))}>+ Add people</button>
             : (can('task.create') && project.status !== 'archived'
                 ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
                 : null)}
@@ -258,7 +263,7 @@ export default function ProjectDetailsPage() {
           columns={[
             { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
             { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },
-            ...(canManage ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+            ...(canRemovePeople ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
               render: (m) => <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button> }] : []),
           ]} />
       )}

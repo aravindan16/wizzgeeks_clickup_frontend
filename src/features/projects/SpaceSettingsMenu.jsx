@@ -42,6 +42,6 @@ const s = {
     background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10,
     boxShadow: '0 16px 40px rgba(16,24,40,.2)', padding: 6 },
   item: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 10px', border: 'none',
-    background: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: 'var(--c-text)', textAlign: 'left' },
+    borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: 'var(--c-text)', textAlign: 'left' },
   itemIcon: { display: 'inline-flex', alignItems: 'center', color: 'var(--c-muted)', flexShrink: 0 },
 };
