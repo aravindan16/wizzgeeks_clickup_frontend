@@ -61,13 +61,15 @@ const unionById = (prev, next, key) => {
   const add = (next || []).filter((x) => !seen.has(String(x[key])));
   return add.length ? [...(prev || []), ...add] : (prev || []);
 };
-// Structural signature of a rule tree (ignores node ids) — used to tell whether the
-// results we already have still match the current tree, so we don't re-evaluate needlessly.
+// Structural signature of the EFFECTIVE (active) rule tree — ignores node ids AND any
+// rule without a value, exactly like the server evaluator. So adding or editing an
+// empty rule (e.g. picking the Status field before choosing a value) produces the same
+// signature and does NOT trigger a re-evaluate; only setting a value changes the results.
 const ruleSig = (cards, conj) => {
   const norm = (n) => (n.type === 'group'
-    ? { t: 'g', c: n.conj, ch: (n.children || []).map(norm) }
+    ? { t: 'g', c: n.conj, ch: (n.children || []).filter(nodeActive).map(norm) }
     : { t: 'r', f: n.field, o: n.op, v: n.value });
-  return JSON.stringify({ conj, cards: (cards || []).map(norm) });
+  return JSON.stringify({ conj, cards: (cards || []).filter(nodeActive).map(norm) });
 };
 
 /* ---------- immutable tree helpers (find/replace/remove by id) ---------- */
@@ -108,8 +110,9 @@ export default function FiltersPage() {
   const navigate = useNavigate();
   const { id: routeId } = useParams();
   const slotEl = useHeaderSlot();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const myId = user?._id || user?.id || '';
+  const canAddMembers = can('filter.member.add');
   const [filterName, setFilterName] = useState(''); // saved filter's name (for the header breadcrumb)
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -150,7 +153,10 @@ export default function FiltersPage() {
   const [lists, setLists] = useState([]);     // {_id, name, spaceId, spaceName}
   const [users, setUsers] = useState([]);     // {user_id, full_name, email}
   const [labels, setLabels] = useState([]);   // global label catalog {id, name, color}
-  const [tasks, setTasks] = useState([]);       // server-evaluated RESULT tasks (already filtered)
+  const [tasks, setTasks] = useState([]);       // the CURRENT PAGE of matched tasks (server-paginated)
+  const [total, setTotal] = useState(0);        // grand total of matched tasks (for the pager)
+  const [page, setPage] = useState(0);          // 0-based current page
+  const [pageSize, setPageSize] = useState(10); // rows per page
   const [allTasks, setAllTasks] = useState([]); // full task set — only the builder's relationship picker needs it
   const [loading, setLoading] = useState(false);
   // Each "card" is an independent filter group; the bottom "+ Add filter" adds a card.
@@ -194,10 +200,11 @@ export default function FiltersPage() {
     setAllTasks(all);
   }, []);
 
-  // Absorb the reference data the server bundles with results into shared state (union
-  // so the builder's fuller sets, when later loaded, aren't clobbered).
+  // Absorb one page of server results: the page rows + total, plus the reference data
+  // (union so the builder's fuller sets, when later loaded, aren't clobbered).
   const absorbRefs = useCallback((res) => {
     setTasks(res.items || []);
+    setTotal(res.total || 0);
     if (res.spaces) setProjects((p) => unionById(p, res.spaces, '_id'));
     if (res.lists) setLists((p) => unionById(p, res.lists, '_id'));
     if (res.users) setUsers((p) => unionById(p, res.users, 'user_id'));
@@ -207,15 +214,19 @@ export default function FiltersPage() {
   // /filters/new is a fresh builder. `lastSigRef` marks the rule tree we already have
   // results for, so the live-evaluate effect below doesn't re-fetch the same thing.
   const lastSigRef = useRef(null);
+  // Snapshot of the last-SAVED filter tree, so Cancel can discard unsaved edits.
+  const savedSnapRef = useRef({ cards: [], conj: 'AND' });
   useEffect(() => {
+    setPage(0); // new route → first page
     if (routeId && routeId !== 'new') {
       setLoading(true);
-      savedFiltersApi.results(routeId).then((res) => {
+      savedFiltersApi.results(routeId, { skip: 0, limit: pageSize }).then((res) => {
         const rc = res.filter?.cards?.length ? res.filter.cards.map(reId) : [newGroup()];
         setCards(rc);
         setCardsConj(res.filter?.conj || 'AND');
         setFilterName(res.filter?.name || '');
-        lastSigRef.current = ruleSig(rc, res.filter?.conj || 'AND');
+        savedSnapRef.current = { cards: res.filter?.cards || [], conj: res.filter?.conj || 'AND' };
+        lastSigRef.current = `${ruleSig(rc, res.filter?.conj || 'AND')}|0|${pageSize}`;
         absorbRefs(res);
         markActiveFilter(routeId);
       }).catch(() => { navigate('/filters', { replace: true }); })
@@ -225,6 +236,8 @@ export default function FiltersPage() {
       setCardsConj('AND');
       setFilterName('');
       setTasks([]);
+      setTotal(0);
+      savedSnapRef.current = { cards: [], conj: 'AND' };
       lastSigRef.current = null;
       markActiveFilter('');
     }
@@ -256,30 +269,25 @@ export default function FiltersPage() {
   // Builder-only (never shown in the results table), so skip the fetch when the builder
   // isn't visible (e.g. a saved filter whose builder is collapsed).
   const [customFields, setCustomFields] = useState([]);
+  const [cfWanted, setCfWanted] = useState(false); // set once the user opens the field picker
   const builderShown = !routeId || routeId === 'new' || showBuilder;
+  // Custom fields are only needed to (a) render an existing cf rule or (b) offer cf
+  // options in the field picker once it's opened — NOT just to view Space/List rules.
+  // So don't fetch them merely because the builder opened on a saved filter.
+  const hasCfRule = useMemo(() => {
+    let found = false;
+    const scan = (n) => { if (found) return; if (n.type === 'group') n.children.forEach(scan); else if (String(n.field).startsWith('cf:')) found = true; };
+    cards.forEach(scan);
+    return found;
+  }, [cards]);
   useEffect(() => {
-    if (!builderShown || !contextSpaceId) { setCustomFields([]); return; }
+    if (!builderShown || !contextSpaceId || !(hasCfRule || cfWanted)) { setCustomFields([]); return; }
     customFieldsApi.list(contextSpaceId, contextListId || undefined, undefined, { _silent: true })
       .then((fs) => setCustomFields((fs || [])
         .filter((f) => ['dropdown', 'text', 'relationship'].includes(f.type))
         .map((f) => ({ key: `cf:${f._id}`, id: f._id, label: f.name, type: f.type, config: f.config || {}, location: f.location }))))
       .catch(() => setCustomFields([]));
-  }, [contextSpaceId, contextListId, builderShown]);
-
-  // When the builder is visible, preload the FULL reference data for any field that
-  // already has a selection — so an existing pick (e.g. a chosen List) shows up in its
-  // dropdown as checked, instead of being invisible because only the results' partial
-  // reference data was loaded. Empty fields still lazy-load when their dropdown opens.
-  useEffect(() => {
-    if (!builderShown) return;
-    const need = new Set();
-    const scan = (n) => { if (n.type === 'group') n.children.forEach(scan); else if (ruleActive(n)) need.add(n.field); };
-    cards.forEach(scan);
-    const arr = [...need];
-    if (arr.some((f) => ['space', 'list', 'status'].includes(f))) ensureSpaces();
-    if (arr.some((f) => ['assignee', 'reporter'].includes(f))) ensureUsers();
-    if (need.has('label')) ensureLabels();
-  }, [builderShown, cards, ensureSpaces, ensureUsers, ensureLabels]);
+  }, [contextSpaceId, contextListId, builderShown, hasCfRule, cfWanted]);
 
   const stsBySpace = useMemo(() => { const m = {}; projects.forEach((p) => { m[p._id] = resolveStatuses(p); }); return m; }, [projects]);
   // A List can have its own custom status set; otherwise it inherits its Space's.
@@ -342,9 +350,6 @@ export default function FiltersPage() {
   const userName = (id) => users.find((u) => String(u.user_id) === String(id))?.full_name || users.find((u) => String(u.user_id) === String(id))?.email || '—';
   const spaceName = (id) => projects.find((p) => String(p._id) === String(id))?.name || projects.find((p) => String(p._id) === String(id))?.key || '—';
 
-  // Results now come pre-filtered from the server (evaluate/results), so the table just
-  // renders `tasks` directly — no client-side re-evaluation over the whole task set.
-  const filtered = tasks;
 
   /* card + tree mutations (ids are unique across all cards) */
   const setNode = (id, fn) => setCards((cs) => cs.map((c) => mapTree(c, id, fn)));
@@ -376,6 +381,19 @@ export default function FiltersPage() {
   }));
   const clearAll = () => { setCards([newGroup()]); setCardsConj('AND'); markActiveFilter(''); };
 
+  // Cancel: discard unsaved edits. For a saved filter, restore the last-saved rule tree
+  // (with fresh ids) and close the builder; for a new filter, leave the page.
+  const cancelBuilder = () => {
+    if (isSaved) {
+      const snap = savedSnapRef.current;
+      setCards(snap.cards?.length ? snap.cards.map(reId) : [newGroup()]);
+      setCardsConj(snap.conj || 'AND');
+      setShowBuilder(false);
+    } else {
+      navigate('/filters');
+    }
+  };
+
   // Inline rename of the saved filter from the header breadcrumb.
   const isSaved = routeId && routeId !== 'new';
   const startRename = () => { setNameDraft(filterName || ''); setEditingName(true); };
@@ -390,7 +408,7 @@ export default function FiltersPage() {
 
   const options = { projects, lists: listOptions, statuses: statusOptions, users, myId, customFields, tasks: allTasks,
     labels: labels.map((l) => ({ value: l.name, label: l.name })),
-    ensureSpaces, ensureUsers, ensureLabels, ensureTasks };
+    ensureSpaces, ensureUsers, ensureLabels, ensureTasks, onNeedFields: () => setCfWanted(true) };
 
   // Active rule count (for the "Filter" toggle badge).
   const activeCount = useMemo(() => {
@@ -400,33 +418,37 @@ export default function FiltersPage() {
     return n;
   }, [cards]);
 
-  // Live server-side results whenever the rule tree changes (a new filter being built,
-  // or a saved filter edited in the builder). Debounced. Skipped when the current tree
-  // already has results (e.g. right after the saved-filter results() load), so a saved
-  // filter view stays a SINGLE request.
+  // Reset to the first page whenever the filter rules change (so a new filter's results
+  // start at page 1, not a stale page index).
+  const treeSig = useMemo(() => ruleSig(cards, cardsConj), [cards, cardsConj]);
+  useEffect(() => { setPage(0); }, [treeSig]);
+
+  // Live server-side results: fetch the CURRENT PAGE whenever the rule tree OR the page/
+  // size changes. Debounced. Skipped when we already have exactly this page (e.g. right
+  // after the saved-filter results() load), so a saved-filter view stays one request per page.
   useEffect(() => {
-    if (activeCount === 0) { setTasks([]); lastSigRef.current = null; return undefined; }
-    const sig = ruleSig(cards, cardsConj);
+    if (activeCount === 0) { setTasks([]); setTotal(0); lastSigRef.current = null; return undefined; }
+    const sig = `${treeSig}|${page}|${pageSize}`;
     if (sig === lastSigRef.current) return undefined;
     let alive = true;
     setLoading(true);
     const t = setTimeout(() => {
-      savedFiltersApi.evaluate(cards, cardsConj)
+      savedFiltersApi.evaluate(cards, cardsConj, { skip: page * pageSize, limit: pageSize })
         .then((res) => { if (alive) { lastSigRef.current = sig; absorbRefs(res); } })
-        .catch(() => { if (alive) setTasks([]); })
+        .catch(() => { if (alive) { setTasks([]); setTotal(0); } })
         .finally(() => { if (alive) setLoading(false); });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
-  }, [activeCount, cards, cardsConj, absorbRefs]);
+  }, [activeCount, treeSig, cards, cardsConj, page, pageSize, absorbRefs]);
 
   // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
   const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
   const RENDERERS = {
     key: (t) => <span style={s.key}>{t.key}</span>,
-    title: (t) => <span style={s.name}>{t.title}</span>,
-    space: (t) => <span style={s.muted}>{spaceName(t.project_id)}</span>,
+    title: (t) => <OverflowText text={t.title} style={s.name} />,
+    space: (t) => <OverflowText text={spaceName(t.project_id)} style={s.muted} />,
     status: (t) => { const sts = stsForTask(t); return <span style={{ ...s.chip, color: statusColor(sts, t.status), borderColor: statusColor(sts, t.status) }}>{statusLabel(sts, t.status)}</span>; },
-    assignee: (t) => <span style={s.muted}>{t.assignee_id ? userName(t.assignee_id) : 'Unassigned'}</span>,
+    assignee: (t) => <OverflowText text={t.assignee_id ? userName(t.assignee_id) : 'Unassigned'} style={s.muted} />,
     due: (t) => <span style={s.muted}>{shortDate(t.end_date || t.due_date)}</span>,
     priority: (t) => <span style={{ color: PRIORITY_COLOR[t.priority] || 'var(--c-muted)', fontWeight: 600, textTransform: 'capitalize' }}>{t.priority || '—'}</span>,
   };
@@ -454,9 +476,10 @@ export default function FiltersPage() {
         </button>
         <div style={s.footerRight}>
           <button type="button" className="btn" style={s.cancelBtn}
-            onClick={() => (isSaved ? setShowBuilder(false) : navigate('/filters'))}>Cancel</button>
+            onClick={cancelBuilder}>Cancel</button>
           <button type="button" className="btn" style={s.clearAllBtn} onClick={clearAll}>Clear all</button>
-          <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId} />
+          <SaveFilterButton cards={cards} conj={cardsConj} routeId={routeId}
+            onSaved={() => { savedSnapRef.current = { cards, conj: cardsConj }; }} />
         </div>
       </div>
     </div>
@@ -472,7 +495,7 @@ export default function FiltersPage() {
   );
 
   return (
-    <div>
+    <div style={s.page}>
       {/* Breadcrumb ("Filters › <saved filter name>") lives in the shared topbar. */}
       {slotEl && createPortal(
         <span style={s.crumbs}>
@@ -508,7 +531,8 @@ export default function FiltersPage() {
           </div>
           {/* Right corner: Add people on Members, Filter + count + Columns on View. */}
           {tab === 'members' ? (
-            <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+            <button style={{ ...s.addBtn, ...(canAddMembers ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => (canAddMembers ? setMShare(true) : toast.error("You don't have permission to add members"))}><IconPlus size={16} /> Add people</button>
           ) : (
             <div style={s.tabsRight}>
               {filterToggle}
@@ -522,25 +546,29 @@ export default function FiltersPage() {
         <FilterMembers filterId={routeId} reloadKey={mReload} />
       ) : isSaved ? (
         // Saved filter View tab: builder (when toggled) then the results table.
-        <>
+        <div style={s.viewArea}>
           {showBuilder && builderCard}
           {/* Only show tasks once a filter is actually applied; otherwise the empty
               "No tasks found" state (avoids dumping every task with no filter). */}
-          <ResultsTable columns={columns} rows={activeCount > 0 ? filtered : []} loading={loading}
+          <ResultsTable columns={columns} rows={activeCount > 0 ? tasks : []} total={activeCount > 0 ? total : 0}
+            page={page} pageSize={pageSize} onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
             colState={colState} onResizeStart={startColResize}
             onOpenTask={(id) => navigate(`/tasks/${id}`)} />
-        </>
+        </div>
       ) : (
         // Brand-new (unsaved) filter: builder + a live results preview once a
         // filter rule is set (so you can see matches before saving).
-        <>
+        <div style={s.viewArea}>
           {builderCard}
           {activeCount > 0 && (
-            <ResultsTable columns={columns} rows={filtered} loading={loading}
+            <ResultsTable columns={columns} rows={tasks} total={total}
+              page={page} pageSize={pageSize} onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
               colState={colState} onResizeStart={startColResize}
               onOpenTask={(id) => navigate(`/tasks/${id}`)} />
           )}
-        </>
+        </div>
       )}
 
       <FilterShareModal open={mShare} filterId={routeId}
@@ -554,6 +582,8 @@ export default function FiltersPage() {
 function FilterMembers({ filterId, reloadKey }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const canRemove = can('filter.member.remove');
   const [members, setMembers] = useState([]);
 
   const load = () => savedFiltersApi.members(filterId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
@@ -574,7 +604,9 @@ function FilterMembers({ filterId, reloadKey }) {
         { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
           render: (m) => (m.is_owner
             ? <span style={s.ownerTag}>Owner</span>
-            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+            : (canRemove
+                ? <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>
+                : <span style={s.muted}>—</span>)) },
       ]} />
   );
 }
@@ -608,20 +640,41 @@ function ColumnsMenu({ columns, colState, onToggle }) {
   );
 }
 
+/* Cell text that ellipsises and shows a tooltip with the full value ONLY when it's
+   actually truncated. Measured at hover time; the tooltip is portaled so it can't clip. */
+function OverflowText({ text, style }) {
+  const ref = useRef(null);
+  const [tip, setTip] = useState(null);
+  const onEnter = () => {
+    const el = ref.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const r = el.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <>
+      <span ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setTip(null)}
+        style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...style }}>{text}</span>
+      {tip && createPortal(
+        <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: 'translate(-50%, -125%)', pointerEvents: 'none',
+          background: 'var(--c-text-strong)', color: 'var(--c-surface)', padding: '6px 10px', borderRadius: 7, fontSize: 12.5,
+          lineHeight: 1.35, maxWidth: 460, whiteSpace: 'normal', boxShadow: '0 4px 16px rgba(0,0,0,.24)', zIndex: 9999 }}>{text}</div>,
+        document.body)}
+    </>
+  );
+}
+
 /* ---------------------------------------- Results table (resizable columns) */
 const PAGE_SIZES = [10, 20, 50, 100];
-function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenTask }) {
+function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPageSizeChange, loading, colState, onResizeStart, onOpenTask }) {
   const navigate = useNavigate();
   const shown = columns.filter((c) => colState.visible[c.key]);
-  const [pageSize, setPageSize] = useState(10);
-  const [page, setPage] = useState(0);
-  const total = rows.length;
+  // Server-side pagination: `rows` IS the current page; the parent refetches on page change.
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  useEffect(() => { setPage(0); }, [total, pageSize]);
-  const pageRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const pageRows = rows;
   const from = total === 0 ? 0 : safePage * pageSize + 1;
-  const to = Math.min(total, (safePage + 1) * pageSize);
+  const to = Math.min(total, safePage * pageSize + rows.length);
 
   // --- bulk selection --- (opens the step-by-step Bulk Operation page)
   const [selected, setSelected] = useState(() => new Set());
@@ -645,7 +698,7 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <button type="button" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
         </div>
       )}
-      <div style={{ overflowX: 'auto' }}>
+      <div style={s.rScroll}>
         <table style={s.rTable}>
           <colgroup><col style={{ width: 42 }} />{shown.map((c) => <col key={c.key} style={{ width: colState.widths[c.key] }} />)}</colgroup>
           <thead>
@@ -679,7 +732,7 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <label style={s.pagerLeft}>
             Rows per page:
             <span style={s.pageSelectWrap}>
-              <select style={s.pageSelect} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              <select style={s.pageSelect} value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
                 {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
               <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
@@ -688,10 +741,10 @@ function ResultsTable({ columns, rows, loading, colState, onResizeStart, onOpenT
           <div style={s.pagerRight}>
             <span style={s.pagerRange}>{from}–{to} of {total}</span>
             <button type="button" style={{ ...s.pagerBtn, ...(safePage === 0 ? s.pagerDisabled : {}) }}
-              disabled={safePage === 0} onClick={() => setPage(safePage - 1)} title="Previous">‹</button>
+              disabled={safePage === 0} onClick={() => onPageChange(safePage - 1)} title="Previous">‹</button>
             <span style={s.pagerPage}>{safePage + 1} / {pageCount}</span>
             <button type="button" style={{ ...s.pagerBtn, ...(safePage >= pageCount - 1 ? s.pagerDisabled : {}) }}
-              disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)} title="Next">›</button>
+              disabled={safePage >= pageCount - 1} onClick={() => onPageChange(safePage + 1)} title="Next">›</button>
           </div>
         </div>
       )}
@@ -811,7 +864,8 @@ function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
   };
   return (
     <>
-      <div style={g.fieldCol}>
+      <div style={g.fieldCol} onMouseDown={() => options.onNeedFields?.()}>
+        {/* onMouseDown fires before the dropdown opens → load custom-field options on demand. */}
         <Select value={rule.field} onChange={(v) => set({ field: v, value: emptyFor(v) })}
           options={fieldOpts} />
       </div>
@@ -974,7 +1028,7 @@ function UserPicker({ value, onChange, users, myId, allowUnassigned, active, onO
 const markActiveFilter = (id) => { try { localStorage.setItem('wg_active_filter', id); } catch { /* ignore */ } window.dispatchEvent(new Event('wg-active-filter-changed')); };
 // A single "Save filter" button. For an existing saved filter it updates it in
 // place; for a fresh builder (/filters/new) it prompts for a name and creates one.
-function SaveFilterButton({ cards, conj, routeId }) {
+function SaveFilterButton({ cards, conj, routeId, onSaved }) {
   const promptDialog = usePrompt();
   const toast = useToast();
   const navigate = useNavigate();
@@ -987,6 +1041,7 @@ function SaveFilterButton({ cards, conj, routeId }) {
       try {
         await savedFiltersApi.update(routeId, { cards, conj });
         window.dispatchEvent(new Event('wg-saved-filters-changed'));
+        onSaved?.(); // update the parent's "last saved" snapshot so Cancel reverts to this
         toast.success('Filter saved');
       } catch { toast.error('Could not save filter'); }
       return;
@@ -1045,8 +1100,11 @@ const g = {
   popEmpty: { padding: '10px 12px', fontSize: 13, color: 'var(--c-muted)' },
   groupHeader: { padding: '8px 10px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-faint)' },
   popDivider: { height: 1, background: 'var(--c-border)', margin: '4px 0' },
-  checkbox: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },
+  // Always a clearly-visible box: surface fill + a solid border when empty, so an
+  // unchecked option never looks like it's missing a checkbox.
+  checkbox: { width: 18, height: 18, borderRadius: 5, border: '1.5px solid var(--c-border)', background: 'var(--c-surface)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, lineHeight: 1,
+    color: '#fff', flexShrink: 0, boxSizing: 'border-box' },
   checkboxOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
   searchRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px 8px', color: 'var(--c-faint)', borderBottom: '1px solid var(--c-border)', marginBottom: 4 },
   searchInput: { flex: 1, border: 'none', outline: 'none', background: 'none', fontSize: 14, color: 'var(--c-text)' },
@@ -1056,6 +1114,12 @@ const g = {
 };
 
 const s = {
+  // Full-height column: tabs stay at the top, the results area (viewArea) fills the
+  // rest so its pager pins to the bottom of the screen (inset by the app's padding).
+  // Extend into the app main's 24px bottom padding (negative margin) so the pager sits
+  // flush at the very bottom of the screen instead of leaving a gap below it.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', minHeight: 0, marginBottom: -24 },
+  viewArea: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
   crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
@@ -1100,18 +1164,26 @@ const s = {
   colCheck: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },
   colCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
   // Results table (fixed layout so column widths apply; resize handles on headers)
-  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  // Fill the remaining viewport height and lay out as a column: the rows scroll
+  // internally (rScroll) while the pager stays pinned at the card's bottom.
+  rCard: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12,
+    boxShadow: 'var(--sh-xs)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
+  rScroll: { flex: 1, minHeight: 0, overflow: 'auto' },
   rTable: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
-  rTh: { position: 'relative', textAlign: 'left', padding: '10px 14px', fontSize: 12, textTransform: 'uppercase',
-    letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  // Sticky header: stays pinned at the top while the rows scroll inside rScroll.
+  // (sticky still establishes a positioning context for the absolute resize handle.)
+  rTh: { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', padding: '10px 14px', fontSize: 12,
+    textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
   rThLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   rResize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
   rColLine: { borderRight: '1px solid var(--c-border-2)' },
   rRow: { borderTop: '1px solid var(--c-border-2)', cursor: 'pointer' },
   rTd: { padding: '11px 14px', fontSize: 14, color: 'var(--c-text)', verticalAlign: 'middle' },
   rClip: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  // Sits at the bottom of the flex column (the card fills the viewport height), so
+  // it's always pinned to the bottom of the screen regardless of the row count.
   pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
+    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)', flexShrink: 0 },
   pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
   pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
   pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',

@@ -223,7 +223,7 @@ export default function ListBoardPage() {
         document.body,
       )}
 
-      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea, overflow: (activeView?.type === 'board' || activeView?.type === 'list') ? 'hidden' : 'auto' }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
             listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId}
@@ -251,7 +251,9 @@ export default function ListBoardPage() {
 const s = {
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  // height compensates BOTH negative margins (14 top + 24 bottom) so the column spans
+  // the full viewport and the pager/scrollbar sits flush at the very bottom.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 38px)', marginTop: -14, marginBottom: -24 },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
   crumbSep: { color: 'var(--c-faint)', fontSize: 15 },

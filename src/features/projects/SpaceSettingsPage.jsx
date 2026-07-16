@@ -43,6 +43,8 @@ export default function SpaceSettingsPage() {
   const [saving, setSaving] = useState(false);
   // Space owner can manage even without the role permission (matches backend).
   const canManage = can('project.update') || (!!project?.owner_id && String(project.owner_id) === String(me));
+  // Adding people is separately gated by the backend (project.member.add or .manage).
+  const canAddPeople = can('project.member.add') || can('project.member.manage');
 
   const load = useCallback(async () => {
     const [p, ms] = await Promise.all([
@@ -179,9 +181,9 @@ export default function SpaceSettingsPage() {
                 <button style={{ ...s.ghost, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
                   title={canManage ? '' : NO_PERM_MSG}
                   onClick={() => (canManage ? setRolesOpen(true) : toast.error(NO_PERM_MSG))}>Manage roles</button>
-                <button style={{ ...s.primary, ...(canManage ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
-                  title={canManage ? '' : NO_PERM_MSG}
-                  onClick={() => (canManage ? setAddOpen(true) : toast.error(NO_PERM_MSG))}>Add people</button>
+                <button style={{ ...s.primary, ...(canAddPeople ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                  title={canAddPeople ? '' : NO_PERM_MSG}
+                  onClick={() => (canAddPeople ? setAddOpen(true) : toast.error(NO_PERM_MSG))}>Add people</button>
               </div>
             </div>
             <p style={s.accessSub}>People who can access this space and their roles.</p>

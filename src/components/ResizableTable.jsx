@@ -21,6 +21,9 @@ export default function ResizableTable({
   columns, rows, rowKey, onRowClick, emptyText = 'No data.',
   persistKey, card = true, rowClassName = 'wg-rel-row',
   paginated = true, defaultPageSize = 10,
+  // fillHeight: fill the parent's height — rows scroll internally under a sticky header,
+  // and the pager pins to the bottom (the parent must give the table a bounded height).
+  fillHeight = false,
   // --- server-side pagination (backend paging) ---
   // When serverMode is set, `rows` is ALREADY the current page from the API.
   // The component controls nothing itself — it reports page/size changes so the
@@ -70,15 +73,16 @@ export default function ResizableTable({
   const to = serverMode ? Math.min(total, safePage * pageSize + rows.length) : Math.min(total, (safePage + 1) * pageSize);
 
   const last = columns.length - 1;
+  const th = fillHeight ? { ...s.th, ...s.thSticky } : s.th; // sticky header when filling height
   const content = (
     <>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={fillHeight ? s.scrollFill : { overflowX: 'auto' }}>
         <table style={s.table}>
           <colgroup>{columns.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}</colgroup>
           <thead>
             <tr>
               {columns.map((c, i) => (
-                <th key={c.key} style={{ ...s.th, ...(c.align ? { textAlign: c.align } : {}), ...(i < last ? s.line : {}) }}>
+                <th key={c.key} style={{ ...th, ...(c.align ? { textAlign: c.align } : {}), ...(i < last ? s.line : {}) }}>
                   <span style={s.thLabel}>{c.label}</span>
                   {i < last && <span style={s.resize} onMouseDown={(e) => startResize(e, c.key)} title="Drag to resize" />}
                 </th>
@@ -103,7 +107,7 @@ export default function ResizableTable({
       </div>
 
       {paginated && total > 0 && (
-        <div style={s.pager}>
+        <div style={{ ...s.pager, ...(fillHeight ? { flexShrink: 0 } : {}) }}>
           <label style={s.pagerLeft}>
             Rows per page:
             <Select value={pageSize} onChange={(v) => setPageSize(Number(v))} style={s.pageSelect}
@@ -122,14 +126,18 @@ export default function ResizableTable({
     </>
   );
 
-  return card ? <div style={s.card}>{content}</div> : content;
+  return card ? <div style={{ ...s.card, ...(fillHeight ? s.cardFill : {}) }}>{content}</div> : content;
 }
 
 const s = {
   card: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  // fillHeight: card becomes a full-height flex column so the pager pins to the bottom.
+  cardFill: { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 },
+  scrollFill: { flex: 1, minHeight: 0, overflow: 'auto' }, // rows scroll here
   table: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
   th: { position: 'relative', textAlign: 'left', padding: '11px 14px', fontSize: 12, textTransform: 'uppercase',
     letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  thSticky: { position: 'sticky', top: 0, zIndex: 2 }, // keep header visible while rows scroll
   thLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   resize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
   line: { borderRight: '1px solid var(--c-border-2)' },

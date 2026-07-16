@@ -182,17 +182,17 @@ function UserMenu({ user, onProfile, onLogout, onCustomize, variant = 'avatar', 
 
   // The three actions are shared by both variants' dropdowns.
   const menuActions = (
-    <>
+    <div style={s.menuActions}>
       <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onProfile(); }}>
-        <span style={s.menuIcon}><IconUser size={17} /></span> Profile
+        <span style={s.menuIcon}><IconUser size={16} /></span> Profile
       </button>
       <button className="wg-menu-item" style={s.menuItem} onClick={() => { setOpen(false); onCustomize(); }}>
-        <span style={s.menuIcon}><IconSettings size={17} /></span> Customize
+        <span style={s.menuIcon}><IconSettings size={16} /></span> Customize
       </button>
       <button className="wg-menu-item" style={{ ...s.menuItem, color: '#ef4444' }} onClick={() => { setOpen(false); onLogout(); }}>
-        <span style={s.menuIcon}><IconLogout size={17} /></span> Log out
+        <span style={s.menuIcon}><IconLogout size={16} /></span> Log out
       </button>
-    </>
+    </div>
   );
 
   return (
@@ -236,7 +236,7 @@ function UserMenu({ user, onProfile, onLogout, onCustomize, variant = 'avatar', 
       {/* Chip menu (sidebar footer): portaled to <body>, fixed above-left of the chip,
           actions only (the chip already shows the name/avatar). */}
       {open && isChip && pos && createPortal(
-        <div ref={menuRef} style={{ ...s.menu, position: 'fixed', top: 'auto', right: 'auto', left: pos.left, bottom: pos.bottom, width: 240 }}>
+        <div ref={menuRef} style={{ ...s.menu, position: 'fixed', top: 'auto', right: 'auto', left: pos.left, bottom: pos.bottom, width: 200 }}>
           {menuActions}
         </div>,
         document.body,
@@ -325,7 +325,7 @@ const s = {
     border: '2px solid transparent', fontWeight: 700, fontSize: 12, cursor: 'pointer', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center' },
   avatarBtnOpen: { borderColor: 'var(--c-text-strong)' },
-  menu: { position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 280, background: 'var(--c-surface)',
+  menu: { position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 240, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 70, overflow: 'hidden' },
   // Sidebar-footer variant: open UP and align to the LEFT edge of the chip.
   menuUp: { top: 'auto', bottom: 'calc(100% + 8px)' },
@@ -336,8 +336,12 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16, flexShrink: 0 },
   menuName: { fontWeight: 700, fontSize: 15, color: 'var(--c-text-strong)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   menuEmail: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  menuItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
-    padding: '12px 16px', cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
-  menuIcon: { width: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit' },
+  // Inset, padded container so each item's hover highlight is a rounded pill (like the
+  // Spaces "…" menu) instead of an edge-to-edge bar.
+  menuActions: { padding: 6 },
+  menuItem: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+    padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, fontWeight: 500,
+    color: 'var(--c-text)', lineHeight: 1.2 },
+  menuIcon: { width: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'inherit', flexShrink: 0 },
   main: { flex: 1, padding: 24, background: 'var(--c-surface-2)', minWidth: 0, overflow: 'auto', position: 'relative' },
 };

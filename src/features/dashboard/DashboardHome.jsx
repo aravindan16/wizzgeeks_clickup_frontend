@@ -203,6 +203,8 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   const confirm = useConfirm();
   const toast = useToast();
+  const { can } = useAuth();
+  const canAddMembers = can('dashboard.member.add');
   const slotEl = useHeaderSlot();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null); // card open in the modal
@@ -344,7 +346,8 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
           </button>
         </div>
         {tab === 'members'
-          ? <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+          ? <button style={{ ...s.addBtn, ...(canAddMembers ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => (canAddMembers ? setMShare(true) : toast.error("You don't have permission to add members"))}><IconPlus size={16} /> Add people</button>
           : <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>}
       </div>
 
@@ -392,6 +395,8 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
 function DashboardMembers({ dashboardId, reloadKey }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const canRemove = can('dashboard.member.remove');
   const [members, setMembers] = useState([]);
 
   const load = () => dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
@@ -412,7 +417,9 @@ function DashboardMembers({ dashboardId, reloadKey }) {
         { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
           render: (m) => (m.is_owner
             ? <span style={s.ownerTag}>Owner</span>
-            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+            : (canRemove
+                ? <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>
+                : <span style={s.mEmail}>—</span>)) },
       ]} />
   );
 }

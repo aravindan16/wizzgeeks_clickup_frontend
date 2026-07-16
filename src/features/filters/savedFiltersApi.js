@@ -4,11 +4,13 @@ import apiClient from '../../services/apiClient';
 export const savedFiltersApi = {
   list: () => apiClient.get('/saved-filters').then((r) => r.data.items || []),
   get: (id) => apiClient.get(`/saved-filters/${id}`).then((r) => r.data),
-  // One call: the saved filter's definition + its evaluated results + the reference
-  // data (spaces / lists / assignee users) needed to render the results table.
-  results: (id) => apiClient.get(`/saved-filters/${id}/results`, { _silent: true }).then((r) => r.data),
-  // Evaluate an ad-hoc rule tree server-side (live builder preview / edited filter).
-  evaluate: (cards, conj) => apiClient.post('/saved-filters/evaluate', { cards, conj }, { _silent: true }).then((r) => r.data),
+  // One PAGE: the saved filter's definition + one page of its evaluated results (skip/
+  // limit) + the reference data (spaces / lists / assignee users) for those rows + total.
+  results: (id, { skip = 0, limit = 0 } = {}) =>
+    apiClient.get(`/saved-filters/${id}/results`, { params: { skip, limit }, _silent: true }).then((r) => r.data),
+  // Evaluate an ad-hoc rule tree server-side (live builder preview / edited filter), paged.
+  evaluate: (cards, conj, { skip = 0, limit = 0 } = {}) =>
+    apiClient.post('/saved-filters/evaluate', { cards, conj }, { params: { skip, limit }, _silent: true }).then((r) => r.data),
   create: (payload) => apiClient.post('/saved-filters', payload).then((r) => r.data),
   update: (id, payload) => apiClient.patch(`/saved-filters/${id}`, payload).then((r) => r.data),
   remove: (id) => apiClient.delete(`/saved-filters/${id}`).then((r) => r.data),
