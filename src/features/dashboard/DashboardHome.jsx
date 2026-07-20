@@ -156,7 +156,8 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
   const startRename = (d) => { setRenaming(d.id); setDraft(d.name); };
   const commitRename = (d) => {
     const name = (draft || '').trim() || 'Dashboard';
-    onRename({ ...d, name });
+    // Only hit the API when the name actually changed.
+    if (name !== (d.name || '')) onRename({ ...d, name });
     setRenaming(null);
   };
 
@@ -237,30 +238,49 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
     const d = defaultLayout(c, i);
     return { i: c.id, x: c.x ?? d.x, y: c.y ?? d.y, w: c.w ?? d.w, h: c.h ?? d.h, minW: 3, minH: 4 };
   });
-  const persistLayout = (nextLayout) => {
+  // After a resize, apply the new size and immediately re-flow the whole board so
+  // an enlarged card that no longer fits its row wraps to the next row right away
+  // — no overlap, and no need for a second drag/click to tidy it up.
+  const onResizeStopPack = (nextLayout) => {
     const byId = Object.fromEntries(nextLayout.map((l) => [l.i, l]));
-    const next = cards.map((c) => {
+    const sized = cards.map((c) => {
       const l = byId[c.id];
-      return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
+      return l ? { ...c, w: l.w, h: l.h } : c;
     });
-    // Silent save — no page loader / no refetch when you drag or resize a card.
+    const next = packRows(sized);
+    // Silent save — no page loader / no refetch when you resize a card.
     if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
   };
 
-  // Drop a card ONTO another → the two swap places (no pushing to the next row).
+  // Pack an ordered list of cards left-to-right into rows using each card's OWN
+  // width (like ClickUp) — narrow cards sit 2–3 per row, and cards never overlap.
+  // Every card keeps its own size; only x/y are (re)assigned from the order.
+  const packRows = (list) => {
+    let cx = 0, cy = 0, rowH = 0;
+    return list.map((c, i) => {
+      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
+      const h = c.h ?? defaultLayout(c, i).h;
+      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
+      const placed = { ...c, x: cx, y: cy, w, h };
+      cx += w; rowH = Math.max(rowH, h);
+      return placed;
+    });
+  };
+
+  // Drop a card ONTO another → the two swap ORDER (each keeps its own size), then
+  // the board re-flows so cards sit side-by-side with no overlap and no resizing.
   // Drop into empty space → the card just moves there.
   const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   const onDragStopSwap = (nextLayout, oldItem, newItem) => {
     const draggedId = newItem.i;
-    const dragged = layout.find((l) => l.i === draggedId);
     const target = layout.find((l) => l.i !== draggedId && overlaps(newItem, l));
     let next;
     if (target) {
-      next = cards.map((c) => {
-        if (c.id === draggedId) return { ...c, x: target.x, y: target.y };
-        if (c.id === target.i) return { ...c, x: dragged.x, y: dragged.y };
-        return c;
-      });
+      const di = cards.findIndex((c) => c.id === draggedId);
+      const ti = cards.findIndex((c) => c.id === target.i);
+      const reordered = cards.slice();
+      [reordered[di], reordered[ti]] = [reordered[ti], reordered[di]];
+      next = packRows(reordered);
     } else {
       next = cards.map((c) => (c.id === draggedId ? { ...c, x: newItem.x, y: newItem.y } : c));
     }
@@ -270,16 +290,7 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   // Pack cards left-to-right into rows using each card's width (like ClickUp),
   // so narrow cards sit 2–3 per row instead of stacking one per row.
   const autoArrange = () => {
-    let cx = 0, cy = 0, rowH = 0;
-    const next = cards.map((c, i) => {
-      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
-      const h = c.h ?? defaultLayout(c, i).h;
-      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
-      const placed = { ...c, x: cx, y: cy, w, h };
-      cx += w; rowH = Math.max(rowH, h);
-      return placed;
-    });
-    onChange({ ...dashboard, cards: next }, { silent: true });
+    onChange({ ...dashboard, cards: packRows(cards) }, { silent: true });
   };
 
   const saveCard = (card) => {
@@ -367,7 +378,7 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
           allowOverlap
           resizeHandles={['s', 'e', 'w', 'se', 'sw']}
           onDragStop={onDragStopSwap}
-          onResizeStop={persistLayout}
+          onResizeStop={onResizeStopPack}
         >
           {cards.map((c) => (
             <div key={c.id}>
