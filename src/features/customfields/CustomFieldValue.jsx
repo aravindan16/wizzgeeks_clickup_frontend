@@ -1,11 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { tasksApi, PRIORITY_COLOR, resolveStatuses, isDoneStatus } from '../tasks/tasksApi';
+import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import TaskModal from '../tasks/TaskModal';
-
-const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 
 /**
  * Renders the value editor for a custom field on a task — ClickUp-style.
@@ -220,9 +218,9 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      {/* Progress bar only on the field's OWN (create) List — hidden on the
-          related/target List, which is the reverse side of the relationship. */}
-      {ids.length > 0 && !onTargetList && (
+      {/* Progress summary of the linked tasks — shown on every List (including the
+          field's own target List) whenever there are links. */}
+      {ids.length > 0 && (
         <div style={t.relSummary}>
           <div style={t.relBar}><div style={{ ...t.relBarFill, width: `${pct}%` }} /></div>
           <span style={t.relSummaryText}>
@@ -236,8 +234,7 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
           {/* Column header (ClickUp-style related table) */}
           <div style={t.relHead}>
             <span style={{ flex: 1 }}>Name</span>
-            <span style={t.relCol}>Due date</span>
-            <span style={t.relColSm}>Priority</span>
+            <span style={t.relStatusCol}>Status</span>
             <span style={{ width: 22 }} />
           </div>
           {ids.slice(0, visible).map((id) => {
@@ -248,10 +245,9 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
                   <span style={t.relKey} title="Open task">{m.key || '…'}</span>
                   <RelTitle text={m.title || ''} style={t.relTitle} />
                 </span>
-                <span style={t.relCol}>{m.due_date ? shortDate(m.due_date) : '—'}</span>
-                <span style={t.relColSm}>
-                  {m.priority
-                    ? <span style={{ ...t.priChip, color: PRIORITY_COLOR[m.priority], background: `${PRIORITY_COLOR[m.priority]}1a` }}>{m.priority}</span>
+                <span style={t.relStatusCol}>
+                  {m.status
+                    ? <span style={{ ...t.statusChip, color: statusColor(sts, m.status), background: `${statusColor(sts, m.status)}1a` }}>{statusLabel(sts, m.status)}</span>
                     : '—'}
                 </span>
                 <button style={t.relX} title="Unlink" onClick={() => unlink(id)}>✕</button>
@@ -353,7 +349,10 @@ const t = {
   relTitle: { cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#111827' },
   relCol: { width: 78, flexShrink: 0, color: '#6b7280', fontSize: 12.5 },
   relColSm: { width: 80, flexShrink: 0 },
+  relStatusCol: { width: 130, flexShrink: 0 },
   priChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', textTransform: 'capitalize' },
+  statusChip: { display: 'inline-block', maxWidth: '100%', fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px',
+    textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   relX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, width: 22, flexShrink: 0 },
   relShowMore: { width: '100%', padding: '9px 12px', background: 'var(--c-surface-2, #f8fafc)', border: 'none', borderTop: '1px solid #f3f4f6',
     color: 'var(--c-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center' },
