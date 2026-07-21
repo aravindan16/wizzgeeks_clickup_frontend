@@ -720,6 +720,16 @@ input[type="radio"] {
   background: var(--c-hover);
 }
 
+/* --- Label chip remove (×) button (features/labels/LabelPicker.jsx) --- */
+.wg-chip-x {
+  border-radius: 50%;
+  transition: background var(--t-fast), opacity var(--t-fast);
+}
+.wg-chip-x:hover {
+  opacity: 1 !important;
+  background: color-mix(in srgb, var(--c-primary) 26%, transparent);
+}
+
 /* --- Task detail back button --- */
 .wg-back {
   transition:

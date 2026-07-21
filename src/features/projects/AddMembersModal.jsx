@@ -90,7 +90,7 @@ export default function AddMembersModal({ open, project, projectId, existingMemb
       <div style={ov.modal} onClick={(e) => e.stopPropagation()}>
         <div style={ov.head}>
           <h3 style={{ margin: 0 }}>Add people to {project?.name}</h3>
-          <button style={ov.close} onClick={onClose} aria-label="Close">✕</button>
+          <button className="icon-btn" style={ov.close} onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <label style={ov.label}>Names or emails <span style={{ color: '#b91c1c' }}>*</span></label>
@@ -152,25 +152,25 @@ export default function AddMembersModal({ open, project, projectId, existingMemb
 const ov = {
   backdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex',
     alignItems: 'flex-start', justifyContent: 'center', zIndex: 60, padding: '8vh 16px' },
-  modal: { background: '#fff', borderRadius: 12, padding: 24, width: 460, maxWidth: '95vw' },
+  modal: { background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 12, padding: 24, width: 460, maxWidth: '95vw' },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  close: { background: 'none', border: 'none', fontSize: 16, color: '#6b7280', cursor: 'pointer' },
-  label: { display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 6 },
+  close: { border: 'none', fontSize: 16, color: 'var(--c-muted)', cursor: 'pointer' },
+  label: { display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 6, color: 'var(--c-text-strong)' },
   inputWrap: { position: 'relative' },
   chips: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
-  chip: { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f1f2f4', color: '#3730a3',
+  chip: { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--c-surface-3)', color: 'var(--c-text)',
     borderRadius: 999, padding: '3px 10px', fontSize: 13 },
-  chipX: { background: 'none', border: 'none', cursor: 'pointer', color: '#3730a3', fontSize: 11 },
-  input: { width: '100%', boxSizing: 'border-box', padding: '11px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
-  results: { position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e7eb',
+  chipX: { background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 11 },
+  input: { width: '100%', boxSizing: 'border-box', padding: '11px 12px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14 },
+  results: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
     borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,.15)', zIndex: 5, marginTop: 4, overflow: 'hidden' },
   result: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px',
-    background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' },
+    background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'var(--c-text)' },
   avatar: { width: 28, height: 28, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0 },
-  noMatch: { position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#6b7280', marginTop: 4, zIndex: 5 },
-  hint: { fontSize: 12, color: '#6b7280', marginTop: 6 },
+  noMatch: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+    borderRadius: 8, padding: '10px 12px', fontSize: 13, color: 'var(--c-muted)', marginTop: 4, zIndex: 5 },
+  hint: { fontSize: 12, color: 'var(--c-muted)', marginTop: 6 },
   roleBtn: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
     padding: '11px 12px', border: '1px solid #111827', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 14 },
   roleMenu: { position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #e5e7eb',
@@ -180,5 +180,5 @@ const ov = {
   roleOptionActive: { background: '#f3f4f6', borderLeft: '3px solid #111827' },
   footer: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 },
   primary: { padding: '9px 20px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
-  ghost: { padding: '9px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
+  ghost: { padding: '9px 18px', background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 8, cursor: 'pointer' },
 };

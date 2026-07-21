@@ -161,7 +161,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
               {pop === 'type' && (
                 <div data-pop style={{ ...s.popover, left: 0 }}>
                   {['task', 'bug'].map((t) => (
-                    <button key={t} style={s.popItem} onClick={() => { set('type', t); setPop(null); }}>{t === 'bug' ? 'Bug' : 'Task'}</button>
+                    <button key={t} className="wg-select-opt" style={s.popItem} onClick={() => { set('type', t); setPop(null); }}>{t === 'bug' ? 'Bug' : 'Task'}</button>
                   ))}
                 </div>
               )}
@@ -181,7 +181,7 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
               {pop === 'status' && (
                 <div data-pop style={s.popover}>
                   {sts.map((st) => (
-                    <button key={st.key} style={s.popItem} onClick={() => { set('status', st.key); setPop(null); }}>
+                    <button key={st.key} className="wg-select-opt" style={s.popItem} onClick={() => { set('status', st.key); setPop(null); }}>
                       <span style={{ ...s.dot, background: st.color }} /> {st.name}
                     </button>
                   ))}
@@ -197,9 +197,9 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
               </button>
               {pop === 'assignee' && (
                 <div data-pop style={s.popover}>
-                  <button style={s.popItem} onClick={() => { set('assignee_id', ''); setPop(null); }}><IconUser size={15} /> Unassigned</button>
+                  <button className="wg-select-opt" style={s.popItem} onClick={() => { set('assignee_id', ''); setPop(null); }}><IconUser size={15} /> Unassigned</button>
                   {members.map((m) => (
-                    <button key={m.user_id} style={s.popItem} onClick={() => { set('assignee_id', m.user_id); setPop(null); }}>
+                    <button key={m.user_id} className="wg-select-opt" style={s.popItem} onClick={() => { set('assignee_id', m.user_id); setPop(null); }}>
                       <span style={s.avatar}>{initials(m.full_name)}</span> {m.full_name}
                     </button>
                   ))}
@@ -230,12 +230,12 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
                 <div data-pop style={s.popover}>
                   <div style={s.popHead}>Priority</div>
                   {PRIORITY_OPTS.map((p) => (
-                    <button key={p.value} style={s.popItem} onClick={() => { set('priority', p.value); setPop(null); }}>
+                    <button key={p.value} className="wg-select-opt" style={s.popItem} onClick={() => { set('priority', p.value); setPop(null); }}>
                       <span style={{ color: p.color }}><IconFlag size={15} /></span> {p.label}
                     </button>
                   ))}
                   <div style={s.popDivider} />
-                  <button style={s.popItem} onClick={() => { set('priority', null); setPop(null); }}>⊘ Clear</button>
+                  <button className="wg-select-opt" style={s.popItem} onClick={() => { set('priority', null); setPop(null); }}>⊘ Clear</button>
                 </div>
               )}
             </div>
@@ -243,8 +243,10 @@ export default function TaskModal({ open, mode, task, projects, defaultProjectId
           </div>
 
           {/* Labels */}
-          <div style={s.fieldsLabel}>Labels</div>
-          <LabelPicker value={form.labels} onChange={(labels) => set('labels', labels)} />
+          <div style={{ marginBottom: 20 }}>
+            <div style={s.fieldsLabel}>Labels</div>
+            <LabelPicker value={form.labels} onChange={(labels) => set('labels', labels)} />
+          </div>
 
           {/* Fields */}
           <div style={s.fieldsLabel}>Fields</div>
@@ -327,7 +329,7 @@ const s = {
   modal: { background: 'var(--c-surface)', borderRadius: 14, width: 760, maxWidth: '96vw', boxShadow: '0 24px 64px rgba(16,24,40,.3)', display: 'flex', flexDirection: 'column' },
   tabs: { display: 'flex', alignItems: 'center', gap: 22, padding: '14px 20px', borderBottom: '1px solid var(--c-border)' },
   tab: { fontSize: 15, cursor: 'default' },
-  tabActive: { color: 'var(--c-text-strong)', fontWeight: 700, borderBottom: '2px solid var(--c-text-strong)', paddingBottom: 12, marginBottom: -14 },
+  tabActive: { color: 'var(--c-text-strong)', fontWeight: 700, borderBottom: '2px solid var(--c-primary)', paddingBottom: 12, marginBottom: -14 },
   tabMuted: { color: 'var(--c-faint)' },
   body: { padding: '18px 20px', display: 'flex', flexDirection: 'column' },
   topRow: { display: 'flex', gap: 10, marginBottom: 14 },
@@ -342,7 +344,7 @@ const s = {
   hiddenInput: { position: 'absolute', inset: 0, opacity: 0, width: '100%', pointerEvents: 'none' },
   popover: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 200, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 5, padding: 5 },
   popHead: { fontSize: 11, color: 'var(--c-faint)', textTransform: 'uppercase', padding: '4px 10px' },
-  popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: 'var(--c-text)' },
+  popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14, color: 'var(--c-text)' },
   popDivider: { height: 1, background: 'var(--c-border)', margin: '4px 0' },
   tagInput: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
   fieldsLabel: { fontSize: 13, color: 'var(--c-faint)', marginBottom: 10 },
