@@ -8,8 +8,9 @@ import { useAuth } from '../auth/useAuth';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { IconSearch, IconExpand, IconTrash } from '../../components/icons';
+import Select from '../../components/Select';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZES = [10, 20, 50, 100];
 
 const initials = (name) => (name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
@@ -24,22 +25,25 @@ export default function ProjectListPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [setupOpen, setSetupOpen] = useState(false);
   const [menu, setMenu] = useState(null); // { id, x, y }
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = { skip: page * PAGE_SIZE, limit: PAGE_SIZE };
+    const params = { skip: page * pageSize, limit: pageSize };
     if (search) params.search = search;
     const res = await projectsApi.list(params);
     setData(res);
     setLoading(false);
-  }, [page, search]);
+  }, [page, pageSize, search]);
 
   useEffect(() => { load(); }, [load]);
 
   const rows = data.items;
-  const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+  const from = data.total === 0 ? 0 : page * pageSize + 1;
+  const to = Math.min(data.total, (page + 1) * pageSize);
 
   const openMenu = (e, id) => {
     e.stopPropagation();
@@ -73,7 +77,7 @@ export default function ProjectListPage() {
   };
 
   return (
-    <div>
+    <div style={s.page}>
       {slotEl && createPortal(<span style={s.headerTitle}>Spaces</span>, slotEl)}
 
       <div style={s.toolbar}>
@@ -87,7 +91,8 @@ export default function ProjectListPage() {
         )}
       </div>
 
-      <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'auto' }}>
+      <div className="card" style={{ maxWidth: '100%', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <table style={s.table}>
           <thead>
             <tr>
@@ -113,7 +118,7 @@ export default function ProjectListPage() {
                   </div>
                 </Td>
                 <Td>{p.key}</Td>
-                <Td><span style={{ color: '#374151' }}>Team-managed software</span></Td>
+                <Td><span style={{ color: 'var(--c-text)' }}>Team-managed software</span></Td>
                 <Td>
                   <div style={s.leadCell}>
                     <span style={{ ...s.avatar, ...(p.owner_avatar_color ? { background: p.owner_avatar_color } : {}), overflow: 'hidden' }}>
@@ -134,6 +139,24 @@ export default function ProjectListPage() {
             ))}
           </tbody>
         </table>
+        </div>
+        {data.total > 0 && (
+          <div style={{ ...s.pager, flexShrink: 0 }}>
+            <label style={s.pagerLeft}>
+              Rows per page:
+              <Select value={pageSize} onChange={(v) => { setPageSize(Number(v)); setPage(0); }} style={s.pageSelect}
+                options={PAGE_SIZES.map((n) => ({ value: n, label: String(n) }))} />
+            </label>
+            <div style={s.pagerRight}>
+              <span style={s.pagerRange}>{from}–{to} of {data.total}</span>
+              <button type="button" style={{ ...s.pagerBtn, ...(page === 0 ? s.pagerDisabled : {}) }}
+                disabled={page === 0} onClick={() => setPage((p) => p - 1)} title="Previous">‹</button>
+              <span style={s.pagerPage}>{page + 1} / {totalPages}</span>
+              <button type="button" style={{ ...s.pagerBtn, ...(page + 1 >= totalPages ? s.pagerDisabled : {}) }}
+                disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)} title="Next">›</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Row actions menu (fixed-positioned so it escapes the table's scroll area) */}
@@ -156,12 +179,6 @@ export default function ProjectListPage() {
         </>
       )}
 
-      <div style={s.pager}>
-        <button style={s.pageBtn} disabled={page === 0} onClick={() => setPage((p) => p - 1)}>‹</button>
-        <span style={s.pageNum}>{page + 1}</span>
-        <button style={s.pageBtn} disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>›</button>
-      </div>
-
       <SpaceSetupModal open={setupOpen} onClose={() => setSetupOpen(false)} onCreated={load} />
     </div>
   );
@@ -175,6 +192,9 @@ const thStyle = { textAlign: 'left', padding: '12px 16px', fontSize: 12, fontWei
 const tdStyle = { padding: '12px 16px', fontSize: 14, color: 'var(--c-text)', borderBottom: '1px solid var(--c-border-2)' };
 
 const s = {
+  // Fill the main scroll area and cancel its 24px bottom padding so the card
+  // (and its pinned pager) reaches the very bottom edge — matches the other pages.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', minHeight: 0, marginBottom: -24 },
   headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
   toolbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 },
   searchForm: { position: 'relative', flex: 1, maxWidth: 360 },
@@ -187,7 +207,7 @@ const s = {
   nameCell: { display: 'flex', alignItems: 'center', gap: 10 },
   spaceIcon: { width: 26, height: 26, borderRadius: 6, background: 'var(--c-primary)', color: 'var(--c-on-primary)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 },
-  nameLink: { color: '#111827', fontWeight: 600 },
+  nameLink: { color: 'var(--c-text-strong)', fontWeight: 600 },
   leadCell: { display: 'flex', alignItems: 'center', gap: 8 },
   avatar: { width: 26, height: 26, borderRadius: '50%', background: '#f59e0b', color: '#fff',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
@@ -200,9 +220,16 @@ const s = {
     border: 'none', padding: '9px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500, color: 'var(--c-text)' },
   menuIcon: { display: 'inline-flex', color: 'var(--c-muted)' },
   menuDivider: { height: 1, background: 'var(--c-border-2)', margin: '5px 0' },
-  pager: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 },
-  pageBtn: { width: 32, height: 32, borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' },
-  pageNum: { width: 32, height: 32, borderRadius: 6, border: '1px solid #111827', color: '#111827',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 },
+  pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+    padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
+  pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
+  pageSelect: { minWidth: 72, padding: '2px 10px', fontSize: 13, lineHeight: 1.3, borderRadius: 8 },
+  pagerRight: { display: 'inline-flex', alignItems: 'center', gap: 8 },
+  pagerRange: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
+  pagerPage: { fontSize: 13, color: 'var(--c-text)', minWidth: 54, textAlign: 'center' },
+  pagerBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
+    border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-text)', borderRadius: 8,
+    cursor: 'pointer', fontSize: 18, lineHeight: 1 },
+  pagerDisabled: { color: 'var(--c-faint)', cursor: 'not-allowed', opacity: 0.6 },
   primary: { padding: '9px 18px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
 };

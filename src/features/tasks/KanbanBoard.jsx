@@ -93,6 +93,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
 
   // Composer state
   const [composerStatus, setComposerStatus] = useState(null);
+  const composerRef = useRef(null);
   const [title, setTitle] = useState('');
   const [type, setType] = useState('task');
   const [dueDate, setDueDate] = useState('');
@@ -204,6 +205,19 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   };
   const openComposer = (st) => { setComposerStatus(st); setError(null); resetComposer(); };
   const closeComposer = () => { setComposerStatus(null); resetComposer(); };
+
+  // Close the create-task composer when clicking anywhere outside it. Skip while a
+  // type/assignee popup is open — that popup lives outside the composer's DOM and
+  // its own backdrop handles dismissal, so a click there must not close the composer.
+  useEffect(() => {
+    if (!composerStatus) return undefined;
+    const onDown = (e) => {
+      if (picker) return;
+      if (!composerRef.current?.contains(e.target)) closeComposer();
+    };
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [composerStatus, picker]); // eslint-disable-line
 
   const openPick = (name, e) => {
     e.stopPropagation();
@@ -368,9 +382,9 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
               )}
 
               {canCreate && (composerStatus === st ? (
-                <div style={s.composer} onClick={(e) => e.stopPropagation()}>
+                <div ref={composerRef} style={s.composer} onClick={(e) => e.stopPropagation()}>
                   <div style={s.composerTop}>
-                    <button style={s.composerClose} title="Close (Esc)" onClick={closeComposer}>✕</button>
+                    <button className="icon-btn" style={s.composerClose} title="Close (Esc)" onClick={closeComposer}>✕</button>
                   </div>
                   <textarea autoFocus style={s.composerInput} rows={2}
                     placeholder="What needs to be done?" value={title}
@@ -572,7 +586,7 @@ const s = {
   menuDivider: { height: 1, background: 'var(--c-border-2)', margin: '5px 0' },
   composer: { background: 'var(--c-surface)', border: '2px solid var(--c-text-strong)', borderRadius: 10, padding: 10 },
   composerTop: { display: 'flex', justifyContent: 'flex-end', marginBottom: 2 },
-  composerClose: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 13, padding: 2 },
+  composerClose: { border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 13, padding: 4 },
   composerInput: { width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none',
     resize: 'none', fontSize: 14, fontFamily: 'inherit', background: 'transparent', color: 'var(--c-text)' },
   composerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 },

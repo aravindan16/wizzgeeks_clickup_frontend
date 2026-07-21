@@ -695,7 +695,7 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
         <div style={s.bulkBar}>
           <span style={s.bulkCount}>{selected.size} selected</span>
           <button type="button" className="btn btn-primary" style={s.bulkBtn} onClick={startBulk}>Bulk change work items</button>
-          <button type="button" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
+          <button type="button" className="icon-btn" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
         </div>
       )}
       <div style={s.rScroll}>
@@ -731,12 +731,8 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
         <div style={s.pager}>
           <label style={s.pagerLeft}>
             Rows per page:
-            <span style={s.pageSelectWrap}>
-              <select style={s.pageSelect} value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
-                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
-            </span>
+            <Select value={pageSize} onChange={(v) => onPageSizeChange(Number(v))} style={s.pageSelect}
+              options={PAGE_SIZES.map((n) => ({ value: n, label: String(n) }))} />
           </label>
           <div style={s.pagerRight}>
             <span style={s.pagerRange}>{from}–{to} of {total}</span>
@@ -1185,12 +1181,7 @@ const s = {
   pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
     padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)', flexShrink: 0 },
   pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
-  pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
-  pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
-    padding: '5px 28px 5px 10px', border: '1px solid var(--c-border)', borderRadius: 7, background: 'var(--c-surface)',
-    color: 'var(--c-text)', fontSize: 13, cursor: 'pointer' },
-  pageSelectCaret: { position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex',
-    color: 'var(--c-muted)', pointerEvents: 'none' },
+  pageSelect: { minWidth: 72, padding: '2px 10px', fontSize: 13, lineHeight: 1.3, borderRadius: 8 },
   pagerRight: { display: 'inline-flex', alignItems: 'center', gap: 8 },
   pagerRange: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
   pagerPage: { fontSize: 13, color: 'var(--c-text)', minWidth: 54, textAlign: 'center' },
@@ -1203,7 +1194,7 @@ const s = {
     background: 'var(--c-surface-2)' },
   bulkCount: { fontSize: 13, fontWeight: 700, color: 'var(--c-text-strong)', marginRight: 4 },
   bulkBtn: { fontSize: 13, fontWeight: 600, padding: '6px 12px' },
-  bulkClear: { marginLeft: 'auto', border: 'none', background: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, padding: 4 },
+  bulkClear: { marginLeft: 'auto', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, padding: 4 },
   bulkEdit: { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, width: 300, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.2)', padding: 12 },
   bulkEditHead: { fontSize: 13.5, fontWeight: 700, color: 'var(--c-text-strong)', marginBottom: 8 },

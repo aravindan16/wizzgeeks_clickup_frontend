@@ -88,20 +88,24 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
 const s = {
   trigger: {
     display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', background: '#fff', border: '1px solid #e8eaed', borderRadius: 10,
+    padding: '9px 12px', background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)', borderRadius: 10,
     boxShadow: '0 1px 2px rgba(16,24,40,.06)', cursor: 'pointer',
     fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, letterSpacing: '.01em',
     textAlign: 'left', transition: 'border-color .12s, box-shadow .12s',
   },
   triggerOpen: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 3px var(--c-primary-weak)' },
   triggerHighlight: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 2px var(--c-primary-weak)' },
-  disabled: { background: '#f3f4f6', color: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
+  disabled: { background: 'var(--c-surface-3)', color: 'var(--c-faint)', cursor: 'not-allowed', boxShadow: 'none' },
   value: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  chev: { color: '#6b7280', display: 'inline-flex', transition: 'transform .15s', flexShrink: 0 },
+  chev: { color: 'var(--c-muted)', display: 'inline-flex', transition: 'transform .15s', flexShrink: 0 },
   menu: {
-    position: 'fixed', background: '#fff', border: '1px solid #e8eaed', borderRadius: 12,
-    boxShadow: '0 16px 40px rgba(16,24,40,.18)', zIndex: 400, padding: 6, overflowY: 'auto',
+    position: 'fixed', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12,
+    boxShadow: '0 16px 40px rgba(16,24,40,.18)', zIndex: 400, overflowY: 'auto',
     animation: 'wg-pop 140ms ease', fontFamily: 'inherit',
+    // Stack options with a small gap so a hovered item's grey never abuts the
+    // selected item's tint. Keep `padding` equal to `gap` so the space above the
+    // first item and below the last matches the gap between items (uniform all round).
+    display: 'flex', flexDirection: 'column', gap: 4, padding: 4,
   },
   // NOTE: no `background` here — the .wg-select-opt CSS controls hover/idle/selected bg
   // (an inline background would override the :hover rule).
@@ -109,10 +113,10 @@ const s = {
     display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box',
     padding: '9px 11px', border: 'none', borderRadius: 8, cursor: 'pointer',
     fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, letterSpacing: '.01em',
-    color: '#374151', textAlign: 'left',
+    color: 'var(--c-text)', textAlign: 'left',
   },
-  optionSel: { color: '#111827', fontWeight: 600 },
+  optionSel: { color: 'var(--c-text-strong)', fontWeight: 600 },
   optLabel: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  check: { color: '#111827', display: 'inline-flex', flexShrink: 0 },
-  empty: { padding: '10px', color: '#9ca3af', fontSize: 13, textAlign: 'center' },
+  check: { color: 'var(--c-text-strong)', display: 'inline-flex', flexShrink: 0 },
+  empty: { padding: '10px', color: 'var(--c-faint)', fontSize: 13, textAlign: 'center' },
 };
