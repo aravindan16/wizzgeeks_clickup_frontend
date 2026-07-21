@@ -119,6 +119,12 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
 
   useEffect(() => { load(); }, [load]);
 
+  // Keep the whole task-detail view under a silent scope for its lifetime, so
+  // background enrichment fetches fired AFTER the panel is visible — chiefly the
+  // relationship custom fields (epic/sprint) loading their linked tasks — never
+  // pop the global loading spinner over an already-rendered panel.
+  useEffect(() => { beginSilent(); return () => endSilent(); }, []);
+
   if (error) return (
     <div style={{ padding: 24 }}>
       <button className="wg-back" style={s.back} onClick={onClose}><IconArrowLeft size={15} /> Back to board</button>

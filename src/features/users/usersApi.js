@@ -20,5 +20,6 @@ export const usersApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data);
   },
+  removeAvatar: () => apiClient.delete('/users/me/avatar').then((r) => r.data),
 };
 
