@@ -8,6 +8,7 @@ import ListStatusModal from "../lists/ListStatusModal";
 import CustomFieldManager from "../customfields/CustomFieldManager";
 import IconPicker from "../../components/IconPicker";
 import AppIcon, { hasIcon } from "../../components/AppIcon";
+import { Droplet } from "lucide-react";
 import { useConfirm, usePrompt } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { useAuth } from "../auth/useAuth";
@@ -18,11 +19,14 @@ import {
   IconEdit,
   IconBoard,
   IconDots,
-  IconListCheck,
-  IconFolder,
+  IconList,
   IconSmile,
   Chevron,
 } from "../../components/icons";
+import { Layers } from "lucide-react";
+
+// Sidebar Spaces glyph — Lucide, tuned to the app's 1.9 stroke to match Users/Settings.
+const IconFolder = ({ size = 18 }) => <Layers size={size} strokeWidth={1.9} />;
 import TaskModal from "../tasks/TaskModal";
 import { resolveStatuses } from "../tasks/tasksApi";
 import apiClient from "../../services/apiClient";
@@ -43,9 +47,16 @@ export default function SpacesMenu({ collapsed }) {
   const toast = useToast();
   const { user, can } = useAuth();
   const me = user?._id || user?.id;
-  // Only the Space's creator (owner) sees the Delete option.
-  // TODO: Re-introduce an admin override (project.delete) when permissions return.
-  const canDeleteSpace = (sp) => !!sp.owner_id && sp.owner_id === me;
+  // Permission gates. Spaces have an OWNER fallback (the creator can edit/delete
+  // even without the role permission), matching the backend's project_service checks.
+  const isSpaceOwner = (sp) => !!sp?.owner_id && sp.owner_id === me;
+  const canDeleteSpace = (sp) => can('project.delete') || isSpaceOwner(sp);
+  const canUpdateSpace = (sp) => can('project.update') || isSpaceOwner(sp);
+  const canCreateSpace = can('project.create');
+  const canCreateList = can('list.create');
+  const canUpdateList = can('list.update');
+  const canDeleteList = can('list.delete');
+  const deny = () => toast.error(NO_DELETE_MSG);
   const [spaces, setSpaces] = useState([]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [listsBySpace, setListsBySpace] = useState({});
@@ -55,6 +66,8 @@ export default function SpacesMenu({ collapsed }) {
   const [spaceSetupOpen, setSpaceSetupOpen] = useState(false);
   const [spaceMenu, setSpaceMenu] = useState(null); // spaceId with open ⋯ menu
   const [listMenu, setListMenu] = useState(null); // { id, spaceId } with open ⋯ menu
+  const [renamingList, setRenamingList] = useState(null); // list _id being renamed inline
+  const [listDraft, setListDraft] = useState('');
   const [createListSpace, setCreateListSpace] = useState(null); // spaceId for create-list modal
   const [cfManager, setCfManager] = useState(null); // { scope, spaceId, listId, spaceName, listName }
   const [iconFor, setIconFor] = useState(null); // { kind: 'space'|'list', id, icon } — icon picker target
@@ -113,6 +126,14 @@ export default function SpacesMenu({ collapsed }) {
     loadSpaces();
   }, [loadSpaces]);
 
+  // Keep the sidebar in sync when a Space is created/renamed/deleted anywhere
+  // else in the app (e.g. the Spaces list page), not just from this menu.
+  useEffect(() => {
+    const onChanged = () => loadSpaces();
+    window.addEventListener("wg:spaces-changed", onChanged);
+    return () => window.removeEventListener("wg:spaces-changed", onChanged);
+  }, [loadSpaces]);
+
   // Prefetch ONLY the (lightweight) Lists of each Space right after login, so
   // expanding a Space shows its Lists instantly instead of waiting on a request.
   // Tasks are NOT prefetched — those are heavy and load on demand when a Space or
@@ -153,14 +174,17 @@ export default function SpacesMenu({ collapsed }) {
   // between the page and devtools/other tabs. Lists refresh on expand and after
   // create/rename/delete, which is enough.)
 
-  // Close any open popover on outside click / Escape.
+  // Close any open ⋯ popover on Escape, or on ANY click that isn't inside the open
+  // menu itself or on a ⋯ trigger. Testing only "outside the whole sidebar" wasn't
+  // enough — clicking another List/Space row (still inside the sidebar) left the
+  // menu open. Triggers are exempt so their own onClick can toggle/switch cleanly.
   useEffect(() => {
     const onClick = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setTopMenu(false);
-        setSpaceMenu(null);
-        setListMenu(null);
-      }
+      const t = e.target;
+      if (t.closest && (t.closest('[role="menu"]') || t.closest("[data-sb-menu-trigger]"))) return;
+      setTopMenu(false);
+      setSpaceMenu(null);
+      setListMenu(null);
     };
     const onEsc = (e) => {
       if (e.key === "Escape") {
@@ -192,6 +216,7 @@ export default function SpacesMenu({ collapsed }) {
   const openCreateList = (spaceId) => {
     setSpaceMenu(null);
     setTopMenu(false);
+    if (!canCreateList) return deny();
     setCreateListSpace(spaceId);
   };
   const openSpaceFields = (sp) => {
@@ -215,6 +240,7 @@ export default function SpacesMenu({ collapsed }) {
   };
   const openListStatuses = (sp, l) => {
     setListMenu(null);
+    if (!canUpdateList) return deny();
     setListStatus({
       list: l,
       spaceStatuses: sp.statuses || [],
@@ -236,6 +262,7 @@ export default function SpacesMenu({ collapsed }) {
   // --- space operation ---
   const deleteSpace = async (sp) => {
     setSpaceMenu(null);
+    if (!canDeleteSpace(sp)) return deny();
     const ok = await confirm({
       title: `Delete: ${sp.name}`,
       message:
@@ -249,19 +276,28 @@ export default function SpacesMenu({ collapsed }) {
       toast.error("Could not delete space");
     }
     await loadSpaces();
+    window.dispatchEvent(new CustomEvent("wg:spaces-changed"));
     navigate("/projects");
   };
 
   // --- per-list operations (instant UI update) ---
-  const renameList = async (l) => {
-    setListMenu(null);
-    const name = await prompt({ title: "Rename list", defaultValue: l.name, placeholder: "List name", confirmLabel: "Rename" });
-    if (!name || name.trim() === l.name) return;
-    await listsApi.update(l._id, { name: name.trim() });
-    loadLists(l.space_id);
+  // Inline rename (edit in place in the sidebar) — same UX as the saved-filter rename.
+  const startRenameList = (l) => { setListMenu(null); if (!canUpdateList) return deny(); setListDraft(l.name || ''); setRenamingList(l._id); };
+  const commitRenameList = async (l) => {
+    const v = (listDraft || '').trim();
+    setRenamingList(null);
+    if (!v || v === l.name) return;
+    setListsBySpace((m) => {
+      const n = { ...m };
+      for (const k of Object.keys(n)) n[k] = (n[k] || []).map((x) => (x._id === l._id ? { ...x, name: v } : x));
+      return n;
+    });
+    try { await listsApi.update(l._id, { name: v }); window.dispatchEvent(new CustomEvent("wg:list-updated", { detail: { listId: l._id } })); }
+    catch { toast.error("Could not rename list"); loadLists(l.space_id); }
   };
   const deleteList = async (l) => {
     setListMenu(null);
+    if (!canDeleteList) return deny();
     const ok = await confirm({
       title: `Delete: ${l.name}`,
       message: (
@@ -367,6 +403,7 @@ export default function SpacesMenu({ collapsed }) {
       <>
         <button
           title="Spaces"
+          className={`nav-item${(pathname.startsWith("/projects") || pathname.startsWith("/lists")) ? " active" : ""}`}
           style={{ ...s.navItem, ...s.navItemCollapsed }}
           onClick={() => navigate("/projects")}
         >
@@ -381,7 +418,7 @@ export default function SpacesMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div className="wg-sb-row" style={s.header}>
+      <div className={`wg-sb-row${(pathname.startsWith('/projects') || pathname.startsWith('/lists')) ? ' wg-navrow-active' : ''}`} style={s.header}>
         <div
           style={{
             ...s.headInner,
@@ -413,6 +450,7 @@ export default function SpacesMenu({ collapsed }) {
             className="icon-btn"
             style={s.iconBtn}
             title="Space actions"
+            data-sb-menu-trigger
             onClick={() => {
               setSpaceMenu(null);
               setListMenu(null);
@@ -423,9 +461,9 @@ export default function SpacesMenu({ collapsed }) {
           </button>
           <button
             className="icon-btn"
-            style={s.iconBtn}
-            title="Create space"
-            onClick={() => setSpaceSetupOpen(true)}
+            title={canCreateSpace ? "Create space" : NO_DELETE_MSG}
+            style={{ ...s.iconBtn, ...(canCreateSpace ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+            onClick={() => (canCreateSpace ? setSpaceSetupOpen(true) : deny())}
           >
             <IconPlus size={16} />
           </button>
@@ -436,6 +474,7 @@ export default function SpacesMenu({ collapsed }) {
                 style={s.dropItem}
                 onClick={() => {
                   setTopMenu(false);
+                  if (!canCreateSpace) return deny();
                   setSpaceSetupOpen(true);
                 }}
               >
@@ -491,6 +530,7 @@ export default function SpacesMenu({ collapsed }) {
                       className="icon-btn"
                       style={s.iconBtn}
                       title="Space actions"
+                      data-sb-menu-trigger
                       onClick={() => {
                         setTopMenu(false);
                         setListMenu(null);
@@ -530,9 +570,9 @@ export default function SpacesMenu({ collapsed }) {
                       <button
                         className="wg-menu-item"
                         style={s.dropItem}
-                        onClick={() => { setSpaceMenu(null); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
+                        onClick={() => { setSpaceMenu(null); if (!canUpdateSpace(sp)) return deny(); setIconFor({ kind: "space", id: sp._id, icon: sp.icon || "" }); }}
                       >
-                        <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
+                        <span style={s.dropIcon}><Droplet size={15} strokeWidth={1.9} /></span> Color &amp; Icon
                       </button>
                       <button
                         className="wg-menu-item"
@@ -592,6 +632,25 @@ export default function SpacesMenu({ collapsed }) {
                         }}
                         className="wg-sb-row"
                       >
+                        {renamingList === l._id ? (
+                          <div style={s.listItem} onClick={(e) => e.stopPropagation()}>
+                            <span style={s.listIcon}>
+                              {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconList size={15} />}
+                            </span>
+                            <input
+                              autoFocus
+                              style={s.renameInput}
+                              value={listDraft}
+                              onChange={(e) => setListDraft(e.target.value)}
+                              onBlur={() => commitRenameList(l)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRenameList(l);
+                                if (e.key === "Escape") setRenamingList(null);
+                              }}
+                              onFocus={(e) => e.target.select()}
+                            />
+                          </div>
+                        ) : (
                         <NavLink
                           to={`/lists/${l._id}`}
                           title={l.name}
@@ -601,7 +660,7 @@ export default function SpacesMenu({ collapsed }) {
                           })}
                         >
                           <span style={s.listIcon}>
-                            {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconListCheck size={15} />}
+                            {hasIcon(l.icon) ? <AppIcon name={l.icon} size={15} /> : <IconList size={15} />}
                           </span>
                           <span style={s.rowName}>{l.name}</span>
                           {l.privacy === "private" && (
@@ -610,11 +669,13 @@ export default function SpacesMenu({ collapsed }) {
                             </span>
                           )}
                         </NavLink>
+                        )}
                         <span className="wg-sb-actions" style={s.rowActions}>
                           <button
                             className="icon-btn"
                             style={s.iconBtn}
                             title="List actions"
+                            data-sb-menu-trigger
                             onClick={() => {
                               setTopMenu(false);
                               setSpaceMenu(null);
@@ -648,7 +709,7 @@ export default function SpacesMenu({ collapsed }) {
                             <button
                               className="wg-menu-item"
                               style={s.dropItem}
-                              onClick={() => renameList(l)}
+                              onClick={() => startRenameList(l)}
                             >
                               <span style={s.dropIcon}>
                                 <IconEdit size={16} />
@@ -658,9 +719,9 @@ export default function SpacesMenu({ collapsed }) {
                             <button
                               className="wg-menu-item"
                               style={s.dropItem}
-                              onClick={() => { setListMenu(null); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
+                              onClick={() => { setListMenu(null); if (!canUpdateList) return deny(); setIconFor({ kind: "list", id: l._id, icon: l.icon || "" }); }}
                             >
-                              <span style={s.dropIcon}><IconSmile size={16} /></span> Change icon
+                              <span style={s.dropIcon}><Droplet size={15} strokeWidth={1.9} /></span> Color &amp; Icon
                             </button>
                             <button
                               className="wg-menu-item"
@@ -700,27 +761,11 @@ export default function SpacesMenu({ collapsed }) {
                     {lists.length === 0 && (
                       <div style={s.listsEmpty}>No lists yet</div>
                     )}
-                    <button
-                      style={s.addList}
-                      onClick={() => openCreateList(sp._id)}
-                    >
-                      <IconPlus size={14} /> Create List
-                    </button>
                   </div>
                 )}
               </div>
             );
           })}
-          <button
-            className="wg-sb-row"
-            style={s.newSpace}
-            onClick={() => setSpaceSetupOpen(true)}
-          >
-            <span style={s.newSpaceIcon}>
-              <IconPlus size={15} />
-            </span>{" "}
-            New Space
-          </button>
         </div>
       )}
 
@@ -749,8 +794,9 @@ const s = {
     color: "var(--c-muted)",
   },
   heading: {
-    fontSize: 14,
-    fontWeight: 500,
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: "0.01em",
     color: "inherit",
     whiteSpace: "nowrap",
     overflow: "hidden",
@@ -865,6 +911,8 @@ const s = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    fontWeight: 500,
+    letterSpacing: "-0.01em",
   },
   // NOTE: don't set `display` here — the .wg-sb-actions CSS toggles it on hover.
   rowActions: { gap: 0 },
@@ -924,16 +972,31 @@ const s = {
     gap: 8,
     padding: "6px 8px",
     borderRadius: 8,
-    color: "#64748b",
+    color: "var(--c-muted)",
     textDecoration: "none",
     fontSize: 13.5,
+    fontWeight: 500,
+    letterSpacing: "-0.01em",
     flex: 1,
     minWidth: 0,
+  },
+  renameInput: {
+    flex: 1,
+    minWidth: 0,
+    font: "inherit",
+    fontSize: 13.5,
+    fontWeight: 500,
+    padding: "3px 6px",
+    border: "1px solid var(--c-primary)",
+    borderRadius: 6,
+    background: "var(--c-surface)",
+    color: "var(--c-text-strong)",
+    outline: "none",
   },
   listIcon: {
     display: "inline-flex",
     alignItems: "center",
-    color: "#64748b",
+    color: "var(--c-muted)",
     flexShrink: 0,
   },
   listsEmpty: { color: "#64748b", fontSize: 12, padding: "4px 10px" },
@@ -983,7 +1046,6 @@ const s = {
     padding: "10px 12px",
     borderRadius: 8,
     color: "#475569",
-    background: "none",
     border: "none",
     fontSize: 14,
     cursor: "pointer",

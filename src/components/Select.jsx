@@ -93,7 +93,7 @@ const s = {
     fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, letterSpacing: '.01em',
     textAlign: 'left', transition: 'border-color .12s, box-shadow .12s',
   },
-  triggerOpen: { borderColor: '#111827', boxShadow: '0 0 0 3px rgba(17,24,39,.12)' },
+  triggerOpen: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 3px var(--c-primary-weak)' },
   triggerHighlight: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 2px var(--c-primary-weak)' },
   disabled: { background: '#f3f4f6', color: '#9ca3af', cursor: 'not-allowed', boxShadow: 'none' },
   value: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },

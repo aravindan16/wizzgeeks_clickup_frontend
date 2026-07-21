@@ -68,6 +68,8 @@ export default function ProjectListPage() {
     await projectsApi.remove(p._id);
     toast.success('Space deleted');
     load();
+    // Refresh the sidebar Spaces list too, wherever the delete happened.
+    window.dispatchEvent(new CustomEvent('wg:spaces-changed'));
   };
 
   return (
@@ -114,7 +116,11 @@ export default function ProjectListPage() {
                 <Td><span style={{ color: '#374151' }}>Team-managed software</span></Td>
                 <Td>
                   <div style={s.leadCell}>
-                    <span style={s.avatar}>{initials(p.owner_name)}</span>
+                    <span style={{ ...s.avatar, ...(p.owner_avatar_color ? { background: p.owner_avatar_color } : {}), overflow: 'hidden' }}>
+                      {p.owner_avatar_url
+                        ? <img src={p.owner_avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : initials(p.owner_name)}
+                    </span>
                     <span>{p.owner_name || '—'}</span>
                   </div>
                 </Td>

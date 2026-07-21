@@ -3,6 +3,7 @@ import { customFieldsApi, FIELD_TYPES, FIELD_TYPE_LABEL } from './customFieldsAp
 import { listsApi } from '../lists/listsApi';
 import { useToast } from '../../components/Toast';
 import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
+import { useAuth } from '../auth/useAuth';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconSearch, IconTrash, IconPlus, IconEdit, IconFields, IconListCheck, IconFilter } from '../../components/icons';
 import Select from '../../components/Select';
 import { Chevron } from '../../components/icons';
@@ -36,6 +37,13 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
   const toast = useToast();
   const confirm = useConfirm();
   const prompt = usePrompt();
+  const { can } = useAuth();
+  const canCreate = can('customfield.create');
+  const canUpdate = can('customfield.update');
+  const canDelete = can('customfield.delete');
+  const denyCreate = () => toast.error("You don't have permission to create custom fields");
+  const denyUpdate = () => toast.error("You don't have permission to edit custom fields");
+  const denyDelete = () => toast.error("You don't have permission to delete custom fields");
   const [fields, setFields] = useState([]);
   const [lists, setLists] = useState([]);
   const [query, setQuery] = useState('');
@@ -106,12 +114,14 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
 
   const del = async (f) => {
     setRowMenu(null);
+    if (!canDelete) return denyDelete();
     const ok = await confirm({ title: `Delete: ${f.name}`, message: 'This custom field will be deleted.' });
     if (ok) { await customFieldsApi.remove(f._id); toast.success('Field deleted'); loadFields(); loadCounts(); }
   };
-  const move = async (f, target) => { setRowMenu(null); setMoveFor(null); await customFieldsApi.move(f._id, target); toast.success('Field moved'); loadFields(); loadCounts(); };
+  const move = async (f, target) => { setRowMenu(null); setMoveFor(null); if (!canUpdate) return denyUpdate(); await customFieldsApi.move(f._id, target); toast.success('Field moved'); loadFields(); loadCounts(); };
   const renameField = async (f) => {
     setRowMenu(null);
+    if (!canUpdate) return denyUpdate();
     const name = await prompt({ title: 'Rename field', defaultValue: f.name, placeholder: 'Field name', confirmLabel: 'Rename' });
     if (!name || !name.trim() || name.trim() === f.name) return;
     try { await customFieldsApi.update(f._id, { name: name.trim() }); toast.success('Field renamed'); loadFields(); loadCounts(); }
@@ -120,6 +130,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
   // Enable/disable an inherited Space field for the List currently being viewed.
   const toggleListField = async (f) => {
     if (loc.kind !== 'list') return;
+    if (!canUpdate) return denyUpdate();
     const enable = f.enabled === false; // currently disabled → enable
     try {
       await customFieldsApi.setListEnabled(f._id, loc.id, enable);
@@ -128,7 +139,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
     } catch (e) { toast.error(e.response?.data?.error?.message || 'Could not update field'); }
   };
   // Drag-to-reorder fields (only the editable, non-inherited ones; disabled while searching).
-  const canReorder = !query.trim() && typeFilter === 'all';
+  const canReorder = !query.trim() && typeFilter === 'all' && canUpdate;
   const reorderField = async (targetId) => {
     const src = dragField; setDragField(null);
     if (!src || src === targetId || !canReorder) return;
@@ -196,10 +207,11 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
             </div>
             <Select value={typeFilter} onChange={setTypeFilter} style={{ minWidth: 140 }}
               options={[{ value: 'all', label: 'Field type' }, ...FIELD_TYPES.map((t) => ({ value: t.value, label: t.label }))]} />
-            <button style={s.filterBtn} title="Filter"><IconFilter size={15} /> Filter</button>
             <div style={{ flex: 1 }} />
             <div style={{ position: 'relative' }} ref={createRef}>
-              <button style={s.createBtn} onClick={() => setCreateMenu((o) => !o)}>Create New</button>
+              <button style={{ ...s.createBtn, ...(canCreate ? {} : s.createBtnDisabled) }}
+                title={canCreate ? '' : "You don't have permission to create custom fields"}
+                onClick={() => (canCreate ? setCreateMenu((o) => !o) : denyCreate())}>Create New</button>
               {createMenu && (
                 <>
                   <div style={s.createScrim} onMouseDown={() => { setCreateMenu(false); setTypeQuery(''); }} />
@@ -302,7 +314,7 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
                               <>
                                 <div style={s.menuScrim} onMouseDown={() => { setRowMenu(null); setMoveFor(null); }} />
                                 <div style={s.rowMenu} onMouseDown={(e) => e.stopPropagation()}>
-                                  <button className="wg-menu-item" style={s.menuItem} onClick={() => { setRowMenu(null); setDrawer({ mode: 'edit', type: f.type, field: f }); }}>
+                                  <button className="wg-menu-item" style={s.menuItem} onClick={() => { setRowMenu(null); if (!canUpdate) return denyUpdate(); setDrawer({ mode: 'edit', type: f.type, field: f }); }}>
                                     <IconFields size={15} /><span>Edit</span>
                                   </button>
                                   <button className="wg-menu-item" style={s.menuItem} onClick={() => renameField(f)}>
@@ -321,8 +333,12 @@ export default function CustomFieldManager({ open, onClose, scope, spaceId, list
 
                       {isOpen && (
                         <tr><td colSpan={6} style={s.createFieldTd}>
-                          <button style={s.createFieldLink}
-                            onClick={() => (g.type ? setDrawer({ mode: 'create', type: g.type }) : setCreateMenu(true))}>
+                          <button style={{ ...s.createFieldLink, ...(canCreate ? {} : s.createBtnDisabled) }}
+                            title={canCreate ? '' : "You don't have permission to create custom fields"}
+                            onClick={() => {
+                              if (!canCreate) return denyCreate();
+                              return g.type ? setDrawer({ mode: 'create', type: g.type }) : setCreateMenu(true);
+                            }}>
                             + Create {g.label.toLowerCase()} field
                           </button>
                         </td></tr>
@@ -578,6 +594,7 @@ const s = {
   search: { width: '100%', boxSizing: 'border-box', padding: '9px 11px 9px 32px', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: 14 },
   filterBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#374151', whiteSpace: 'nowrap' },
   createBtn: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' },
+  createBtnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   createScrim: { position: 'fixed', inset: 0, zIndex: 19 },
   typeMenu: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.18)', zIndex: 21, padding: 6, width: 300 },
   typeMenuTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' },

@@ -3,7 +3,11 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { dashboardsApi } from './dashboardsApi';
 import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
-import { IconDashboard, IconPlus, IconDots, IconTrash, IconMembers, Chevron } from '../../components/icons';
+import { LayoutDashboard } from 'lucide-react';
+import { IconPlus, IconDots, IconTrash, IconMembers, IconEdit, Chevron } from '../../components/icons';
+
+// Sidebar Dashboard glyph — Lucide, tuned to the app's 1.9 stroke to match Users/Settings.
+const IconDashboard = ({ size = 18 }) => <LayoutDashboard size={size} strokeWidth={1.9} />;
 
 /**
  * Sidebar "Dashboard" section (ClickUp-style, mirrors SpacesMenu): the Dashboard
@@ -21,6 +25,9 @@ export default function DashboardsMenu({ collapsed }) {
   const [items, setItems] = useState([]);
   const [headerMenu, setHeaderMenu] = useState(false);
   const [rowMenu, setRowMenu] = useState(null); // dashboard id with open ⋯ menu
+  const [renaming, setRenaming] = useState(null); // dashboard id being renamed inline
+  const [draft, setDraft] = useState('');
+  const creatingRef = useRef(false);
 
   const load = async () => {
     try { const r = await dashboardsApi.list(); setItems(r.items || []); } catch { setItems([]); }
@@ -41,8 +48,14 @@ export default function DashboardsMenu({ collapsed }) {
 
   const createDashboard = async () => {
     setHeaderMenu(false);
-    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    const name = await promptDialog({
+      title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create',
+      validate: (v) => (items.some((x) => (x.name || '').trim().toLowerCase() === v.toLowerCase())
+        ? 'A dashboard with this name already exists' : ''),
+    });
     if (!name || !name.trim()) return;
+    if (creatingRef.current) return; // guard: never create twice for one action
+    creatingRef.current = true;
     try {
       const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setItems((cur) => [...cur, d]);
@@ -50,10 +63,25 @@ export default function DashboardsMenu({ collapsed }) {
       window.dispatchEvent(new Event('wg-dashboards-changed'));
       toast.success(`Dashboard "${d.name}" created`);
       navigate(`/dashboard/${d.id}`);
-    } catch { toast.error('Could not create dashboard'); }
+    } catch (err) { toast.error(err.response?.data?.error?.message || 'Could not create dashboard'); }
+    finally { creatingRef.current = false; }
   };
 
   const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
+  const addCardTo = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
+
+  const startRename = (d) => { setRowMenu(null); setDraft(d.name || ''); setRenaming(d.id); };
+  const commitRename = async (d) => {
+    const v = (draft || '').trim();
+    setRenaming(null);
+    if (!v || v === d.name) return;
+    if (items.some((x) => x.id !== d.id && (x.name || '').trim().toLowerCase() === v.toLowerCase())) {
+      toast.error('A dashboard with this name already exists'); return;
+    }
+    setItems((cur) => cur.map((x) => (x.id === d.id ? { ...x, name: v } : x))); // optimistic
+    try { await dashboardsApi.update(d.id, { name: v }); window.dispatchEvent(new Event('wg-dashboards-changed')); }
+    catch (err) { toast.error(err.response?.data?.error?.message || 'Could not rename dashboard'); load(); }
+  };
 
   const deleteDashboard = async (d) => {
     setRowMenu(null);
@@ -68,7 +96,8 @@ export default function DashboardsMenu({ collapsed }) {
 
   if (collapsed) {
     return (
-      <button title="Dashboards" style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
+      <button title="Dashboards" className={`nav-item${location.pathname.startsWith('/dashboard') ? ' active' : ''}`}
+        style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
         <span style={s.navIcon}><IconDashboard size={18} /></span>
       </button>
     );
@@ -76,7 +105,7 @@ export default function DashboardsMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div className="wg-sb-row" style={s.row}>
+      <div className={`wg-sb-row${location.pathname.startsWith('/dashboard') ? ' wg-navrow-active' : ''}`} style={s.row}>
         <NavLink to="/dashboard" end
           style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
           <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
@@ -107,15 +136,32 @@ export default function DashboardsMenu({ collapsed }) {
             const active = location.pathname === `/dashboard/${d.id}`;
             return (
               <div key={d.id} className="wg-sb-row" style={{ ...s.child, ...(active ? s.childActive : {}) }}>
-                <div style={s.childMain} onClick={() => navigate(`/dashboard/${d.id}`)} title={d.name}>
-                  <span style={s.dot}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
-                  <span style={s.childName}>{d.name}</span>
-                </div>
+                {renaming === d.id ? (
+                  <div style={s.childMain} onClick={(e) => e.stopPropagation()}>
+                    <span style={s.dot}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
+                    <input autoFocus style={s.renameInput} value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => commitRename(d)}
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitRename(d); if (e.key === 'Escape') setRenaming(null); }} />
+                  </div>
+                ) : (
+                  <div style={s.childMain} onClick={() => navigate(`/dashboard/${d.id}`)} title={d.name}>
+                    <span style={s.dot}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
+                    <span style={s.childName}>{d.name}</span>
+                  </div>
+                )}
                 <span className="wg-sb-actions" style={{ ...s.rowActions, ...(rowMenu === d.id ? s.actionsOpen : {}) }}>
                   <button className="icon-btn" style={s.iconBtn} title="Dashboard actions"
                     onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === d.id ? null : d.id); }}><IconDots size={16} /></button>
                   {rowMenu === d.id && (
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
+                      <button className="wg-menu-item" style={s.dropItem} onClick={() => addCardTo(d)}>
+                        <span style={s.dropIcon}><IconPlus size={15} /></span> Add card
+                      </button>
+                      <button className="wg-menu-item" style={s.dropItem} onClick={() => startRename(d)}>
+                        <span style={s.dropIcon}><IconEdit size={15} /></span> Rename
+                      </button>
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => shareDashboard(d)}>
                         <span style={s.dropIcon}><IconMembers size={15} /></span> Members
                       </button>
@@ -159,6 +205,8 @@ const s = {
   dot: { width: 22, height: 22, borderRadius: 6, background: '#111827', color: '#ffffff',
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 },
   childName: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' },
+  renameInput: { flex: 1, minWidth: 0, font: 'inherit', fontSize: 13.5, padding: '3px 6px', border: '1px solid var(--c-primary)',
+    borderRadius: 6, background: 'var(--c-surface)', color: 'var(--c-text-strong)', outline: 'none' },
   empty: { fontSize: 12.5, color: 'var(--c-faint)', padding: '6px 10px' },
 
   // dropdown menu (mirrors SpacesMenu)
@@ -171,7 +219,7 @@ const s = {
 
   // collapsed
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none',
+    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', border: 'none',
     cursor: 'pointer', fontSize: 14 },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
 };

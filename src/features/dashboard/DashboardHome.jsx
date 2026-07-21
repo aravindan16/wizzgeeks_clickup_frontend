@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -15,6 +15,7 @@ import { beginSilent, endSilent } from '../../services/apiClient';
 import AddCardModal from './AddCardModal';
 import DashboardCard from './DashboardCard';
 import DashboardShareModal from './DashboardShareModal';
+import { clearDashboardCache } from './useCardData';
 import { IconPlus, IconEdit, IconTrash, IconMembers, IconBoard, IconGrip, Chevron } from '../../components/icons';
 
 const Grid = WidthProvider(GridLayout);
@@ -36,6 +37,11 @@ export default function DashboardHome() {
   const navigate = useNavigate();
   const { id: openId } = useParams(); // /dashboard/:id — the open dashboard, if any
   const [dashboards, setDashboards] = useState(null); // null = loading
+  const creatingRef = useRef(false);
+
+  // Drop the shared card-data cache when leaving the dashboards area so the next
+  // visit is fresh; within a visit the cache dedupes every card's fetches.
+  useEffect(() => () => clearDashboardCache(), []);
 
   // Load from the DB; migrate any old localStorage dashboards on first run.
   useEffect(() => {
@@ -68,20 +74,35 @@ export default function DashboardHome() {
   const notifyChanged = () => window.dispatchEvent(new Event('wg-dashboards-changed'));
 
   const createDashboard = async () => {
-    const name = await promptDialog({ title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create' });
+    const name = await promptDialog({
+      title: 'Create dashboard', message: 'Give your dashboard a name.', placeholder: 'Dashboard name', confirmLabel: 'Create',
+      // Inline validation — keeps the modal open and shows the error above Create.
+      validate: (v) => ((dashboards || []).some((x) => (x.name || '').trim().toLowerCase() === v.toLowerCase())
+        ? 'A dashboard with this name already exists' : ''),
+    });
     if (!name || !name.trim()) return;
+    if (creatingRef.current) return; // guard: never create twice for one action
+    creatingRef.current = true;
     try {
       const d = await dashboardsApi.create({ name: name.trim(), cards: [] });
       setDashboards((cur) => [...(cur || []), d]);
       notifyChanged();
       toast.success(`Dashboard "${d.name}" created`);
       navigate(`/dashboard/${d.id}`); // route into the newly-created dashboard
-    } catch { toast.error('Could not create dashboard'); }
+    } catch (err) { toast.error(err.response?.data?.error?.message || 'Could not create dashboard'); }
+    finally { creatingRef.current = false; }
   };
 
   // Optimistic local update + background save (rename, card add/remove/edit).
   // opts.silent → drag/resize layout saves: no global loader, no sidebar refetch.
   const updateDashboard = (d, opts = {}) => {
+    // Renaming to a name another dashboard already uses → instant message, no API/loader.
+    const server = (dashboards || []).find((x) => x.id === d.id);
+    if (server && d.name !== server.name
+      && (dashboards || []).some((x) => x.id !== d.id && (x.name || '').trim().toLowerCase() === (d.name || '').trim().toLowerCase())) {
+      toast.error('A dashboard with this name already exists');
+      return;
+    }
     setDashboards((cur) => (cur || []).map((x) => (x.id === d.id ? d : x)));
     if (opts.silent) {
       beginSilent();
@@ -89,7 +110,7 @@ export default function DashboardHome() {
     } else {
       dashboardsApi.update(d.id, { name: d.name, cards: d.cards })
         .then(notifyChanged)
-        .catch(() => toast.error('Could not save changes'));
+        .catch((err) => { toast.error(err.response?.data?.error?.message || 'Could not save changes'); notifyChanged(); });
     }
   };
 
@@ -109,6 +130,7 @@ export default function DashboardHome() {
         dashboard={openDash}
         onBack={() => navigate('/dashboard')}
         onChange={updateDashboard}
+        isNameTaken={(n) => (dashboards || []).some((x) => x.id !== openDash.id && (x.name || '').trim().toLowerCase() === n.trim().toLowerCase())}
       />
     );
   }
@@ -134,7 +156,8 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
   const startRename = (d) => { setRenaming(d.id); setDraft(d.name); };
   const commitRename = (d) => {
     const name = (draft || '').trim() || 'Dashboard';
-    onRename({ ...d, name });
+    // Only hit the API when the name actually changed.
+    if (name !== (d.name || '')) onRename({ ...d, name });
     setRenaming(null);
   };
 
@@ -157,7 +180,7 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => { if (e.key === 'Enter') commitRename(d); if (e.key === 'Escape') setRenaming(null); }} />
               ) : (
-                <button style={s.nameBtn} onClick={() => onOpen(d.id)} title="Open dashboard">
+                <button style={s.nameBtn} onClick={() => onOpen(d.id)}>
                   <span style={s.dashIcon}>{(d.name || 'D').charAt(0).toUpperCase()}</span>
                   <span style={s.dashName}>{d.name}</span>
                 </button>
@@ -178,8 +201,11 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 }
 
 /* -------------------------------------------------------------- detail view */
-function DashboardDetail({ dashboard, onBack, onChange }) {
+function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   const confirm = useConfirm();
+  const toast = useToast();
+  const { can } = useAuth();
+  const canAddMembers = can('dashboard.member.add');
   const slotEl = useHeaderSlot();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null); // card open in the modal
@@ -212,30 +238,49 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
     const d = defaultLayout(c, i);
     return { i: c.id, x: c.x ?? d.x, y: c.y ?? d.y, w: c.w ?? d.w, h: c.h ?? d.h, minW: 3, minH: 4 };
   });
-  const persistLayout = (nextLayout) => {
+  // After a resize, apply the new size and immediately re-flow the whole board so
+  // an enlarged card that no longer fits its row wraps to the next row right away
+  // — no overlap, and no need for a second drag/click to tidy it up.
+  const onResizeStopPack = (nextLayout) => {
     const byId = Object.fromEntries(nextLayout.map((l) => [l.i, l]));
-    const next = cards.map((c) => {
+    const sized = cards.map((c) => {
       const l = byId[c.id];
-      return l ? { ...c, x: l.x, y: l.y, w: l.w, h: l.h } : c;
+      return l ? { ...c, w: l.w, h: l.h } : c;
     });
-    // Silent save — no page loader / no refetch when you drag or resize a card.
+    const next = packRows(sized);
+    // Silent save — no page loader / no refetch when you resize a card.
     if (JSON.stringify(next) !== JSON.stringify(cards)) onChange({ ...dashboard, cards: next }, { silent: true });
   };
 
-  // Drop a card ONTO another → the two swap places (no pushing to the next row).
+  // Pack an ordered list of cards left-to-right into rows using each card's OWN
+  // width (like ClickUp) — narrow cards sit 2–3 per row, and cards never overlap.
+  // Every card keeps its own size; only x/y are (re)assigned from the order.
+  const packRows = (list) => {
+    let cx = 0, cy = 0, rowH = 0;
+    return list.map((c, i) => {
+      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
+      const h = c.h ?? defaultLayout(c, i).h;
+      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
+      const placed = { ...c, x: cx, y: cy, w, h };
+      cx += w; rowH = Math.max(rowH, h);
+      return placed;
+    });
+  };
+
+  // Drop a card ONTO another → the two swap ORDER (each keeps its own size), then
+  // the board re-flows so cards sit side-by-side with no overlap and no resizing.
   // Drop into empty space → the card just moves there.
   const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   const onDragStopSwap = (nextLayout, oldItem, newItem) => {
     const draggedId = newItem.i;
-    const dragged = layout.find((l) => l.i === draggedId);
     const target = layout.find((l) => l.i !== draggedId && overlaps(newItem, l));
     let next;
     if (target) {
-      next = cards.map((c) => {
-        if (c.id === draggedId) return { ...c, x: target.x, y: target.y };
-        if (c.id === target.i) return { ...c, x: dragged.x, y: dragged.y };
-        return c;
-      });
+      const di = cards.findIndex((c) => c.id === draggedId);
+      const ti = cards.findIndex((c) => c.id === target.i);
+      const reordered = cards.slice();
+      [reordered[di], reordered[ti]] = [reordered[ti], reordered[di]];
+      next = packRows(reordered);
     } else {
       next = cards.map((c) => (c.id === draggedId ? { ...c, x: newItem.x, y: newItem.y } : c));
     }
@@ -245,20 +290,21 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
   // Pack cards left-to-right into rows using each card's width (like ClickUp),
   // so narrow cards sit 2–3 per row instead of stacking one per row.
   const autoArrange = () => {
-    let cx = 0, cy = 0, rowH = 0;
-    const next = cards.map((c, i) => {
-      const w = Math.min(c.w ?? defaultLayout(c, i).w, 12);
-      const h = c.h ?? defaultLayout(c, i).h;
-      if (cx + w > 12) { cx = 0; cy += rowH; rowH = 0; }
-      const placed = { ...c, x: cx, y: cy, w, h };
-      cx += w; rowH = Math.max(rowH, h);
-      return placed;
-    });
-    onChange({ ...dashboard, cards: next }, { silent: true });
+    onChange({ ...dashboard, cards: packRows(cards) }, { silent: true });
   };
 
   const saveCard = (card) => {
-    setCards(cards.some((c) => c.id === card.id) ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
+    if (cards.some((c) => c.id === card.id)) {
+      setCards(cards.map((c) => (c.id === card.id ? card : c)));
+    } else {
+      // Place a brand-new card just below the LOWEST existing card (its real y+h),
+      // so it never lands in a fixed index-based slot far below the resized layout.
+      const bottom = cards.reduce((m, c, i) => {
+        const d = defaultLayout(c, i);
+        return Math.max(m, (c.y ?? d.y) + (c.h ?? d.h));
+      }, 0);
+      setCards([...cards, { ...card, x: 0, y: bottom, w: card.w ?? 6, h: card.h ?? 9 }]);
+    }
     setAdding(false); setEditing(null);
   };
   const removeCard = async (id) => {
@@ -269,7 +315,13 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
 
   const commitName = () => {
     const v = (name || '').trim() || 'Dashboard';
-    setName(v); onChange({ ...dashboard, name: v }); setEditingName(false);
+    setEditingName(false);
+    // Only save (hit the API / show the loader) when the name actually changed.
+    if (v === dashboard.name) { setName(dashboard.name); return; }
+    // Instant client-side duplicate check — no API call / loader.
+    if (isNameTaken?.(v)) { toast.error('A dashboard with this name already exists'); setName(dashboard.name); return; }
+    setName(v);
+    onChange({ ...dashboard, name: v });
   };
 
   // Breadcrumb ("Dashboards › <name>") lives in the shared topbar via a portal.
@@ -305,20 +357,15 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           </button>
         </div>
         {tab === 'members'
-          ? <button style={s.addBtn} onClick={() => setMShare(true)}><IconPlus size={16} /> Add people</button>
+          ? <button style={{ ...s.addBtn, ...(canAddMembers ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => (canAddMembers ? setMShare(true) : toast.error("You don't have permission to add members"))}><IconPlus size={16} /> Add people</button>
           : <button style={s.addBtn} onClick={() => setAdding(true)}><IconPlus size={16} /> Add card</button>}
       </div>
 
       {tab === 'members' ? (
         <DashboardMembers dashboardId={dashboard.id} reloadKey={mReload} />
       ) : cards.length === 0 ? (
-        <div style={s.emptyGrid}>
-          <button style={s.scratch} onClick={() => setAdding(true)}>
-            <span style={s.scratchIcon}><IconPlus size={26} /></span>
-            <span style={s.scratchTitle}>Add a card</span>
-            <span style={s.scratchDesc}>Portfolio — more card types coming soon.</span>
-          </button>
-        </div>
+        <div style={s.emptyState}>No cards yet — use “+ Add card” to create one.</div>
       ) : (
         <Grid
           className="wg-dash-grid"
@@ -331,7 +378,7 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
           allowOverlap
           resizeHandles={['s', 'e', 'w', 'se', 'sw']}
           onDragStop={onDragStopSwap}
-          onResizeStop={persistLayout}
+          onResizeStop={onResizeStopPack}
         >
           {cards.map((c) => (
             <div key={c.id}>
@@ -359,6 +406,8 @@ function DashboardDetail({ dashboard, onBack, onChange }) {
 function DashboardMembers({ dashboardId, reloadKey }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const canRemove = can('dashboard.member.remove');
   const [members, setMembers] = useState([]);
 
   const load = () => dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
@@ -379,7 +428,9 @@ function DashboardMembers({ dashboardId, reloadKey }) {
         { key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
           render: (m) => (m.is_owner
             ? <span style={s.ownerTag}>Owner</span>
-            : <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>) },
+            : (canRemove
+                ? <button className="wg-danger-link" style={s.removeLink} onClick={() => remove(m)}>Remove</button>
+                : <span style={s.mEmail}>—</span>)) },
       ]} />
   );
 }
@@ -449,6 +500,7 @@ const s = {
 
   // shared empty state
   emptyGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 320px))', gap: 16 },
+  emptyState: { padding: '40px 4px', color: 'var(--c-muted)', fontSize: 14 },
   scratch: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14, minHeight: 200,
     background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 14, padding: 24, cursor: 'pointer', boxShadow: 'var(--sh-xs)' },
   scratchIcon: { width: 48, height: 48, borderRadius: '50%', background: 'var(--c-surface-3)', color: 'var(--c-muted)',

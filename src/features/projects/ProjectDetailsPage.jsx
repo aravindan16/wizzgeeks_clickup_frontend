@@ -9,11 +9,16 @@ import TaskListView from '../tasks/TaskListView';
 import TaskTableView from '../tasks/TaskTableView';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
-import BoardFilter, { emptyFilters, countFilters } from '../tasks/BoardFilter';
-import { IconBoard, IconMembers, IconSearch } from '../../components/icons';
+import FilterBuilder, { newGroup, activeRuleCount } from '../filters/FilterBuilder';
+import { filterTasks } from '../filters/filterEval';
+import { labelsApi } from '../labels/labelsApi';
+import { listsApi } from '../lists/listsApi';
+import { customFieldsApi } from '../customfields/customFieldsApi';
+import { IconBoard, IconMembers, IconSearch, IconFilter, IconChevronDown } from '../../components/icons';
 import TaskModal from '../tasks/TaskModal';
 import TaskDetailModal from '../tasks/TaskDetailModal';
 import ProjectModal from './ProjectModal';
+import SpaceSettingsMenu from './SpaceSettingsMenu';
 import AddMembersModal from './AddMembersModal';
 import { useAuth } from '../auth/useAuth';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -21,7 +26,7 @@ import { useToast } from '../../components/Toast';
 import { SkeletonBoard } from '../../components/Skeleton';
 import ResizableTable from '../../components/ResizableTable';
 
-const EMPTY_FILTERS = { assignee: [], status: [], type: [], priority: [], label: [] };
+const DEFAULT_CARDS = [newGroup()]; // stable default builder tree (one empty rule)
 
 /**
  * A Project behaves like a Jira "Space": opening it shows tabbed views — the
@@ -45,11 +50,34 @@ export default function ProjectDetailsPage() {
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [taskQuery, setTaskQuery] = useState('');
   const [openTaskId, setOpenTaskId] = useState(null);
+  const [labels, setLabels] = useState([]);
+  const [spaceLists, setSpaceLists] = useState([]);
+  const [spaceFields, setSpaceFields] = useState([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Close the filter modal on Escape.
+  useEffect(() => {
+    if (!filterOpen) return undefined;
+    const onEsc = (e) => e.key === 'Escape' && setFilterOpen(false);
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [filterOpen]);
 
   // Views (List/Board/Table tabs) — persisted per Space, shared with the List board.
   const vs = useViews(id);
   const { activeId, setActiveId, updateView, activeView } = vs;
-  const activeFilters = activeView?.filters || EMPTY_FILTERS;
+
+  // Filter builder (same as the Filters tab), persisted per view under fcards/fconj.
+  const fcards = activeView?.fcards?.length ? activeView.fcards : DEFAULT_CARDS;
+  const fconj = activeView?.fconj || 'AND';
+  const setFcards = (u) => updateView(activeId, { fcards: typeof u === 'function' ? u(fcards) : u });
+  const setFconj = (v) => updateView(activeId, { fconj: v });
+
+  useEffect(() => {
+    labelsApi.list().then(setLabels).catch(() => setLabels([]));
+    listsApi.forSpace(id).then(setSpaceLists).catch(() => setSpaceLists([]));
+    customFieldsApi.list(id).then(setSpaceFields).catch(() => setSpaceFields([]));
+  }, [id]);
 
   const canManageGlobal = can('project.member.manage');
 
@@ -88,31 +116,38 @@ export default function ProjectDetailsPage() {
 
   // Search + filters recomputed only when tasks/query/filters change — not on
   // every unrelated re-render (modals opening, etc.).
+  const filterOptions = useMemo(() => ({
+    projects: project ? [project] : [],
+    lists: spaceLists.map((l) => ({ value: l._id, label: l.name })),
+    statuses: statuses.map((st) => ({ value: st.key, label: st.name })),
+    users: members.map((m) => ({ user_id: m.user_id, full_name: m.full_name, email: m.email })),
+    labels: labels.map((l) => ({ value: l.name, label: l.name })),
+    customFields: spaceFields.map((c) => ({ key: `cf:${c._id}`, label: c.name, type: c.type, config: c.config })),
+    tasks, myId: me,
+  }), [project, spaceLists, statuses, members, labels, spaceFields, tasks, me]);
+
   const visibleTasks = useMemo(() => {
     const tq = taskQuery.trim().toLowerCase();
     const matchesSearch = (t) => !tq || [t.key, t.title, t.status, STATUS_LABELS[t.status], t.priority, t.type,
       nameMap.get(t.assignee_id), nameMap.get(t.reporter_id)].filter(Boolean).join(' ').toLowerCase().includes(tq);
-    const matchesFilters = (t) => {
-      if (activeFilters.assignee.length && !activeFilters.assignee.includes(t.assignee_id || 'unassigned')) return false;
-      if (activeFilters.status.length && !activeFilters.status.includes(t.status)) return false;
-      if (activeFilters.type.length && !activeFilters.type.includes(t.type)) return false;
-      if ((activeFilters.priority || []).length && !activeFilters.priority.includes(t.priority)) return false;
-      if ((activeFilters.label || []).length && !(t.labels || []).some((l) => activeFilters.label.includes(l))) return false;
-      return true;
-    };
-    return tasks.filter((t) => matchesSearch(t) && matchesFilters(t));
-  }, [tasks, taskQuery, activeFilters, nameMap]);
+    return filterTasks(tasks, fcards, fconj, { myId: me }).filter(matchesSearch);
+  }, [tasks, taskQuery, fcards, fconj, nameMap, me]);
+
+  const activeFilterCount = activeRuleCount(fcards);
 
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!project) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
   const isOwner = project.owner_id && project.owner_id === me;
-  const activeFilterCount = countFilters(activeFilters);
   const isMembersTab = activeId === 'members';
   // TODO: Re-introduce role-based permissions later. For now ANY member of the
   // space can manage members (add/remove/change role) — no specific role needed.
   const isMember = memberIds.has(me);
   const canManage = isOwner || isMember || canManageGlobal;
+  // Adding / removing people is separately gated (backend requires these). Mirror the
+  // backend so the buttons only show when the action will actually succeed.
+  const canAddPeople = can('project.member.add') || canManageGlobal;
+  const canRemovePeople = can('project.member.remove') || canManageGlobal;
   const canArchive = can('project.update') || isOwner;
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
@@ -150,11 +185,16 @@ export default function ProjectDetailsPage() {
       <ViewTabs vs={vs} extraTabs={[{
         id: 'members', label: 'Members', icon: <IconMembers size={16} />,
         active: isMembersTab, onClick: () => setActiveId('members'),
-      }]} rightSlot={isMembersTab
-        ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
-        : (can('task.create') && project.status !== 'archived'
-            ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Create Task</button>
-            : null)} />
+      }]} rightSlot={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <SpaceSettingsMenu onSpaceSetting={() => navigate(`/projects/${id}/settings`)} />
+          {isMembersTab
+            ? <button className="btn btn-primary" style={{ ...s.taskBtn, ...(canAddPeople ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                onClick={() => (canAddPeople ? setAddPeopleOpen(true) : toast.error("You don't have permission to add members"))}>+ Add people</button>
+            : (can('task.create') && project.status !== 'archived'
+                ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
+                : null)}
+        </span>} />
 
       {/* Common search + filter toolbar for any task view. */}
       {!isMembersTab && (
@@ -165,18 +205,43 @@ export default function ProjectDetailsPage() {
               <input style={s.searchInput} placeholder={`Search ${activeView?.name?.toLowerCase() || 'tasks'}`} value={taskQuery}
                 onChange={(e) => setTaskQuery(e.target.value)} />
             </div>
-            <BoardFilter members={members} tasks={tasks} statuses={statuses} value={activeFilters}
-              onChange={(f) => updateView(activeId, { filters: f })} />
-            {activeFilterCount > 0 && (
-              <button style={s.clearFilters} onClick={() => updateView(activeId, { filters: emptyFilters() })}>Clear filters</button>
-            )}
+            <button type="button" className="btn" style={{ ...s.filterToggle, ...(filterOpen ? s.filterToggleActive : {}) }}
+              onClick={() => setFilterOpen((o) => !o)}>
+              <IconFilter size={15} /> Filter
+              {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              <span style={{ display: 'inline-flex', transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><IconChevronDown size={13} /></span>
+            </button>
           </div>
           <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
         </div>
       )}
 
+      {!isMembersTab && filterOpen && createPortal(
+        <div style={s.filterBackdrop} onClick={() => setFilterOpen(false)}>
+          <div style={s.filterModal} onClick={(e) => e.stopPropagation()}>
+            <div style={s.filterModalHead}>
+              <span style={s.filterModalTitle}>
+                <IconFilter size={16} /> Filters
+                {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              </span>
+              <button type="button" className="icon-btn wg-x-btn" style={s.filterModalClose}
+                onClick={() => setFilterOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div style={s.filterModalBody}>
+              <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
+            </div>
+            <div style={s.filterModalFoot}>
+              <button type="button" className="wg-clear-btn"
+                onClick={() => { setFcards([newGroup()]); setFconj('AND'); }}>Clear all</button>
+              <button type="button" className="btn btn-primary" onClick={() => setFilterOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
-      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea, overflow: (activeView?.type === 'board' || activeView?.type === 'list') ? 'hidden' : 'auto' }}>
       {!isMembersTab && activeView?.type === 'board' && (
         <KanbanBoard tasks={visibleTasks} onChanged={loadTasks} projectId={id} members={members}
           statuses={statuses} onOpenTask={setOpenTaskId} />
@@ -198,7 +263,7 @@ export default function ProjectDetailsPage() {
           columns={[
             { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
             { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },
-            ...(canManage ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+            ...(canRemovePeople ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
               render: (m) => <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button> }] : []),
           ]} />
       )}
@@ -226,7 +291,9 @@ const s = {
   // Full-height column: header/tabs/toolbar stay fixed, only viewArea scrolls.
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  // height compensates BOTH negative margins (14 top + 24 bottom) so the column spans
+  // the full viewport and the pager/scrollbar sits flush at the very bottom.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 38px)', marginTop: -14, marginBottom: -24 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
@@ -237,6 +304,10 @@ const s = {
   searchIcon: { position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'inline-flex' },
   searchInput: { width: '100%', boxSizing: 'border-box', padding: '8px 11px 8px 32px', border: '1px solid #d1d5db', borderRadius: 8 },
   clearFilters: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' },
+  filterToggle: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, whiteSpace: 'nowrap' },
+  filterToggleActive: { borderColor: 'var(--c-primary)', color: 'var(--c-primary)' },
+  filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
+    borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
   tabs: { display: 'flex', alignItems: 'center', gap: 4, margin: '16px 0', borderBottom: '1px solid var(--c-border)', flexWrap: 'wrap' },
   tabWrap: { display: 'inline-flex', alignItems: 'center' },
   menuBackdrop: { position: 'fixed', inset: 0, zIndex: 400 },
@@ -265,4 +336,18 @@ const s = {
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
   link: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
+
+  // Filter modal (opens as a centered dialog instead of pushing the board down).
+  filterBackdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 80,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' },
+  filterModal: { width: 720, maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+    background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)',
+    borderRadius: 14, boxShadow: 'var(--sh-lg)', overflow: 'hidden' },
+  filterModalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '14px 18px', borderBottom: '1px solid var(--c-border-2)' },
+  filterModalTitle: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  filterModalClose: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 4 },
+  filterModalBody: { padding: 18, overflowY: 'auto' },
+  filterModalFoot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '12px 18px', borderTop: '1px solid var(--c-border-2)' },
 };

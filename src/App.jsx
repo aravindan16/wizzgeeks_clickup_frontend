@@ -12,22 +12,25 @@ import { bootstrap } from './features/auth/authSlice';
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
 const DashboardHome = lazy(() => import('./features/dashboard/DashboardHome'));
 const UserManagementPage = lazy(() => import('./features/users/UserManagementPage'));
-const AuditLogPage = lazy(() => import('./features/audit/AuditLogPage'));
 const ProjectListPage = lazy(() => import('./features/projects/ProjectListPage'));
 const ProjectDetailsPage = lazy(() => import('./features/projects/ProjectDetailsPage'));
+const SpaceSettingsPage = lazy(() => import('./features/projects/SpaceSettingsPage'));
 const ListBoardPage = lazy(() => import('./features/lists/ListBoardPage'));
 const TasksPage = lazy(() => import('./features/tasks/TasksPage'));
 const FiltersPage = lazy(() => import('./features/filters/FiltersPage'));
 const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
 const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
-const TeamActivityPage = lazy(() => import('./features/daily/TeamActivityPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
+const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
 
 // Lightweight fallback shown while a route chunk loads.
+// Fixed, viewport-centered so it sits exactly where the GlobalLoader spinner is —
+// if both the lazy-chunk fallback and an in-flight API request happen at login,
+// the two spinners overlap and read as ONE instead of two at different spots.
 const RouteFallback = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+  <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9998 }}>
     <span className="wg-spinner" />
   </div>
 );
@@ -83,6 +86,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/:id" element={<ProjectDetailsPage />} />
+          <Route path="/projects/:id/settings" element={<SpaceSettingsPage />} />
           <Route path="/lists/:id" element={<ListBoardPage />} />
         </Route>
       </Route>
@@ -98,11 +102,6 @@ export default function App() {
       </Route>
 
 
-      <Route element={<ProtectedRoute permission="dailyupdate.read.team" />}>
-        <Route element={<AppLayout />}>
-          <Route path="/team-activity" element={<TeamActivityPage />} />
-        </Route>
-      </Route>
 
 
       <Route element={<ProtectedRoute permission="user.read" />}>
@@ -111,11 +110,12 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute permission="audit.read" />}>
+      <Route element={<ProtectedRoute permission="permission.manage" />}>
         <Route element={<AppLayout />}>
-          <Route path="/audit" element={<AuditLogPage />} />
+          <Route path="/permissions" element={<PermissionsPage />} />
         </Route>
       </Route>
+
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

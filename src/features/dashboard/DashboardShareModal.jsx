@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { dashboardsApi } from './dashboardsApi';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/useAuth';
 import { IconClose, IconTrash, IconSearch, IconPlus } from '../../components/icons';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -8,6 +9,9 @@ const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2)
 /** Share a dashboard with other users (owner-managed member list). */
 export default function DashboardShareModal({ open, dashboardId, onClose, onChanged }) {
   const toast = useToast();
+  const { can } = useAuth();
+  const canAdd = can('dashboard.member.add');
+  const canRemove = can('dashboard.member.remove');
   const [members, setMembers] = useState([]);
   const [users, setUsers] = useState([]);
   const [query, setQuery] = useState('');
@@ -19,12 +23,15 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
     dashboardsApi.members(dashboardId).then((r) => setMembers(r.items || [])).catch(() => setMembers([]));
   }, [open, dashboardId]);
 
-  // Server-side user search (accessible to any authenticated user), debounced.
+  // Server-side user search, debounced. Only search once the user actually types —
+  // opening the modal shouldn't fire an empty search (and it's silent, so no loader).
   useEffect(() => {
     if (!open) return undefined;
+    const q = query.trim();
+    if (!q) { setUsers([]); return undefined; }
     const h = setTimeout(() => {
-      dashboardsApi.searchUsers(query).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
-    }, 200);
+      dashboardsApi.searchUsers(q).then((r) => setUsers(r.items || [])).catch(() => setUsers([]));
+    }, 250);
     return () => clearTimeout(h);
   }, [open, query]);
 
@@ -56,11 +63,15 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
           <button className="icon-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
         </div>
 
+        {!canAdd ? (
+          <div style={s.permNote}>You don’t have permission to add people to this dashboard.</div>
+        ) : (
         <div className="wg-search-box" style={s.searchWrap}>
           <span style={s.searchIcon}><IconSearch size={16} /></span>
           <input autoFocus style={s.search} placeholder="Search people to add…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        {query && (
+        )}
+        {canAdd && query && (
           <div style={s.results}>
             {candidates.length === 0 && <div style={s.empty}>No people found</div>}
             {candidates.map((u) => (
@@ -87,7 +98,9 @@ export default function DashboardShareModal({ open, dashboardId, onClose, onChan
               </span>
               {m.is_owner
                 ? <span style={s.ownerBadge}>Owner</span>
-                : <button className="icon-btn" style={s.removeBtn} title="Remove" disabled={busy} onClick={() => remove(m)}><IconTrash size={15} /></button>}
+                : canRemove
+                  ? <button className="icon-btn" style={s.removeBtn} title="Remove" disabled={busy} onClick={() => remove(m)}><IconTrash size={15} /></button>
+                  : <button className="icon-btn" style={{ ...s.removeBtn, opacity: 0.4, cursor: 'not-allowed' }} title="You don’t have permission to remove members" disabled><IconTrash size={15} /></button>}
             </div>
           ))}
         </div>
@@ -118,4 +131,5 @@ const s = {
   userEmail: { fontSize: 12.5, color: 'var(--c-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   ownerBadge: { fontSize: 11.5, fontWeight: 700, color: 'var(--c-muted)', background: 'var(--c-surface-3)', borderRadius: 999, padding: '2px 10px' },
   removeBtn: { color: 'var(--c-faint)', cursor: 'pointer' },
+  permNote: { border: '1px solid var(--c-border)', background: 'var(--c-surface-3)', borderRadius: 8, padding: '10px 12px', fontSize: 13.5, color: 'var(--c-muted)' },
 };

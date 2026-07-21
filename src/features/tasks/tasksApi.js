@@ -4,12 +4,11 @@ export const tasksApi = {
   list: (params) => apiClient.get('/tasks', { params }).then((r) => r.data),
   get: (id) => apiClient.get(`/tasks/${id}`).then((r) => r.data),
   create: (payload) => apiClient.post('/tasks', payload).then((r) => r.data),
-  update: (id, payload) => apiClient.patch(`/tasks/${id}`, payload).then((r) => r.data),
+  update: (id, payload, opts) => apiClient.patch(`/tasks/${id}`, payload, opts).then((r) => r.data),
   changeStatus: (id, payload, opts) => apiClient.patch(`/tasks/${id}/status`, payload, opts).then((r) => r.data),
-  assign: (id, assignee_id) => apiClient.post(`/tasks/${id}/assign`, { assignee_id }).then((r) => r.data),
-  worklog: (id, hours) => apiClient.post(`/tasks/${id}/worklog`, { hours }).then((r) => r.data),
+  assign: (id, assignee_id, opts) => apiClient.post(`/tasks/${id}/assign`, { assignee_id }, opts).then((r) => r.data),
   remove: (id) => apiClient.delete(`/tasks/${id}`).then((r) => r.data),
-  activity: (id) => apiClient.get(`/tasks/${id}/activity`).then((r) => r.data),
+  activity: (id, opts) => apiClient.get(`/tasks/${id}/activity`, opts).then((r) => r.data),
   metrics: (params) => apiClient.get('/tasks/metrics', { params }).then((r) => r.data),
   comments: (id) => apiClient.get(`/tasks/${id}/comments`).then((r) => r.data),
   addComment: (id, body) => apiClient.post(`/tasks/${id}/comments`, { body }).then((r) => r.data),
@@ -21,9 +20,6 @@ export const tasksApi = {
   links: (id) => apiClient.get(`/tasks/${id}/links`).then((r) => r.data),
   addLink: (id, target_task_id, link_type) => apiClient.post(`/tasks/${id}/links`, { target_task_id, link_type }).then((r) => r.data),
   removeLink: (id, target_id) => apiClient.delete(`/tasks/${id}/links/${target_id}`).then((r) => r.data),
-  // worklog entries
-  worklogs: (id) => apiClient.get(`/tasks/${id}/worklogs`).then((r) => r.data),
-  logWork: (id, hours, note) => apiClient.post(`/tasks/${id}/worklog`, { hours, note }).then((r) => r.data),
 };
 
 // Issue-link relationships, with the human label shown in the UI.

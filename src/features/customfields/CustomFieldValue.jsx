@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { tasksApi, PRIORITY_COLOR, resolveStatuses, isDoneStatus } from '../tasks/tasksApi';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import TaskModal from '../tasks/TaskModal';
-
-const shortDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 
 /**
  * Renders the value editor for a custom field on a task — ClickUp-style.
@@ -92,7 +91,11 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
   const [space, setSpace] = useState(null); // full Space object (for the Create-Task modal)
   const [targetListObj, setTargetListObj] = useState(null); // the field's target List (may have custom statuses)
   const [createOpen, setCreateOpen] = useState(false);
+  const [visible, setVisible] = useState(10); // "Show more" paging for the linked list
+  const [pos, setPos] = useState(null);
   const ref = useRef(null);
+  const addRef = useRef(null);   // the "+ Add" button (popover anchor)
+  const menuRef = useRef(null);  // portaled popover (counts as "inside")
   const inputRef = useRef(null);
 
   // Resolve the Space's status workflow so we can count completed vs pending.
@@ -157,10 +160,35 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
 
   useEffect(() => {
     if (!open) return undefined;
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const h = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     // Capture phase: fires before an ancestor modal can stopPropagation() the event.
     document.addEventListener('mousedown', h, true);
     return () => document.removeEventListener('mousedown', h, true);
+  }, [open]);
+
+  // Position the portaled popover under the "+ Add" button, clamped/flipped to fit
+  // the viewport — so it's never clipped by the task-detail panel it lives in.
+  useEffect(() => {
+    if (!open) return undefined;
+    const place = () => {
+      const r = (addRef.current || ref.current)?.getBoundingClientRect();
+      if (!r) return;
+      const width = 300;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 8 - width));
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      const openUp = below < 300 && above > below;
+      setPos(openUp
+        ? { left, width, bottom: window.innerHeight - r.top + 6 }
+        : { left, width, top: r.bottom + 6 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [open]);
 
   const link = (tk) => { onChange([...ids, tk._id]); setQuery(''); };
@@ -190,9 +218,9 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      {/* Progress bar only on the field's OWN (create) List — hidden on the
-          related/target List, which is the reverse side of the relationship. */}
-      {ids.length > 0 && !onTargetList && (
+      {/* Progress summary of the linked tasks — shown on every List (including the
+          field's own target List) whenever there are links. */}
+      {ids.length > 0 && (
         <div style={t.relSummary}>
           <div style={t.relBar}><div style={{ ...t.relBarFill, width: `${pct}%` }} /></div>
           <span style={t.relSummaryText}>
@@ -206,33 +234,36 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
           {/* Column header (ClickUp-style related table) */}
           <div style={t.relHead}>
             <span style={{ flex: 1 }}>Name</span>
-            <span style={t.relCol}>Due date</span>
-            <span style={t.relColSm}>Priority</span>
+            <span style={t.relStatusCol}>Status</span>
             <span style={{ width: 22 }} />
           </div>
-          {ids.map((id) => {
+          {ids.slice(0, visible).map((id) => {
             const m = meta[id] || {};
             return (
               <div key={id} className="wg-rel-row" style={t.relRow}>
-                <span style={t.relName} onClick={() => onOpenTask?.(id)} title="Open task">
-                  <span style={t.relKey}>{m.key || '…'}</span>
-                  <span style={t.relTitle}>{m.title || ''}</span>
+                <span style={t.relName} onClick={() => onOpenTask?.(id)}>
+                  <span style={t.relKey} title="Open task">{m.key || '…'}</span>
+                  <RelTitle text={m.title || ''} style={t.relTitle} />
                 </span>
-                <span style={t.relCol}>{m.due_date ? shortDate(m.due_date) : '—'}</span>
-                <span style={t.relColSm}>
-                  {m.priority
-                    ? <span style={{ ...t.priChip, color: PRIORITY_COLOR[m.priority], background: `${PRIORITY_COLOR[m.priority]}1a` }}>{m.priority}</span>
+                <span style={t.relStatusCol}>
+                  {m.status
+                    ? <span style={{ ...t.statusChip, color: statusColor(sts, m.status), background: `${statusColor(sts, m.status)}1a` }}>{statusLabel(sts, m.status)}</span>
                     : '—'}
                 </span>
                 <button style={t.relX} title="Unlink" onClick={() => unlink(id)}>✕</button>
               </div>
             );
           })}
+          {ids.length > visible && (
+            <button style={t.relShowMore} onClick={() => setVisible((n) => n + 10)}>
+              Show more ({ids.length - visible})
+            </button>
+          )}
         </div>
       )}
-      <button style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add</button>
-      {open && (
-        <div style={t.relPop}>
+      <button ref={addRef} style={t.addTask} onClick={() => setOpen((o) => !o)}>+ Add</button>
+      {open && pos && createPortal(
+        <div ref={menuRef} style={{ ...t.relPop, position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width }}>
           <input ref={inputRef} autoFocus style={t.relSearch} placeholder="Search…" value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !results.some((r) => r.title.toLowerCase() === q)) createAndLink(); }} />
@@ -260,7 +291,8 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Full Create-Task modal scoped to the related List — opened by the header "+".
@@ -273,6 +305,23 @@ function RelationshipValue({ field, value, onChange, spaceId, onOpenTask, curren
       )}
     </div>
   );
+}
+
+// Linked-task title: only exposes a hover tooltip when the text is actually clipped
+// (ellipsis), not for every row.
+function RelTitle({ text, style }) {
+  const ref = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [text]);
+  return <span ref={ref} style={style} title={truncated ? text : undefined}>{text}</span>;
 }
 
 const t = {
@@ -300,10 +349,15 @@ const t = {
   relTitle: { cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#111827' },
   relCol: { width: 78, flexShrink: 0, color: '#6b7280', fontSize: 12.5 },
   relColSm: { width: 80, flexShrink: 0 },
+  relStatusCol: { width: 130, flexShrink: 0 },
   priChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', textTransform: 'capitalize' },
+  statusChip: { display: 'inline-block', maxWidth: '100%', fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px',
+    textTransform: 'capitalize', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   relX: { background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 12, width: 22, flexShrink: 0 },
+  relShowMore: { width: '100%', padding: '9px 12px', background: 'var(--c-surface-2, #f8fafc)', border: 'none', borderTop: '1px solid #f3f4f6',
+    color: 'var(--c-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center' },
   addTask: { border: '1px dashed #d1d5db', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#6b7280', cursor: 'pointer', background: '#fff' },
-  relPop: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 300, maxWidth: '100%', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 30, padding: 8 },
+  relPop: { width: 300, maxWidth: '100%', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 14px 34px rgba(16,24,40,.18)', zIndex: 2100, padding: 8 },
   relSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 },
   relEmpty: { padding: '10px', color: '#9ca3af', fontSize: 13, textAlign: 'center' },
   relResult: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 7, fontSize: 14 },

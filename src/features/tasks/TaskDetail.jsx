@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   tasksApi, STATUS_LABELS, PRIORITIES, LINK_TYPES, LINK_LABELS,
   resolveStatuses, statusLabel,
@@ -10,6 +10,7 @@ import LabelPicker from '../labels/LabelPicker';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import Select from '../../components/Select';
 import { useAuth } from '../auth/useAuth';
+import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { IconFieldDropdown, IconFieldText, IconFieldRelationship, IconArrowLeft } from '../../components/icons';
 import { beginSilent, endSilent } from '../../services/apiClient';
@@ -44,7 +45,12 @@ const typeIcon = (t) => <span style={{ display: 'inline-flex', color: 'var(--c-m
  * open issue (used by subtasks / linked items).
  */
 export default function TaskDetail({ taskId, onClose, onChanged, members: membersProp, statuses: statusesProp, onOpenTask, inModal = false }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const canEdit = can('task.update');
+  const canAssign = can('task.assign');
+  const canComment = can('task.comment');
+  const toast = useToast();
+  const NO_PERM = "You don't have permission to edit this task.";
   const confirm = useConfirm();
   const me = user?._id || user?.id;
 
@@ -55,7 +61,6 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [activity, setActivity] = useState([]);
   const [subtasks, setSubtasks] = useState([]);
   const [links, setLinks] = useState([]);
-  const [worklogs, setWorklogs] = useState([]);
   const [siblings, setSiblings] = useState([]); // candidate tasks for linking
   const [customFields, setCustomFields] = useState([]);
   const [fieldValues, setFieldValues] = useState({});
@@ -68,13 +73,13 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [titleVal, setTitleVal] = useState('');
   const [editingDesc, setEditingDesc] = useState(false);
   const [descVal, setDescVal] = useState('');
+  const descTimer = useRef(null); // debounce timer for description auto-save
   const [labelsVal, setLabelsVal] = useState('');
   const [newComment, setNewComment] = useState('');
   const [editingComment, setEditingComment] = useState(null);
 
-  const [activityTab, setActivityTab] = useState('all'); // all | comments | history | worklog
-  const [worklog, setWorklog] = useState('');
-  const [worklogNote, setWorklogNote] = useState('');
+  const [activityTab, setActivityTab] = useState('all'); // all | comments | history
+  const [visibleCount, setVisibleCount] = useState(10);  // "Show more" paging for All/History
 
   const [addingSub, setAddingSub] = useState(false);
   const [newSub, setNewSub] = useState('');
@@ -91,19 +96,18 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       setTask(t);
       setTitleVal(t.title); setDescVal(t.description || ''); setLabelsVal((t.labels || []).join(', '));
       setFieldValues(t.custom_fields || {});
-      const [ms, cs, act, subs, lks, wls, sibs, proj, cf] = await Promise.all([
+      const [ms, cs, act, subs, lks, sibs, proj, cf] = await Promise.all([
         projectsApi.members(t.project_id).catch(() => []),
         tasksApi.comments(taskId).catch(() => []),
         tasksApi.activity(taskId).catch(() => []),
         tasksApi.subtasks(taskId).catch(() => []),
         tasksApi.links(taskId).catch(() => []),
-        tasksApi.worklogs(taskId).catch(() => []),
         tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
         statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
         customFieldsApi.list(t.project_id, t.list_id, t._id).catch(() => []),
       ]);
       setFetchedMembers(ms); setComments(cs); setActivity(act);
-      setSubtasks(subs); setLinks(lks); setWorklogs(wls); setSiblings(sibs); setFetchedProject(proj);
+      setSubtasks(subs); setLinks(lks); setSiblings(sibs); setFetchedProject(proj);
       // Hide inherited Space fields disabled for this List.
       setCustomFields((cf || []).filter((f) => f.enabled !== false));
     } catch (err) {
@@ -115,7 +119,15 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
 
   useEffect(() => { load(); }, [load]);
 
-  if (error) return <div style={{ color: '#ef4444', padding: 20 }}>{error}</div>;
+  if (error) return (
+    <div style={{ padding: 24 }}>
+      <button className="wg-back" style={s.back} onClick={onClose}><IconArrowLeft size={15} /> Back to board</button>
+      <div style={{ marginTop: 16, color: 'var(--c-text-strong)', fontWeight: 600, fontSize: 15 }}>{error}</div>
+      <div style={{ marginTop: 6, color: 'var(--c-muted)', fontSize: 13.5 }}>
+        You may not have permission for this. Ask an admin to grant it, or go back.
+      </div>
+    </div>
+  );
   if (!task) return <p style={{ padding: 20 }}>Loading…</p>;
 
   const nameOf = (uid) => members.find((m) => m.user_id === uid)?.full_name;
@@ -127,38 +139,78 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
     : [...spaceStatuses, { key: task.status, name: task.status, color: '#6b7280' }];
 
   const after = async () => { await load(); onChanged?.(); };
-  const save = async (patch) => { setTask((t) => ({ ...t, ...patch })); await tasksApi.update(taskId, patch); after(); };
+  // A field edit only changes the task + adds an activity entry, so after saving we
+  // optimistically update, then SILENTLY refresh just the activity feed (no loader,
+  // no refetching members/subtasks/links/custom-fields — that caused the flicker
+  // and a burst of requests on a simple assignee/status change).
+  const refreshActivity = () => tasksApi.activity(taskId, { _silent: true }).then(setActivity).catch(() => {});
+  const save = async (patch, opts) => {
+    if (!canEdit) { toast.error(NO_PERM); return; }
+    setTask((t) => ({ ...t, ...patch }));
+    try { await tasksApi.update(taskId, patch, { _silent: true, ...opts }); onChanged?.(); refreshActivity(); }
+    catch (err) { toast.error(err.response?.data?.error?.message || NO_PERM); load(); }
+  };
+
+  // Description auto-saves silently (no loader): debounced while typing + on blur.
+  // Doesn't reload the task (that would reset the textarea mid-edit) — just an
+  // optimistic update + a background refresh of the parent board.
+  const saveDesc = (val) => {
+    if (val === (task.description || '')) return;
+    if (!canEdit) { toast.error(NO_PERM); setDescVal(task.description || ''); return; }
+    setTask((t) => ({ ...t, description: val }));
+    // Fully background: no loader, and no onChanged() board refresh (the description
+    // isn't shown on board cards) — so typing never triggers the global loader.
+    tasksApi.update(taskId, { description: val }, { _silent: true })
+      .catch((err) => { toast.error(err.response?.data?.error?.message || NO_PERM); load(); });
+  };
+  const onDescChange = (e) => {
+    const v = e.target.value;
+    setDescVal(v);
+    clearTimeout(descTimer.current);
+    descTimer.current = setTimeout(() => saveDesc(v), 700);
+  };
+  const onDescBlur = () => { clearTimeout(descTimer.current); setEditingDesc(false); saveDesc(descVal); };
 
   const move = async (to) => {
     if (to === task.status) return;
     setTask((t) => ({ ...t, status: to })); // optimistic
-    try { await tasksApi.changeStatus(taskId, { to_status: to }); after(); }
-    catch (err) { setError(err.response?.data?.error?.message || 'Could not change status'); load(); }
+    try { await tasksApi.changeStatus(taskId, { to_status: to }, { _silent: true }); onChanged?.(); refreshActivity(); }
+    catch (err) { toast.error(err.response?.data?.error?.message || 'Could not change status'); load(); }
   };
   const assign = async (uid) => {
+    if (!canAssign) { toast.error("You don't have permission to assign tasks."); return; }
     setTask((t) => ({ ...t, assignee_id: uid || null })); // optimistic
-    try { await tasksApi.assign(taskId, uid || null); after(); }
-    catch (err) { setError(err.response?.data?.error?.message || 'Assign failed'); load(); }
+    try { await tasksApi.assign(taskId, uid || null, { _silent: true }); onChanged?.(); refreshActivity(); }
+    catch (err) { toast.error(err.response?.data?.error?.message || 'Assign failed'); load(); }
   };
-  const addWork = async (e) => {
-    e.preventDefault(); if (!worklog) return;
-    await tasksApi.logWork(taskId, Number(worklog), worklogNote || null);
-    setWorklog(''); setWorklogNote(''); after();
-  };
-  const addComment = async (e) => { e.preventDefault(); if (!newComment.trim()) return; await tasksApi.addComment(taskId, newComment); setNewComment(''); load(); };
-  const saveEdit = async (cid) => { await tasksApi.editComment(cid, editingComment.body); setEditingComment(null); load(); };
+  // Comment actions only refresh the comment list (not the whole task) — no need
+  // to refetch members/subtasks/links/etc. on every comment.
+  const refreshComments = () => tasksApi.comments(taskId).then(setComments).catch(() => {});
+  const addComment = async (e) => { e.preventDefault(); if (!newComment.trim()) return; await tasksApi.addComment(taskId, newComment); setNewComment(''); refreshComments(); onChanged?.(); };
+  const saveEdit = async (cid) => { await tasksApi.editComment(cid, editingComment.body); setEditingComment(null); refreshComments(); };
   const delComment = async (cid) => {
     const ok = await confirm({ title: 'Delete comment', message: 'This comment will be deleted. This cannot be undone.' });
-    if (ok) { await tasksApi.deleteComment(cid); load(); }
+    if (ok) { await tasksApi.deleteComment(cid); refreshComments(); onChanged?.(); }
   };
 
   const addSubtask = async (e) => {
     e.preventDefault();
     if (!newSub.trim()) return;
     try {
-      await tasksApi.create({ project_id: task.project_id, title: newSub.trim(), type: 'subtask', parent_id: taskId });
-      setNewSub(''); setAddingSub(false); load(); onChanged?.();
-    } catch (err) { setError(err.response?.data?.error?.message || 'Could not add subtask'); }
+      // Append the created subtask instead of reloading the whole task (that fired
+      // ~12 requests for members/comments/links/custom-fields/etc.).
+      const created = await tasksApi.create({ project_id: task.project_id, title: newSub.trim(), type: 'subtask', parent_id: taskId });
+      setSubtasks((arr) => [...arr, created]);
+      setNewSub(''); setAddingSub(false);
+      onChanged?.(); refreshActivity();
+    } catch (err) { toast.error(err.response?.data?.error?.message || 'Could not add subtask'); }
+  };
+  const removeSubtask = async (id, e) => {
+    e.stopPropagation();
+    const ok = await confirm({ title: 'Remove subtask', message: 'This subtask will be deleted. This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
+    try { await tasksApi.remove(id); setSubtasks((arr) => arr.filter((x) => x._id !== id)); onChanged?.(); }
+    catch (err) { toast.error(err.response?.data?.error?.message || 'Could not remove subtask'); }
   };
 
   const addLink = async () => {
@@ -178,8 +230,10 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const setFieldVal = async (id, v) => {
     const next = { ...fieldValues, [id]: v };
     setFieldValues(next);
-    try { await tasksApi.update(taskId, { custom_fields: next }); onChanged?.(); }
-    catch (err) { setError(err.response?.data?.error?.message || 'Could not save field'); }
+    // Silent (no loader) + refresh only the activity feed — a custom-field change
+    // shouldn't refetch the whole task or flash the loader.
+    try { await tasksApi.update(taskId, { custom_fields: next }, { _silent: true }); onChanged?.(); refreshActivity(); }
+    catch (err) { toast.error(err.response?.data?.error?.message || 'Could not save field'); load(); }
   };
 
   // already-linked ids + self are not candidates for a new link
@@ -207,6 +261,12 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       </div>
 
       <div style={inModal ? s.scrollBody : undefined}>
+      {!canEdit && (
+        <div style={s.readOnlyBar}>
+          <span style={s.readOnlyIcon}>🔒</span>
+          <span><b>View only</b> — you don’t have permission to edit this task.</span>
+        </div>
+      )}
       {error && <p style={{ color: '#ef4444' }}>{error}</p>}
 
       <div style={s.grid}>
@@ -218,22 +278,17 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
               onBlur={() => { setEditingTitle(false); if (titleVal.trim() && titleVal !== task.title) save({ title: titleVal.trim() }); }}
               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} />
           ) : (
-            <h1 style={s.title} onClick={() => setEditingTitle(true)} title="Click to edit">{task.title}</h1>
+            <h1 className={canEdit ? 'wg-editable-title' : undefined} style={{ ...s.title, cursor: canEdit ? 'text' : 'default' }} onClick={() => canEdit && setEditingTitle(true)} title={canEdit ? 'Click to edit' : ''}>{task.title}</h1>
           )}
 
           <div style={s.section}>
             <div style={s.label}>Description</div>
             {editingDesc ? (
-              <div>
-                <textarea autoFocus style={s.descArea} value={descVal} onChange={(e) => setDescVal(e.target.value)} />
-                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  <button style={s.btn} onClick={() => { setEditingDesc(false); save({ description: descVal }); }}>Save</button>
-                  <button style={s.btnGhost} onClick={() => { setEditingDesc(false); setDescVal(task.description || ''); }}>Cancel</button>
-                </div>
-              </div>
+              <textarea autoFocus style={s.descArea} value={descVal} onChange={onDescChange} onBlur={onDescBlur} />
             ) : (
-              <div style={s.descBox} onClick={() => setEditingDesc(true)}>
-                {task.description || <span style={{ color: 'var(--c-faint)' }}>Add a description…</span>}
+              <div style={{ ...s.descBox, cursor: canEdit ? 'text' : 'default' }}
+                onClick={() => canEdit && setEditingDesc(true)}>
+                {task.description || <span style={{ color: 'var(--c-faint)' }}>{canEdit ? 'Add a description…' : 'No description'}</span>}
               </div>
             )}
           </div>
@@ -255,6 +310,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 <span style={s.subKey}>{st.key}</span>
                 <span style={{ flex: 1, textDecoration: DONE.has(st.status) ? 'line-through' : 'none', color: DONE.has(st.status) ? 'var(--c-faint)' : 'var(--c-text-strong)' }}>{st.title}</span>
                 <StatusBadge status={st.status} statuses={spaceStatuses} />
+                {canEdit && <button style={s.linkX} title="Remove subtask" onClick={(e) => removeSubtask(st._id, e)}>✕</button>}
               </div>
             ))}
             {addingSub ? (
@@ -263,9 +319,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 <button style={s.btn} type="submit">Add</button>
                 <button style={s.btnGhost} type="button" onClick={() => { setAddingSub(false); setNewSub(''); }}>Cancel</button>
               </form>
-            ) : (
+            ) : canEdit ? (
               <button style={s.addLink} onClick={() => setAddingSub(true)}>+ Add subtask</button>
-            )}
+            ) : null}
           </div>
 
           {/* LINKED WORK ITEMS */}
@@ -280,7 +336,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                   <span style={{ flex: 1 }}>{l.title}</span>
                   <StatusBadge status={l.status} statuses={spaceStatuses} />
                 </span>
-                <button style={s.linkX} title="Remove link" onClick={() => removeLink(l.task_id)}>✕</button>
+                {canEdit && <button style={s.linkX} title="Remove link" onClick={() => removeLink(l.task_id)}>✕</button>}
               </div>
             ))}
             {addingLink ? (
@@ -292,9 +348,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 <button style={s.btn} onClick={addLink} disabled={!linkTarget}>Link</button>
                 <button style={s.btnGhost} onClick={() => { setAddingLink(false); setLinkTarget(''); }}>Cancel</button>
               </div>
-            ) : (
+            ) : canEdit ? (
               <button style={s.addLink} onClick={() => setAddingLink(true)}>+ Add linked work item</button>
-            )}
+            ) : null}
           </div>
 
           {/* CUSTOM FIELDS */}
@@ -311,7 +367,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                       <span style={s.cfName}><span style={s.cfIcon}><Cmp size={14} /></span>{f.name}
                         {f.location && <span style={s.cfLoc} title={`List: ${f.location}`}>{f.location}</span>}
                       </span>
-                      <div style={{ marginTop: 8 }}>
+                      <div style={{ marginTop: 8, ...(canEdit ? {} : s.readOnlyField) }}>
                         <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
                           spaceId={task.project_id} onOpenTask={onOpenTask} currentListId={task.list_id} />
                       </div>
@@ -324,8 +380,10 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                         {f.location && <span style={s.cfLoc} title={`List: ${f.location}`}>{f.location}</span>}
                       </span>
                     <div style={{ flex: 1 }} />
-                    <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
-                      spaceId={task.project_id} onOpenTask={onOpenTask} currentListId={task.list_id} />
+                    <div style={canEdit ? undefined : s.readOnlyField}>
+                      <CustomFieldValue field={f} value={fieldValues[f._id]} onChange={(v) => setFieldVal(f._id, v)}
+                        spaceId={task.project_id} onOpenTask={onOpenTask} currentListId={task.list_id} />
+                    </div>
                   </div>
                 );
               })}
@@ -336,12 +394,12 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
           <div style={s.section}>
             <div style={s.label}>Activity</div>
             <div style={s.tabs}>
-              {[['all', 'All'], ['comments', 'Comments'], ['history', 'History'], ['worklog', 'Work log']].map(([k, lbl]) => (
-                <button key={k} style={{ ...s.tab, ...(activityTab === k ? s.tabActive : {}) }} onClick={() => setActivityTab(k)}>{lbl}</button>
+              {[['all', 'All'], ['comments', 'Comments'], ['history', 'History']].map(([k, lbl]) => (
+                <button key={k} style={{ ...s.tab, ...(activityTab === k ? s.tabActive : {}) }} onClick={() => { setActivityTab(k); setVisibleCount(10); }}>{lbl}</button>
               ))}
             </div>
 
-            {activityTab === 'comments' && (
+            {activityTab === 'comments' && canComment && (
               <form onSubmit={addComment} style={{ margin: '12px 0', display: 'flex', gap: 10 }}>
                 <span style={s.avatar}>{initials(user?.full_name)}</span>
                 <div style={{ flex: 1 }}>
@@ -349,6 +407,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                   <button style={s.btn} type="submit">Comment</button>
                 </div>
               </form>
+            )}
+            {activityTab === 'comments' && !canComment && (
+              <div style={{ margin: '12px 0', color: 'var(--c-muted)', fontSize: 13 }}>You don’t have permission to comment.</div>
             )}
 
             {activityTab === 'comments' && (
@@ -364,27 +425,11 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
             {activityTab === 'history' && (
               <div>
                 {activity.length === 0 && <Empty text="No history yet." />}
-                {activity.map((a) => <ActivityRow key={a._id} a={a} nameOf={nameOf} />)}
-              </div>
-            )}
-
-            {activityTab === 'worklog' && (
-              <div>
-                <form onSubmit={addWork} style={s.worklogForm}>
-                  <input style={{ ...s.inlineInput, width: 90 }} type="number" min="0.5" step="0.5" placeholder="Hours" value={worklog} onChange={(e) => setWorklog(e.target.value)} />
-                  <input style={s.inlineInput} placeholder="What did you work on? (optional)" value={worklogNote} onChange={(e) => setWorklogNote(e.target.value)} />
-                  <button style={s.btn} type="submit">Log time</button>
-                </form>
-                {worklogs.length === 0 ? <Empty text="No time was logged for this task yet." /> : (
-                  worklogs.slice().reverse().map((w) => (
-                    <div key={w._id} style={s.feedRow}>
-                      <span style={s.avatar}>{initials(w.user_name)}</span>
-                      <div style={{ flex: 1 }}>
-                        <div><strong>{w.user_name || 'User'}</strong> logged <strong>{w.hours}h</strong> <span style={s.muted}>· {timeAgo(w.created_at)}</span></div>
-                        {w.note && <div style={{ fontSize: 14, marginTop: 2 }}>{w.note}</div>}
-                      </div>
-                    </div>
-                  ))
+                {activity.slice(0, visibleCount).map((a) => <ActivityRow key={a._id} a={a} nameOf={nameOf} />)}
+                {activity.length > visibleCount && (
+                  <button style={s.showMore} onClick={() => setVisibleCount((n) => n + 10)}>
+                    Show more ({activity.length - visibleCount})
+                  </button>
                 )}
               </div>
             )}
@@ -392,11 +437,16 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
             {activityTab === 'all' && (
               <div>
                 {feed.length === 0 && <Empty text="No activity yet." />}
-                {feed.map((f) => (
+                {feed.slice(0, visibleCount).map((f) => (
                   f.kind === 'comment'
                     ? <CommentRow key={`c${f.data._id}`} c={f.data} me={me} editingComment={editingComment} setEditingComment={setEditingComment} saveEdit={saveEdit} delComment={delComment} />
                     : <ActivityRow key={`a${f.data._id}`} a={f.data} nameOf={nameOf} />
                 ))}
+                {feed.length > visibleCount && (
+                  <button style={s.showMore} onClick={() => setVisibleCount((n) => n + 10)}>
+                    Show more ({feed.length - visibleCount})
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -404,7 +454,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
 
         {/* DETAILS */}
         <aside>
-          <Select style={{ minWidth: 160 }} value={task.status} onChange={move}
+          <Select style={{ minWidth: 160 }} value={task.status} onChange={move} disabled={!canEdit}
             options={statusList.map((st) => ({ value: st.key, label: st.name }))} />
 
           <div className="card" style={{ marginTop: 12 }}>
@@ -412,26 +462,28 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
 
             <Field label="Assignee">
               <div>
-                <Select value={task.assignee_id || ''} onChange={assign} placeholder="Unassigned"
+                <Select value={task.assignee_id || ''} onChange={assign} placeholder="Unassigned" disabled={!canAssign}
                   options={[{ value: '', label: 'Unassigned' }, ...members.map((m) => ({ value: m.user_id, label: `${m.full_name}${m.user_id === me ? ' (you)' : ''}` }))]} />
-                {!task.assignee_id && meIsMember && <button style={s.assignMe} onClick={() => assign(me)}>Assign to me</button>}
+                {!task.assignee_id && meIsMember && canAssign && <button style={s.assignMe} onClick={() => assign(me)}>Assign to me</button>}
               </div>
             </Field>
 
             <Field label="Priority">
-              <Select value={task.priority} onChange={(v) => save({ priority: v })}
+              <Select value={task.priority} onChange={(v) => save({ priority: v })} disabled={!canEdit}
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </Field>
 
             <Field label="Start date">
-              <input type="date" style={s.fieldSelect} value={task.start_date || ''}
+              <input type="date" style={s.fieldSelect} value={task.start_date || ''} disabled={!canEdit}
                 max={task.end_date || undefined}
+                onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not supported */ } }}
                 onChange={(e) => save({ start_date: e.target.value || null })} />
             </Field>
 
             <Field label="End date">
-              <input type="date" style={s.fieldSelect} value={task.end_date || ''}
+              <input type="date" style={s.fieldSelect} value={task.end_date || ''} disabled={!canEdit}
                 min={task.start_date || undefined}
+                onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not supported */ } }}
                 onChange={(e) => save({ end_date: e.target.value || null, due_date: e.target.value || null })} />
             </Field>
 
@@ -440,7 +492,14 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
             </Field>
 
             <Field label="Labels">
-              <LabelPicker value={task.labels || []} onChange={(labels) => save({ labels })} />
+              {canEdit ? (
+                <LabelPicker value={task.labels || []} onChange={(labels) => save({ labels })} />
+              ) : (
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {(task.labels || []).length ? (task.labels || []).map((n) => <span key={n} style={s.roLabel}>{n}</span>)
+                    : <span style={{ color: 'var(--c-faint)', fontSize: 13 }}>No labels</span>}
+                </span>
+              )}
             </Field>
           </div>
         </aside>
@@ -489,7 +548,9 @@ function CommentRow({ c, me, editingComment, setEditingComment, saveEdit, delCom
         </div>
         {editingComment?._id === c._id ? (
           <div>
-            <textarea style={s.descArea} value={editingComment.body} onChange={(e) => setEditingComment({ ...editingComment, body: e.target.value })} />
+            <textarea autoFocus style={s.commentEdit} value={editingComment.body}
+              onChange={(e) => setEditingComment({ ...editingComment, body: e.target.value })}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveEdit(c._id); if (e.key === 'Escape') setEditingComment(null); }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
               <button style={s.btn} onClick={() => saveEdit(c._id)}>Save</button>
               <button style={s.btnGhost} onClick={() => setEditingComment(null)}>Cancel</button>
@@ -540,8 +601,6 @@ function describeActivity(a, nameOf) {
       const labels = fields.map((f) => FIELD_LABEL[f] || f);
       return { verb: <>updated {labels.length ? <strong>{labels.join(', ')}</strong> : 'the work item'}</> };
     }
-    case 'task.worklog':
-      return { verb: <>logged <strong>{m.hours}h</strong> of work</> };
     case 'task.link_added':
       return { verb: <>linked a work item</> };
     case 'task.link_removed':
@@ -577,7 +636,14 @@ const s = {
   rootModal: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   headerModal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
     padding: '16px 24px', borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface)' },
-  scrollBody: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px 28px' },
+  scrollBody: { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '20px 24px 28px' },
+  readOnlyBar: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '9px 12px', borderRadius: 8,
+    background: 'color-mix(in srgb, #f59e0b 12%, var(--c-surface))', border: '1px solid color-mix(in srgb, #f59e0b 35%, var(--c-border))',
+    color: 'var(--c-text)', fontSize: 13 },
+  readOnlyIcon: { fontSize: 14, lineHeight: 1 },
+  readOnlyField: { pointerEvents: 'none', opacity: 0.7 }, // custom-field editors when view-only
+  roLabel: { display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: 999, fontSize: 12.5,
+    background: 'var(--c-surface-2)', color: 'var(--c-text)', border: '1px solid var(--c-border)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   breadcrumb: { display: 'flex', alignItems: 'center', gap: 10 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--c-hover)', border: '1px solid var(--c-border)',
@@ -585,14 +651,26 @@ const s = {
   crumbSep: { color: 'var(--c-faint)' },
   keyCrumb: { display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--c-text)', fontSize: 13 },
   closeBtn: { background: 'none', border: '1px solid var(--c-border)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--c-muted)' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24, alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 24, alignItems: 'start' },
   title: { fontSize: 26, margin: '0 0 16px', cursor: 'text' },
   titleInput: { fontSize: 26, fontWeight: 700, width: '100%', boxSizing: 'border-box', border: '1px solid var(--c-border)', borderRadius: 8, padding: '4px 8px', marginBottom: 16, background: 'var(--c-surface)', color: 'var(--c-text)' },
   section: { marginBottom: 24 },
   sectionHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontSize: 13, fontWeight: 700, color: 'var(--c-text)', marginBottom: 8 },
-  descBox: { minHeight: 44, border: '1px solid var(--c-border)', borderRadius: 8, padding: '10px 12px', cursor: 'text', background: 'var(--c-surface-2)' },
-  descArea: { width: '100%', boxSizing: 'border-box', minHeight: 70, border: '1px solid var(--c-border)', borderRadius: 8, padding: 10, fontFamily: 'inherit', fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
+  // Display box and edit textarea share the SAME fixed box model so the size never
+  // jumps when you click to edit; long content scrolls instead of growing.
+  descBox: { width: '100%', boxSizing: 'border-box', height: 84, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '10px 12px', cursor: 'text', background: 'var(--c-surface-2)',
+    fontSize: 14, lineHeight: 1.5, color: 'var(--c-text)' },
+  descArea: { width: '100%', boxSizing: 'border-box', height: 84, resize: 'none', overflowY: 'auto',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '10px 12px', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.5,
+    background: 'var(--c-surface)', color: 'var(--c-text)' },
+  showMore: { marginTop: 8, padding: '8px 14px', background: 'var(--c-surface-2)', border: '1px solid var(--c-border)',
+    borderRadius: 8, color: 'var(--c-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  // Compact inline editor for an existing comment (not a big composer-style box).
+  commentEdit: { width: '100%', boxSizing: 'border-box', minHeight: 48, resize: 'vertical', margin: '4px 0',
+    border: '1px solid var(--c-border)', borderRadius: 8, padding: '8px 10px', fontFamily: 'inherit', fontSize: 14,
+    lineHeight: 1.5, background: 'var(--c-surface)', color: 'var(--c-text)' },
   inlineInput: { flex: 1, padding: '8px 10px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: 'var(--c-surface)', color: 'var(--c-text)' },
 
   // subtasks
@@ -623,7 +701,6 @@ const s = {
   tab: { padding: '5px 12px', border: 'none', background: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: 'var(--c-muted)' },
   tabActive: { background: 'var(--c-hover)', color: 'var(--c-text-strong)', fontWeight: 600, border: '1px solid #bfdbfe' },
   feedRow: { display: 'flex', gap: 10, padding: '12px 0', borderTop: '1px solid var(--c-border)' },
-  worklogForm: { display: 'flex', gap: 8, margin: '12px 0', alignItems: 'center' },
   muted: { color: 'var(--c-faint)', fontWeight: 400, fontSize: 12 },
   badge: { fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, letterSpacing: 0.3, flexShrink: 0 },
 

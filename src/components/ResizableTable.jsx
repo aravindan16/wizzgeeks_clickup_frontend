@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconChevronDown } from './icons';
+import Select from './Select';
 
 const PAGE_SIZES = [10, 20, 50, 100];
 
@@ -21,6 +21,15 @@ export default function ResizableTable({
   columns, rows, rowKey, onRowClick, emptyText = 'No data.',
   persistKey, card = true, rowClassName = 'wg-rel-row',
   paginated = true, defaultPageSize = 10,
+  // fillHeight: fill the parent's height — rows scroll internally under a sticky header,
+  // and the pager pins to the bottom (the parent must give the table a bounded height).
+  fillHeight = false,
+  // --- server-side pagination (backend paging) ---
+  // When serverMode is set, `rows` is ALREADY the current page from the API.
+  // The component controls nothing itself — it reports page/size changes so the
+  // parent can refetch: onPageChange(page0based), onPageSizeChange(size).
+  serverMode = false, page: pageProp, pageSize: pageSizeProp, total: totalProp,
+  onPageChange, onPageSizeChange,
 }) {
   const [widths, setWidths] = useState(() => {
     let saved = {};
@@ -46,27 +55,34 @@ export default function ResizableTable({
   };
 
   // --- pagination ---
-  const [pageSize, setPageSize] = useState(defaultPageSize);
-  const [page, setPage] = useState(0); // 0-based
-  const total = rows.length;
+  // Client mode owns its own page/size state; server mode is fully controlled.
+  const [pageSizeC, setPageSizeC] = useState(defaultPageSize);
+  const [pageC, setPageC] = useState(0); // 0-based
+  const pageSize = serverMode ? (pageSizeProp || defaultPageSize) : pageSizeC;
+  const total = serverMode ? (totalProp || 0) : rows.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
-  // Reset to the first page when the data set or page size changes.
-  useEffect(() => { setPage(0); }, [total, pageSize]);
-  const pageRows = paginated ? rows.slice(safePage * pageSize, safePage * pageSize + pageSize) : rows;
+  const rawPage = serverMode ? (pageProp || 0) : pageC;
+  const safePage = Math.min(rawPage, pageCount - 1);
+  // Client mode: reset to the first page when the data set / page size changes.
+  useEffect(() => { if (!serverMode) setPageC(0); }, [serverMode, total, pageSizeC]);
+  const setPage = (p) => (serverMode ? onPageChange?.(Math.max(0, p)) : setPageC(p));
+  const setPageSize = (n) => (serverMode ? onPageSizeChange?.(n) : setPageSizeC(n));
+  // Server mode: rows ARE the current page already; client mode slices locally.
+  const pageRows = (!paginated || serverMode) ? rows : rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
   const from = total === 0 ? 0 : safePage * pageSize + 1;
-  const to = Math.min(total, (safePage + 1) * pageSize);
+  const to = serverMode ? Math.min(total, safePage * pageSize + rows.length) : Math.min(total, (safePage + 1) * pageSize);
 
   const last = columns.length - 1;
+  const th = fillHeight ? { ...s.th, ...s.thSticky } : s.th; // sticky header when filling height
   const content = (
     <>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={fillHeight ? s.scrollFill : { overflowX: 'auto' }}>
         <table style={s.table}>
           <colgroup>{columns.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}</colgroup>
           <thead>
             <tr>
               {columns.map((c, i) => (
-                <th key={c.key} style={{ ...s.th, ...(c.align ? { textAlign: c.align } : {}), ...(i < last ? s.line : {}) }}>
+                <th key={c.key} style={{ ...th, ...(c.align ? { textAlign: c.align } : {}), ...(i < last ? s.line : {}) }}>
                   <span style={s.thLabel}>{c.label}</span>
                   {i < last && <span style={s.resize} onMouseDown={(e) => startResize(e, c.key)} title="Drag to resize" />}
                 </th>
@@ -91,15 +107,11 @@ export default function ResizableTable({
       </div>
 
       {paginated && total > 0 && (
-        <div style={s.pager}>
+        <div style={{ ...s.pager, ...(fillHeight ? { flexShrink: 0 } : {}) }}>
           <label style={s.pagerLeft}>
             Rows per page:
-            <span style={s.pageSelectWrap}>
-              <select style={s.pageSelect} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <span style={s.pageSelectCaret}><IconChevronDown size={13} /></span>
-            </span>
+            <Select value={pageSize} onChange={(v) => setPageSize(Number(v))} style={s.pageSelect}
+              options={PAGE_SIZES.map((n) => ({ value: n, label: String(n) }))} />
           </label>
           <div style={s.pagerRight}>
             <span style={s.pagerRange}>{from}–{to} of {total}</span>
@@ -114,14 +126,18 @@ export default function ResizableTable({
     </>
   );
 
-  return card ? <div style={s.card}>{content}</div> : content;
+  return card ? <div style={{ ...s.card, ...(fillHeight ? s.cardFill : {}) }}>{content}</div> : content;
 }
 
 const s = {
   card: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
+  // fillHeight: card becomes a full-height flex column so the pager pins to the bottom.
+  cardFill: { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 },
+  scrollFill: { flex: 1, minHeight: 0, overflow: 'auto' }, // rows scroll here
   table: { width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' },
   th: { position: 'relative', textAlign: 'left', padding: '11px 14px', fontSize: 12, textTransform: 'uppercase',
     letterSpacing: '.03em', color: 'var(--c-muted)', background: 'var(--c-surface-2)', userSelect: 'none' },
+  thSticky: { position: 'sticky', top: 0, zIndex: 2 }, // keep header visible while rows scroll
   thLabel: { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   resize: { position: 'absolute', top: 0, right: 0, width: 7, height: '100%', cursor: 'col-resize' },
   line: { borderRight: '1px solid var(--c-border-2)' },
@@ -133,12 +149,7 @@ const s = {
   pager: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
     padding: '10px 14px', borderTop: '1px solid var(--c-border)', background: 'var(--c-surface)' },
   pagerLeft: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--c-muted)' },
-  pageSelectWrap: { position: 'relative', display: 'inline-flex', alignItems: 'center' },
-  pageSelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
-    padding: '5px 28px 5px 10px', border: '1px solid var(--c-border)', borderRadius: 7, background: 'var(--c-surface)',
-    color: 'var(--c-text)', fontSize: 13, cursor: 'pointer' },
-  pageSelectCaret: { position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex',
-    color: 'var(--c-muted)', pointerEvents: 'none' },
+  pageSelect: { minWidth: 72, padding: '2px 10px', fontSize: 13, lineHeight: 1.3, borderRadius: 8 },
   pagerRight: { display: 'inline-flex', alignItems: 'center', gap: 8 },
   pagerRange: { fontSize: 13, color: 'var(--c-muted)', whiteSpace: 'nowrap' },
   pagerPage: { fontSize: 13, color: 'var(--c-text)', minWidth: 54, textAlign: 'center' },

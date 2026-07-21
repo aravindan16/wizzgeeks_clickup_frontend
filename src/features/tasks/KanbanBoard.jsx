@@ -1,6 +1,22 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { tasksApi, PRIORITY_COLOR, isDoneStatus } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
+
+// Title clamped to 2 lines — only expose a hover tooltip when it actually overflows.
+function CardTitle({ text, style }) {
+  const ref = useRef(null);
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setClamped(el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [text]);
+  return <span ref={ref} style={style} title={clamped ? text : undefined}>{text}</span>;
+}
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { IconChevronDown, IconCalendar, IconUser, IconEnter, IconExpand, IconTrash,
@@ -93,6 +109,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
 
   const typeIcon = (t) => (TYPE_ICON[t] || '☑️');
   const assigneeName = (uid) => members.find((m) => m.user_id === uid)?.full_name;
+  const assigneeMember = (uid) => members.find((m) => m.user_id === uid);
 
   // Inline relationship picker for a card's relationship custom field (link tasks
   // without opening the task detail).
@@ -134,9 +151,19 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   // Inline assignee picker for an existing card (assigns directly, no task detail).
   const openAssign = (task, e) => {
     e.stopPropagation();
+    if (!can('task.assign')) return toast.error("You don't have permission to assign tasks.");
     const r = e.currentTarget.getBoundingClientRect();
     setCardMenu(null); setPicker(null); setAssignQuery('');
-    setAssignFor(assignFor?.id === task._id ? null : { id: task._id, x: r.right, y: r.bottom + 6 });
+    if (assignFor?.id === task._id) { setAssignFor(null); return; }
+    // Flip up when there isn't room below, and cap the height to the space available
+    // so a card near the bottom of the board still shows a fully-visible, scrollable list.
+    const below = window.innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    const openUp = below < 300 && above > below;
+    const maxHeight = Math.max(180, Math.min(340, openUp ? above : below));
+    setAssignFor(openUp
+      ? { id: task._id, x: r.right, bottom: window.innerHeight - r.top + 6, maxHeight }
+      : { id: task._id, x: r.right, y: r.bottom + 6, maxHeight });
   };
   const chooseAssignee = async (uid) => {
     const id = assignFor?.id;
@@ -154,6 +181,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   };
   const deleteCard = async (id) => {
     setCardMenu(null);
+    if (!can('task.delete')) return toast.error('You do not have permission to perform this action.');
     const task = board.find((t) => t._id === id);
     const ok = await confirm({
       title: `Delete: ${task?.title || 'task'}`,
@@ -270,7 +298,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   style={dragId === t._id ? s.cardDragging : undefined}
                   onClick={() => open(t._id)}>
                   <div style={s.cardTop}>
-                    <span style={s.cardTitle}>{t.title}</span>
+                    <CardTitle style={s.cardTitle} text={t.title} />
                     <button className="icon-btn wg-quick" title="Actions" onClick={(e) => openCardMenu(t, e)}>⋯</button>
                   </div>
 
@@ -314,9 +342,21 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                         </>
                       )}
                     </span>
-                    {cfv.assignee && (t.assignee_id
-                      ? <button style={{ ...s.cardAvatar, cursor: 'pointer', border: 'none' }} title={assigneeName(t.assignee_id) || 'Assignee'} onClick={(e) => openAssign(t, e)}>{initials(assigneeName(t.assignee_id) || '?')}</button>
-                      : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>)}
+                    {cfv.assignee && (() => {
+                      // Only resolve to an avatar when the assignee is still an ACTIVE member.
+                      // If unassigned OR assigned to a removed/suspended user, show the "+".
+                      const m = t.assignee_id ? assigneeMember(t.assignee_id) : null;
+                      return m
+                        ? (
+                          <button style={{ ...s.cardAvatar, background: m.avatar_color || s.cardAvatar.background, cursor: 'pointer', border: 'none', overflow: 'hidden' }}
+                            title={m.full_name || 'Assignee'} onClick={(e) => openAssign(t, e)}>
+                            {m.avatar_url
+                              ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : initials(m.full_name)}
+                          </button>
+                        )
+                        : <button style={{ ...s.cardAvatarEmpty, cursor: 'pointer' }} title="Assign" onClick={(e) => openAssign(t, e)}>+</button>;
+                    })()}
                   </div>
                 </div>
                 );
@@ -348,7 +388,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                       </label>
 
                       <button style={s.tbtn} title={assigneeLabel || 'Assignee'} onClick={(e) => openPick('assignee', e)}>
-                        {assigneeLabel ? <span style={s.miniAvatar}>{initials(assigneeLabel)}</span> : <IconUser size={15} />}
+                        {assigneeLabel ? <span style={{ ...s.miniAvatar, background: assignee?.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{assignee?.avatar_url ? <img src={assignee.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(assigneeLabel)}</span> : <IconUser size={15} />}
                       </button>
                     </div>
 
@@ -377,7 +417,9 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
               <span style={s.menuIcon}><IconExpand size={15} /></span> Open
             </button>
             <div style={s.menuDivider} />
-            <button className="wg-menu-item" style={{ ...s.menuItem, color: '#dc2626' }} onClick={() => deleteCard(cardMenu.id)}>
+            <button className="wg-menu-item" title={can('task.delete') ? '' : 'You do not have permission to perform this action.'}
+              style={{ ...s.menuItem, color: '#dc2626', ...(can('task.delete') ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+              onClick={() => deleteCard(cardMenu.id)}>
               <span style={{ ...s.menuIcon, color: '#dc2626' }}><IconTrash size={15} /></span> Delete
             </button>
           </div>
@@ -393,14 +435,14 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
         return (
           <>
             <div style={s.pickBackdrop} onClick={() => setAssignFor(null)} />
-            <div style={{ ...s.popFixed, top: assignFor.y, left: Math.max(8, assignFor.x - 240), width: 240 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ ...s.popFixed, top: assignFor.y, bottom: assignFor.bottom, left: Math.max(8, assignFor.x - 240), width: 240, maxHeight: assignFor.maxHeight, display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
               <input autoFocus style={s.popSearch} placeholder="Search or enter email…"
                 value={assignQuery} onChange={(e) => setAssignQuery(e.target.value)} />
               <button style={s.popItem} onClick={() => chooseAssignee('')}>👤 Unassigned</button>
-              <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 {list.map((m) => (
                   <button key={m.user_id} style={s.popItem} onClick={() => chooseAssignee(m.user_id)}>
-                    <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                    <span style={{ ...s.miniAvatar, background: m.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{m.avatar_url ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(m.full_name)}</span>
                     <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                       <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
                       {m.email && <span style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>}
@@ -463,7 +505,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                   {filteredMembers.map((m) => (
                     <button key={m.user_id} style={s.popItem}
                       onClick={() => { setAssigneeId(m.user_id); setPicker(null); }}>
-                      <span style={s.miniAvatar}>{initials(m.full_name)}</span>
+                      <span style={{ ...s.miniAvatar, background: m.avatar_color || s.miniAvatar.background, overflow: 'hidden' }}>{m.avatar_url ? <img src={m.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(m.full_name)}</span>
                       <span style={{ display: 'flex', flexDirection: 'column' }}>
                         <span>{m.full_name}{m.user_id === me ? ' (you)' : ''}</span>
                         {m.email && <span style={{ fontSize: 11, color: '#6b7280' }}>{m.email}</span>}

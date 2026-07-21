@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { ACCENTS, getMode, getAccent, applyMode, applyAccent } from '../services/theme';
+import { usersApi } from '../features/users/usersApi';
+import { patchUser } from '../features/auth/authSlice';
 import { IconClose, IconCheck } from './icons';
 
 /**
@@ -15,8 +18,18 @@ const MODES = [
 ];
 
 export default function ThemeCustomizer({ open, onClose }) {
+  const dispatch = useDispatch();
   const [mode, setMode] = useState(getMode());
   const [accent, setAccent] = useState(getAccent());
+
+  // Apply live (localStorage + <html> attrs) AND persist to the DB so the choice
+  // follows the user across devices/sessions. Keep the Redux user in sync too.
+  const persist = (payload) => {
+    dispatch(patchUser(payload));
+    usersApi.updatePreferences(payload).catch(() => {});
+  };
+  const chooseMode = (m) => { setMode(applyMode(m)); persist({ theme: m }); };
+  const chooseAccent = (a) => { setAccent(applyAccent(a)); persist({ accent: a }); };
 
   useEffect(() => {
     if (!open) return undefined;
@@ -37,15 +50,16 @@ export default function ThemeCustomizer({ open, onClose }) {
             <h3 style={s.title}>Customize</h3>
             <p style={s.sub}>Personalize the look of your workspace</p>
           </div>
-          <button style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
+          <button className="icon-btn wg-x-btn" style={s.close} onClick={onClose} aria-label="Close"><IconClose size={18} /></button>
         </div>
 
         <div style={s.sectionLabel}>Appearance</div>
         <div style={s.modes}>
           {MODES.map((m) => (
-            <button key={m.key} type="button"
+            <button key={m.key} type="button" className="wg-theme-opt"
               style={{ ...s.modeCard, ...(mode === m.key ? s.modeCardActive : {}) }}
-              onClick={() => setMode(applyMode(m.key))}>
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => chooseMode(m.key)}>
               <div style={s.modePreview(m.key)}>
                 <span style={s.previewBar} />
                 <span style={{ ...s.previewBar, width: '55%' }} />
@@ -61,9 +75,10 @@ export default function ThemeCustomizer({ open, onClose }) {
         <div style={s.sectionLabel}>Theme color</div>
         <div style={s.accents}>
           {ACCENTS.map((a) => (
-            <button key={a.key} type="button"
+            <button key={a.key} type="button" className="wg-theme-opt"
               style={{ ...s.accentRow, ...(accent === a.key ? s.accentRowActive : {}) }}
-              onClick={() => setAccent(applyAccent(a.key))}>
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => chooseAccent(a.key)}>
               <span style={{ ...s.swatch, background: a.color }}>
                 {accent === a.key && <span style={s.swatchCheck}><IconCheck size={12} /></span>}
               </span>

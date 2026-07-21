@@ -7,7 +7,7 @@ import { newCard } from './dashboardStore';
 import { CARD_TYPES, cardTypeTitle } from './cardTypes';
 import { STATUS_GROUPS, PRIORITIES } from '../tasks/tasksApi';
 import DashboardCard from './DashboardCard';
-import { IconClose, IconListCheck, IconPanel, IconDots, IconTrash, Chevron } from '../../components/icons';
+import { IconClose, IconListCheck, IconPanel, IconDots, IconTrash, IconSearch, IconArrowLeft, Chevron } from '../../components/icons';
 
 /**
  * Two-step "Add card" flow:
@@ -38,7 +38,10 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
   const [source, setSource] = useState('lists'); // 'lists' | 'filter' (Jira-style saved-filter source)
   const [savedFilters, setSavedFilters] = useState([]); // saved-filter catalog for the filter source
   const [filterId, setFilterId] = useState('');          // chosen saved filter (filter source)
-  const [filterName, setFilterName] = useState('');      // typed/pasted saved-filter name
+  const [filterName, setFilterName] = useState('');      // chosen saved-filter name
+  const [sfQuery, setSfQuery] = useState('');            // search box for the saved-filters list
+  const [sfOpen, setSfOpen] = useState(false);           // saved-filters dropdown open?
+  const sfInputRef = useRef(null);                       // to drop focus after picking
   const [selected, setSelected] = useState({}); // listId -> meta (lists mode)
   const [selectedRelated, setSelectedRelated] = useState({}); // listId -> meta (related mode)
   const [relatedByList, setRelatedByList] = useState({}); // listId -> available related-list names
@@ -102,32 +105,58 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
     }
   }, [savedFilters, source, filterId, filterName]);
 
+  // Clear the data-source selections so a freshly-picked card starts empty
+  // (otherwise a previously-chosen List / saved filter would carry over).
+  const resetDataSource = () => {
+    setSelected({}); setSelectedRelated({}); setRelatedByList({});
+    setSource('lists'); setFilterId(''); setFilterName(''); setSfQuery(''); setSfOpen(false);
+    setXMeasure('status'); setXShow([]);
+  };
+
   const pick = (type) => {
+    resetDataSource();
     setCardType(type);
     setCardName(cardTypeTitle(type));
     setStep('config');
     loadData();
   };
 
+  // Back to the card-type picker — wipe any selection made for this card.
+  const goBack = () => { if (editCard) { onClose(); return; } resetDataSource(); setStep('picker'); };
+
+  // Picking a saved filter switches the card to the filter source (and drops any
+  // list selection); picking a List switches back to the lists source.
+  const selectSavedFilter = (f) => {
+    setSfOpen(false);
+    sfInputRef.current?.blur(); // drop the text cursor after choosing
+    if (source === 'filter' && filterId === f.id) { // click again to deselect
+      setSource('lists'); setFilterId(''); setFilterName(''); setSfQuery(''); return;
+    }
+    setSource('filter'); setFilterId(f.id); setFilterName(f.name); setSfQuery(f.name);
+    setSelected({}); setSelectedRelated({});
+  };
+  const backToLists = () => { if (source === 'filter') { setSource('lists'); setFilterId(''); setFilterName(''); } };
+
   // Lists mode — select a List to track its own tasks.
-  const toggle = (list, sp) => setSelected((cur) => {
+  const toggle = (list, sp) => { backToLists(); setSelected((cur) => {
     const next = { ...cur };
     if (next[list._id]) delete next[list._id];
     else next[list._id] = { id: list._id, name: list.name, spaceId: sp._id, spaceName: sp.name };
     return next;
-  });
+  }); };
 
-  const toggleSpace = (sp, spaceLists, allSelected) => setSelected((cur) => {
+  const toggleSpace = (sp, spaceLists, allSelected) => { backToLists(); setSelected((cur) => {
     const next = { ...cur };
     if (allSelected) spaceLists.forEach((l) => { delete next[l._id]; });
     else spaceLists.forEach((l) => {
       next[l._id] = { id: l._id, name: l.name, spaceId: sp._id, spaceName: sp.name };
     });
     return next;
-  });
+  }); };
 
   // Related mode — select a List, then discover its related Lists (relationship fields).
   const toggleRelated = async (l, sp) => {
+    backToLists();
     if (selectedRelated[l._id]) {
       setSelectedRelated((cur) => { const n = { ...cur }; delete n[l._id]; return n; });
       return;
@@ -149,15 +178,6 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
     if (set.has(name)) set.delete(name); else set.add(name);
     return { ...cur, [listId]: { ...m, lists: [...set] } };
   });
-
-  // Typing/pasting a saved-filter name switches the card to the filter source when
-  // the name matches exactly (case-insensitive); clearing/no-match reverts to Lists.
-  const onFilterName = (v) => {
-    setFilterName(v);
-    const m = savedFilters.find((f) => f.name.trim().toLowerCase() === v.trim().toLowerCase());
-    if (m) { setSource('filter'); setFilterId(m.id); }
-    else { setSource('lists'); setFilterId(''); }
-  };
 
   const count = source === 'filter' ? (filterId ? 1 : 0)
     : source === 'tasks' ? Object.keys(selectedRelated).length
@@ -202,7 +222,8 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
               <div style={s.grid}>
                 {CARD_TYPES.map((ct) => (
                   <button key={ct.type} style={s.tile} onClick={() => pick(ct.type)}>
-                    <span style={{ ...s.thumb, background: ct.color }}><Thumb type={ct.type} /></span>
+                    {/* Each tile uses its card type's own colour (a subtle gradient of it). */}
+                    <span style={{ ...s.thumb, background: `linear-gradient(135deg, ${ct.color}, color-mix(in srgb, ${ct.color} 70%, #0f172a))` }}><Thumb type={ct.type} /></span>
                     <span style={s.tileTitle}>{ct.title}</span>
                     <span style={s.tileDesc}>{ct.desc}</span>
                   </button>
@@ -213,7 +234,12 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
         ) : (
           <>
             <div style={s.head}>
-              <h3 style={s.title}>{cardName || cardTypeTitle(cardType)}</h3>
+              <div style={s.headLeft}>
+                {!editCard && (
+                  <button className="icon-btn" style={s.backBtn} title="Back" onClick={goBack}><IconArrowLeft size={18} /></button>
+                )}
+                <h3 style={s.title}>{cardName || cardTypeTitle(cardType)}</h3>
+              </div>
               <span style={s.headActions}>
                 <button className="icon-btn" style={s.hdrBtn} title={showSidebar ? 'Hide filter' : 'Show filter'}
                   onClick={() => setShowSidebar((v) => !v)}><IconPanel size={17} /></button>
@@ -248,16 +274,9 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
               </div>
               {showSidebar && (
               <div style={s.rightPane}>
-                <div style={s.dsLabel}>Data source · Lists</div>
-                <div style={s.dsHint}>Track whole Lists — or paste a saved filter name to track that filter (Jira-style).</div>
-                <input style={s.filterInput} value={filterName} placeholder="Paste a saved filter name…"
-                  onChange={(e) => onFilterName(e.target.value)} />
-                {filterName.trim() !== '' && (
-                  source === 'filter'
-                    ? <div style={s.filterOk}>✓ Using saved filter “{savedFilters.find((f) => f.id === filterId)?.name}”</div>
-                    : <div style={s.filterNo}>No saved filter matches that name.</div>
-                )}
-                {source === 'filter' ? null : loading ? <p style={{ color: 'var(--c-muted)' }}>Loading…</p> : (
+                <div style={s.dsLabel}>Lists</div>
+                <div style={s.dsHint}>Track whole Lists — pick one or more below, or choose a saved filter.</div>
+                {loading ? <p style={{ color: 'var(--c-muted)' }}>Loading…</p> : (
                   <div style={s.tree}>
                     {spaces.length === 0 && <p style={{ color: 'var(--c-muted)' }}>No spaces yet.</p>}
                     {spaces.map((sp) => {
@@ -317,6 +336,46 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
                     })}
                   </div>
                 )}
+
+                {/* SAVED FILTERS — click the field to open a searchable dropdown. */}
+                <div style={s.sfSection}>
+                  <div style={s.dsLabel}>Saved Filters</div>
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ ...s.searchWrap, ...(sfOpen ? s.searchWrapOpen : {}) }}>
+                      <span style={s.searchIcon}><IconSearch size={14} /></span>
+                      <input ref={sfInputRef} className="sf-search-input" style={s.searchInput} value={sfQuery} placeholder="Search saved filters…"
+                        onFocus={() => setSfOpen(true)}
+                        onBlur={() => setTimeout(() => setSfOpen(false), 120)}
+                        onChange={(e) => { setSfQuery(e.target.value); setSfOpen(true); }} />
+                      <span style={s.sfCaret}><Chevron open={sfOpen} size={13} /></span>
+                    </div>
+                    {sfOpen && (
+                      <div style={s.sfDropdown}>
+                        {(() => {
+                          const q = sfQuery.trim().toLowerCase();
+                          // Once a filter is picked, its name fills the box — show the full
+                          // list again unless the user actually typed something different.
+                          const typed = q && q !== (filterName || '').toLowerCase();
+                          const rows = savedFilters.filter((f) => !typed || (f.name || '').toLowerCase().includes(q));
+                          if (savedFilters.length === 0) return <div style={s.sfEmpty}>No saved filters yet.</div>;
+                          if (rows.length === 0) return <div style={s.sfEmpty}>No filters match your search.</div>;
+                          return rows.map((f) => {
+                            const active = source === 'filter' && filterId === f.id;
+                            return (
+                              <button key={f.id} type="button" className="wg-menu-item"
+                                style={{ ...s.sfRow, ...(active ? s.sfRowActive : {}) }}
+                                onMouseDown={(e) => { e.preventDefault(); selectSavedFilter(f); }}>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                {active && <span style={s.sfCheck}>✓</span>}
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {isChart && (
                   <div style={s.axisBlock}>
                     <div style={s.axisDivider} />
@@ -365,7 +424,7 @@ export default function AddCardModal({ open, onClose, onAdd, editCard = null, st
             </div>
             {showSidebar && (
             <div style={s.footer}>
-              <button style={s.ghost} onClick={() => (editCard ? onClose() : setStep('picker'))}>
+              <button style={s.ghost} onClick={goBack}>
                 {editCard ? 'Cancel' : 'Back'}
               </button>
               <button style={{ ...s.primary, ...(count ? {} : s.primaryOff) }} disabled={!count} onClick={add}>
@@ -429,6 +488,9 @@ const s = {
 
   // config
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  headLeft: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  backBtn: { border: 'none', background: 'none', color: 'var(--c-text)', cursor: 'pointer', display: 'inline-flex',
+    padding: 6, borderRadius: 8, flexShrink: 0 },
   title: { margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--c-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   close: { border: 'none', color: 'var(--c-muted)', cursor: 'pointer', display: 'inline-flex', padding: 6, borderRadius: 7 },
   headActions: { display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 },
@@ -436,7 +498,7 @@ const s = {
   hdrMenu: { position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: 160, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.18)', zIndex: 5, padding: 4 },
   hdrMenuItem: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px',
-    border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5 },
+    border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: 6, fontSize: 13.5 },
   nameRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
   nameLabel: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-muted)' },
   nameInput: { flex: 1, maxWidth: 360, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--c-border)',
@@ -449,6 +511,25 @@ const s = {
     border: '1px solid var(--c-border)', borderRadius: 8, outline: 'none', marginBottom: 6, boxSizing: 'border-box' },
   filterOk: { fontSize: 12.5, fontWeight: 600, color: 'var(--c-success, #16a34a)', marginBottom: 10 },
   filterNo: { fontSize: 12.5, color: 'var(--c-muted)', marginBottom: 10 },
+  // --- Saved Filters section (bottom of the data-source pane) ---
+  sfSection: { marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--c-border)' },
+  searchWrap: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+    border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)' },
+  searchWrapOpen: { borderColor: 'var(--c-primary)', boxShadow: '0 0 0 3px var(--c-primary-weak)' },
+  searchIcon: { color: 'var(--c-faint)', display: 'inline-flex', flexShrink: 0 },
+  searchInput: { flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent',
+    color: 'var(--c-text-strong)', fontSize: 13 },
+  sfCaret: { color: 'var(--c-muted)', display: 'inline-flex', flexShrink: 0 },
+  sfDropdown: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20,
+    background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10,
+    boxShadow: '0 12px 32px rgba(0,0,0,.16)', padding: 6, maxHeight: 240, overflowY: 'auto',
+    display: 'flex', flexDirection: 'column', gap: 2 },
+  sfRow: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '8px 10px',
+    border: 'none', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+    fontSize: 13.5, color: 'var(--c-text)' },
+  sfRowActive: { background: 'var(--c-primary-weak)', color: 'var(--c-primary)', fontWeight: 600 },
+  sfCheck: { color: 'var(--c-primary)', fontWeight: 700, flexShrink: 0 },
+  sfEmpty: { fontSize: 12.5, color: 'var(--c-muted)', padding: '8px 2px' },
   axisBlock: { marginBottom: 8 },
   axisRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
   axisLabel: { fontSize: 13.5, color: 'var(--c-text)' },

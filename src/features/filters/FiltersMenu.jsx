@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { IconFilter, IconPlus, IconDots, IconTrash, IconMembers, IconEdit, Chevron } from '../../components/icons';
+import { IconPlus, IconDots, IconTrash, IconMembers, IconEdit, Chevron } from '../../components/icons';
+import { ListFilter } from 'lucide-react';
+
+// Sidebar Filters glyph — Lucide, tuned to the app's 1.9 stroke to match Users/Settings.
+const IconFilter = ({ size = 18 }) => <ListFilter size={size} strokeWidth={1.9} />;
 import { savedFiltersApi } from './savedFiltersApi';
 import FilterShareModal from './FilterShareModal';
 import { useToast } from '../../components/Toast';
@@ -64,7 +68,8 @@ export default function FiltersMenu({ collapsed }) {
 
   if (collapsed) {
     return (
-      <button title="Filters" style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/filters')}>
+      <button title="Filters" className={`nav-item${location.pathname.startsWith('/filters') ? ' active' : ''}`}
+        style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/filters')}>
         <span style={s.navIcon}><IconFilter size={18} /></span>
       </button>
     );
@@ -72,7 +77,7 @@ export default function FiltersMenu({ collapsed }) {
 
   return (
     <div style={s.section} ref={rootRef}>
-      <div className="wg-sb-row" style={s.row}>
+      <div className={`wg-sb-row${location.pathname.startsWith('/filters') ? ' wg-navrow-active' : ''}`} style={s.row}>
         <NavLink to="/filters" end style={({ isActive }) => ({ ...s.navMain, ...(isActive ? s.active : {}) })}>
           <button type="button" className="wg-nav-toggle" title={open ? 'Collapse' : 'Expand'}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}>
@@ -149,7 +154,7 @@ const s = {
     color: 'var(--c-muted)', textDecoration: 'none', fontSize: 14, fontWeight: 500 },
   active: { color: 'var(--c-text-strong)', fontWeight: 600 },
   navIcon: { width: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'inherit' },
-  label: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  label: { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13, fontWeight: 600, letterSpacing: '0.01em' },
   headerActions: { display: 'inline-flex', alignItems: 'center', gap: 2, position: 'relative', flexShrink: 0 },
   rowActions: { gap: 0, position: 'relative', flexShrink: 0 },
   actionsOpen: { display: 'flex' },
@@ -173,6 +178,6 @@ const s = {
   divider: { height: 1, background: 'var(--c-border-2)', margin: '4px 0' },
 
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 },
+    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', border: 'none', cursor: 'pointer', fontSize: 14 },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
 };
