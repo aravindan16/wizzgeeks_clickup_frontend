@@ -586,7 +586,7 @@ const s = {
 
   nav: { width: 232, flexShrink: 0, borderRight: '1px solid var(--c-border)', background: 'var(--c-surface)', padding: 12, overflowY: 'auto' },
   navTitle: { fontSize: 13, fontWeight: 700, color: 'var(--c-text-strong)', padding: '6px 10px 12px' },
-  navItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, margin: '1px 0' },
+  navItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, margin: '3px 0' },
   navDivider: { height: 1, background: 'var(--c-border)', margin: '10px 6px' },
   navSection: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: 'var(--c-muted)', fontWeight: 600, padding: '4px 10px 6px' },
   navSearch: { width: '100%', boxSizing: 'border-box', padding: '8px 10px 8px 32px', border: '1px solid var(--c-border)', borderRadius: 8, fontSize: 13 },

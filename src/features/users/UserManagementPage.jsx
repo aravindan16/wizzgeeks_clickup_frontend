@@ -188,5 +188,5 @@ const s = {
   primary: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none',
     borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   iconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
-    background: 'none', border: 'none', borderRadius: 7, color: 'var(--c-muted)', cursor: 'pointer' },
+    border: 'none', borderRadius: 7, color: 'var(--c-muted)', cursor: 'pointer' },
 };
