@@ -241,7 +241,9 @@ export default function ProjectDetailsPage() {
       )}
 
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
-      <div style={{ ...s.viewArea, overflow: (activeView?.type === 'board' || activeView?.type === 'list') ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea,
+        overflow: (isMembersTab || ['table', 'board', 'list'].includes(activeView?.type)) ? 'hidden' : 'auto',
+        ...((isMembersTab || activeView?.type === 'table') ? { display: 'flex', flexDirection: 'column' } : {}) }}>
       {!isMembersTab && activeView?.type === 'board' && (
         <KanbanBoard tasks={visibleTasks} onChanged={loadTasks} projectId={id} members={members}
           statuses={statuses} onOpenTask={setOpenTaskId} />
@@ -259,7 +261,7 @@ export default function ProjectDetailsPage() {
 
       {/* MEMBERS */}
       {isMembersTab && (
-        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet."
+        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet." fillHeight
           columns={[
             { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
             { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },

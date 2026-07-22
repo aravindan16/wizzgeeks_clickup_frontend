@@ -41,7 +41,7 @@ export default function TaskTableView({ tasks, members, statuses = [], onOpenTas
   ];
 
   return (
-    <ResizableTable persistKey="wg_task_table_cols" columns={columns} rows={tasks}
+    <ResizableTable persistKey="wg_task_table_cols" columns={columns} rows={tasks} fillHeight
       rowKey={(t) => t._id} onRowClick={(t) => open(t._id)} emptyText="No tasks." />
   );
 }
