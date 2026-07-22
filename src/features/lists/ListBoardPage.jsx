@@ -223,7 +223,7 @@ export default function ListBoardPage() {
         document.body,
       )}
 
-      <div style={{ ...s.viewArea, overflow: (activeView?.type === 'board' || activeView?.type === 'list') ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea, overflow: 'hidden', ...(activeView?.type === 'table' ? { display: 'flex', flexDirection: 'column' } : {}) }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
             listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId}

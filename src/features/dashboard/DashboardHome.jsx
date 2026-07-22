@@ -163,7 +163,13 @@ function DashboardList({ dashboards, onOpen, onCreate, onRename, onDelete }) {
 
   return (
     <div style={s.wrap}>
-      {slotEl && createPortal(<span style={s.headerTitle}>Dashboards</span>, slotEl)}
+      {slotEl && createPortal(
+        <>
+          <span style={s.headerTitle}>Dashboards</span>
+          <button style={{ ...s.addBtn, marginLeft: 'auto' }} onClick={onCreate}><IconPlus size={15} /> Dashboard</button>
+        </>,
+        slotEl,
+      )}
 
       <div style={s.listCard}>
         <div style={s.listHead}>
@@ -343,11 +349,11 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
   );
 
   return (
-    <div style={s.wrap}>
+    <div style={{ ...s.wrap, ...(tab === 'members' ? s.wrapFill : {}) }}>
       {slotEl && createPortal(breadcrumb, slotEl)}
 
       {/* Tabs (View · Members) with the primary action in the right corner. */}
-      <div style={s.tabs}>
+      <div style={{ ...s.tabs, flexShrink: 0 }}>
         <div style={s.tabsLeft}>
           <button style={{ ...s.tab, ...(tab === 'view' ? s.tabActive : {}) }} onClick={() => setTab('view')}>
             <IconBoard size={15} /> View
@@ -363,7 +369,9 @@ function DashboardDetail({ dashboard, onBack, onChange, isNameTaken }) {
       </div>
 
       {tab === 'members' ? (
-        <DashboardMembers dashboardId={dashboard.id} reloadKey={mReload} />
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <DashboardMembers dashboardId={dashboard.id} reloadKey={mReload} />
+        </div>
       ) : cards.length === 0 ? (
         <div style={s.emptyState}>No cards yet — use “+ Add card” to create one.</div>
       ) : (
@@ -421,7 +429,7 @@ function DashboardMembers({ dashboardId, reloadKey }) {
   };
 
   return (
-    <ResizableTable persistKey="wg_dash_members_cols" rowKey={(m) => m.user_id} rows={members} emptyText="No members yet."
+    <ResizableTable persistKey="wg_dash_members_cols" rowKey={(m) => m.user_id} rows={members} emptyText="No members yet." fillHeight
       columns={[
         { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => <span style={s.mName}>{m.full_name || '—'}</span> },
         { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={s.mEmail}>{m.email}</span> },
@@ -437,6 +445,9 @@ function DashboardMembers({ dashboardId, reloadKey }) {
 
 const s = {
   wrap: { padding: 0, marginTop: -10 },
+  // Members tab only: fill the page height so the table's pager pins to the bottom.
+  // +34 = 24px (main's bottom padding) + 10px (wrap's own marginTop:-10 offset).
+  wrapFill: { height: 'calc(100% + 34px)', marginBottom: -24, display: 'flex', flexDirection: 'column' },
   headRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
   newRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', boxSizing: 'border-box',
