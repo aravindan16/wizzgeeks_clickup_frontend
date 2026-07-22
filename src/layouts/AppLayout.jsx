@@ -7,6 +7,7 @@ import { useAuth } from '../features/auth/useAuth';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import FiltersMenu from '../features/filters/FiltersMenu';
+import NotificationBell from '../features/notifications/NotificationBell';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconMembers, IconSettings,
@@ -94,6 +95,10 @@ export default function AppLayout() {
 
         {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
         <div style={s.headerSlot} ref={setSlotEl} />
+
+        <div style={s.topRight}>
+          <NotificationBell />
+        </div>
       </header>
 
       {/* ===== BODY: sidebar + main ===== */}
