@@ -7,23 +7,26 @@ import { useAuth } from '../features/auth/useAuth';
 import SpacesMenu from '../features/spaces/SpacesMenu';
 import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import FiltersMenu from '../features/filters/FiltersMenu';
+import NotificationBell from '../features/notifications/NotificationBell';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconMembers, IconSettings,
   IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, MessageSquare } from 'lucide-react';
 import ThemeCustomizer from '../components/ThemeCustomizer';
 import { syncFromUser } from '../services/theme';
 
 // Sidebar Permission glyph — Lucide, tuned to the app's 1.9 stroke.
 const IconPermission = ({ size = 18 }) => <ShieldCheck size={size} strokeWidth={1.9} />;
+const IconChat = ({ size = 18 }) => <MessageSquare size={size} strokeWidth={1.9} />;
 
 /**
  * Application shell: a full-width top bar (brand · search · actions) over a
  * collapsible, permission-aware left sidebar + main content. Light ClickUp-style.
  */
 const NAV = [
+  { to: '/chat', label: 'Chat', Icon: IconChat },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/settings', label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
   { to: '/permissions', label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },
@@ -94,6 +97,10 @@ export default function AppLayout() {
 
         {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
         <div style={s.headerSlot} ref={setSlotEl} />
+
+        <div style={s.topRight}>
+          <NotificationBell />
+        </div>
       </header>
 
       {/* ===== BODY: sidebar + main ===== */}
