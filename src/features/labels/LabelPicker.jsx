@@ -125,7 +125,7 @@ export default function LabelPicker({ value = [], onChange, variant = 'chips' })
           {current.map((n) => (
             <span key={n} style={s.chip}>
               <span style={s.chipText}>{n}</span>
-              <button style={s.chipX} title="Remove" onClick={(e) => { e.stopPropagation(); removeChip(n); }}><IconClose size={11} /></button>
+              <button className="wg-chip-x" style={s.chipX} title="Remove" onClick={(e) => { e.stopPropagation(); removeChip(n); }}><IconClose size={11} /></button>
             </span>
           ))}
         </div>
@@ -167,20 +167,23 @@ export default function LabelPicker({ value = [], onChange, variant = 'chips' })
 }
 
 const s = {
-  row: { display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 0 },
+  row: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
   fieldTrigger: { display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box',
     padding: '9px 12px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10,
     boxShadow: '0 1px 2px rgba(16,24,40,.06)', cursor: 'pointer', minHeight: 40 },
   placeholder: { color: 'var(--c-faint)', fontSize: 13.5 },
   caret: { color: 'var(--c-muted)', display: 'inline-flex', flexShrink: 0 },
   // Wrap chips onto multiple lines so every chosen label is visible (identifiable).
-  chips: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 },
+  // `flex: 0 1 auto` (not `1`) keeps the container from stretching, so the "+" Add
+  // button hugs the chips on the LEFT (under the "Labels" title) instead of being
+  // pushed to the far right where it reads as unrelated to the field.
+  chips: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0 },
   chip: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 6px 3px 10px', borderRadius: 999,
     fontSize: 12.5, fontWeight: 600, flexShrink: 0, maxWidth: 150,
     background: 'color-mix(in srgb, var(--c-primary) 16%, transparent)', color: 'var(--c-primary)' },
   chipText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  chipX: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'none',
-    cursor: 'pointer', padding: 0, opacity: 0.75, color: 'inherit', flexShrink: 0 },
+  chipX: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none',
+    cursor: 'pointer', padding: 0, width: 16, height: 16, opacity: 0.75, color: 'inherit', flexShrink: 0 },
   addBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26,
     border: '1px dashed var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-muted)',
     borderRadius: '50%', cursor: 'pointer', flexShrink: 0 },
