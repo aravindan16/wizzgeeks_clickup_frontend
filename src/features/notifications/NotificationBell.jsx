@@ -27,6 +27,8 @@ export default function NotificationBell() {
     refreshCount();
     // Live push: bump the badge immediately and let the drawer (if open) refresh.
     const disconnect = connectNotificationSocket((msg) => {
+      // Re-broadcast every WS message so other features (Chat) share this one socket.
+      window.dispatchEvent(new CustomEvent('wg:ws', { detail: msg }));
       if (msg?.event === 'notification.created') {
         setUnread((u) => u + 1);
         window.dispatchEvent(new CustomEvent('wg:notification', { detail: msg.data }));

@@ -706,6 +706,10 @@ input[type="radio"] {
 /* --- Custom Select (components/Select.jsx) ---
    Selected = light tint + bold + check; hover = a clearly darker grey. The two
    shades are kept far enough apart that they never look like the same state. */
+/* Chat message hover toolbar — revealed when hovering the message row. */
+.wg-chat-msg .wg-msg-actions { opacity: 0; transition: opacity var(--t-fast); pointer-events: none; }
+.wg-chat-msg:hover .wg-msg-actions { opacity: 1; pointer-events: auto; }
+
 .wg-select-opt {
   background: none;
   transition: background var(--t-fast);
