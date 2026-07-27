@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon } from 'lucide-react';
+import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon, Forward, MoreVertical, CheckCheck, CheckSquare, Check } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import NewPollModal from './NewPollModal';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -47,7 +47,13 @@ export default function ChatPage() {
   const [reply, setReply] = useState(null);
   const [editing, setEditing] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const [forwarding, setForwarding] = useState(null);
+  const [newTab, setNewTab] = useState('direct');
+  const [headerMenu, setHeaderMenu] = useState(false);
+  const [chatSelectMode, setChatSelectMode] = useState(false);
+  const [selectedChats, setSelectedChats] = useState([]); // selected conversation ids
+  const [forwarding, setForwarding] = useState(null); // array of messages to forward (null = closed)
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState([]); // selected message ids
   const [savedView, setSavedView] = useState(false);
   const [bookmarks, setBookmarks] = useState([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -56,49 +62,97 @@ export default function ChatPage() {
   const [attachMenu, setAttachMenu] = useState(false);
   const [pollOpen, setPollOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
   const scrollRef = useRef(null);
   const fileRef = useRef(null);       // any-file input
   const imageInputRef = useRef(null); // image-only input
   const emojiRef = useRef(null);
   const attachRef = useRef(null);
   const groupPhotoRef = useRef(null); // group-avatar image input
+  const composerInputRef = useRef(null);
+  const headerMenuRef = useRef(null);
+  const msgCacheRef = useRef({}); // conversationId → last-seen messages, for instant re-open
 
   const active = conversations.find((c) => c.id === activeId) || null;
 
   const loadConversations = useCallback(() => chatApi.conversations().then(setConversations).catch(() => {}), []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  useEffect(() => {
+  const nearBottomRef = useRef(true); // is the user parked at the newest message?
+  const openingRef = useRef(true);    // just opened a chat: force-stick to bottom until images settle
+  const openingTimer = useRef(null);
+  const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+  const beginOpening = useCallback(() => {
+    openingRef.current = true;
+    nearBottomRef.current = true;
+    if (openingTimer.current) clearTimeout(openingTimer.current);
+    openingTimer.current = setTimeout(() => { openingRef.current = false; }, 2500);
+  }, []);
+  const recomputeNearBottom = () => {
+    const el = scrollRef.current;
+    if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+  };
+  // Plain scroll events also fire when images grow the thread — ignore those while opening.
+  const onThreadScroll = useCallback(() => { if (!openingRef.current) recomputeNearBottom(); }, []);
+  // A wheel/touch is genuine user intent: end the opening lock and track their position.
+  const onUserScroll = useCallback(() => { openingRef.current = false; recomputeNearBottom(); }, []);
+  // Media (images) lay out after render and grow the thread — keep pinning to bottom.
+  const onMediaLoad = useCallback(() => { if (openingRef.current || nearBottomRef.current) scrollToBottom(); }, [scrollToBottom]);
+
+  useEffect(() => {
+    if (!(openingRef.current || nearBottomRef.current)) return undefined;
+    scrollToBottom();                                   // jump now…
+    const r = requestAnimationFrame(scrollToBottom);    // …and again after layout settles
+    return () => cancelAnimationFrame(r);
+  }, [messages, activeId, scrollToBottom]);
+
+  // Keep the per-conversation cache in sync with live updates (only when the messages
+  // actually belong to the active conversation — avoids caching the wrong one mid-switch).
+  useEffect(() => {
+    if (activeId && messages.length && messages[0].conversation_id === activeId) {
+      msgCacheRef.current[activeId] = messages;
+    }
   }, [messages, activeId]);
 
   const loadPinned = useCallback((id) => chatApi.pinned(id).then(setPinned).catch(() => setPinned([])), []);
 
   const openConversation = useCallback(async (id) => {
-    setSavedView(false); setActiveId(id); setReply(null); setEditing(null); setDraft(''); setShowPinned(false); setMembersOpen(false); clearPending();
-    setLoadingMsgs(true);
+    setSavedView(false); setActiveId(id); setReply(null); setEditing(null); setDraft(''); setShowPinned(false); setMembersOpen(false); setSelectMode(false); setSelected([]); clearPending();
+    beginOpening(); // opening a chat always lands on the newest message (and stays there as images load)
+    const cached = msgCacheRef.current[id];
+    if (cached) { setMessages(cached); setLoadingMsgs(false); } // show instantly, refresh below
+    else { setMessages([]); setLoadingMsgs(true); }
     try {
       const data = await chatApi.messages(id);
-      setMessages(data.items || []);
+      const items = data.items || [];
+      msgCacheRef.current[id] = items;
+      setMessages(items);
       loadPinned(id);
       chatApi.markRead(id).catch(() => {});
       setConversations((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
-    } catch { setMessages([]); }
+    } catch { if (!cached) setMessages([]); }
     finally { setLoadingMsgs(false); }
-  }, [loadPinned]);
+  }, [loadPinned, beginOpening]);
 
   // Realtime over the shared WS.
   useEffect(() => {
-    const onWs = (e) => {
+    const onWs = async (e) => {
       const msg = e.detail;
       if (msg?.event === 'chat.message') {
         const d = msg.data;
         if (d.conversation_id === activeId) {
           setMessages((cur) => (cur.some((m) => m.id === d.id) ? cur : [...cur, d]));
-          chatApi.markRead(activeId).catch(() => {});
+          // Reading the open chat must settle before we refresh the list, then force its badge to 0.
+          try { await chatApi.markRead(activeId); } catch { /* */ }
+          await loadConversations();
+          setConversations((cur) => cur.map((c) => (c.id === activeId ? { ...c, unread: 0 } : c)));
+        } else {
+          loadConversations();
         }
-        loadConversations();
       } else if (msg?.event === 'chat.message.updated') {
         const d = msg.data;
         if (d.conversation_id === activeId) {
@@ -106,6 +160,11 @@ export default function ChatPage() {
           loadPinned(activeId);
         }
         loadConversations();
+      } else if (msg?.event === 'chat.read') {
+        // The other member read the conversation — update their read timestamp so "Seen" shows.
+        const d = msg.data;
+        setConversations((cur) => cur.map((c) => (c.id === d.conversation_id
+          ? { ...c, reads: { ...(c.reads || {}), [d.user_id]: d.at } } : c)));
       }
     };
     window.addEventListener('wg:ws', onWs);
@@ -197,6 +256,31 @@ export default function ChatPage() {
     } catch { toast.error('Could not update group photo'); }
   };
 
+  // @mention: detect an "@word" token at the caret and offer group members.
+  const onDraftChange = (e) => {
+    const val = e.target.value;
+    setDraft(val);
+    if (active?.type !== 'group') { setMentionOpen(false); return; }
+    const pos = e.target.selectionStart ?? val.length;
+    const match = val.slice(0, pos).match(/(?:^|\s)@([\p{L}\d._-]*)$/u);
+    if (match) { setMentionQuery(match[1].toLowerCase()); setMentionOpen(true); }
+    else setMentionOpen(false);
+  };
+  const mentionOptions = (mentionOpen && active?.type === 'group')
+    ? active.members.filter((mem) => mem.id !== me && (mem.name || '').toLowerCase().includes(mentionQuery)).slice(0, 6)
+    : [];
+  const pickMention = (mem) => {
+    const el = composerInputRef.current;
+    const pos = el?.selectionStart ?? draft.length;
+    const handle = (mem.name || '').trim(); // full display name (may contain spaces)
+    const before = draft.slice(0, pos).replace(/@([\p{L}\d._-]*)$/u, `@${handle} `);
+    const after = draft.slice(pos);
+    const next = before + after;
+    setDraft(next);
+    setMentionOpen(false);
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(before.length, before.length); });
+  };
+
   const createPoll = async (question, options, multi) => {
     const p = await chatApi.createPoll(activeId, question, options, multi);
     setMessages((cur) => (cur.some((x) => x.id === p.id) ? cur : [...cur, p]));
@@ -210,20 +294,39 @@ export default function ChatPage() {
     onReact: async (m, emoji) => { try { mergeUpdated(await chatApi.react(m.id, emoji)); } catch { /* */ } },
     onPin: async (m) => { try { mergeUpdated(await chatApi.pin(m.id, !m.pinned)); loadPinned(activeId); } catch { /* */ } },
     onBookmark: async (m) => {
-      try { mergeUpdated(await chatApi.bookmark(m.id, !m.bookmarked)); toast.success(m.bookmarked ? 'Removed' : 'Bookmarked'); }
-      catch { /* */ }
+      const wasBookmarked = m.bookmarked;
+      try {
+        const updated = await chatApi.bookmark(m.id, !wasBookmarked);
+        mergeUpdated(updated);
+        // Keep the Saved view in sync: drop it when unbookmarked, add/update when bookmarked.
+        setBookmarks((cur) => {
+          if (!updated.bookmarked) return cur.filter((x) => x.id !== updated.id);
+          return cur.some((x) => x.id === updated.id)
+            ? cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x))
+            : [updated, ...cur];
+        });
+        toast.success(wasBookmarked ? 'Removed from saved' : 'Bookmarked');
+      } catch { /* */ }
     },
-    onForward: (m) => setForwarding(m),
+    onForward: (m) => setForwarding([m]),
     onVote: async (m, optionId) => { try { mergeUpdated(await chatApi.vote(m.id, optionId)); } catch { /* */ } },
+    onStartSelect: (m) => { setSelectMode(true); setSelected([m.id]); },
+    onToggleSelect: (m) => setSelected((cur) => (cur.includes(m.id) ? cur.filter((x) => x !== m.id) : [...cur, m.id])),
   };
 
-  const doForward = async (convId) => {
-    const m = forwarding; setForwarding(null);
+  const exitSelect = () => { setSelectMode(false); setSelected([]); };
+
+  // Forward every staged message into every chosen conversation (order preserved).
+  const doForward = async (convIds) => {
+    const msgs = forwarding || []; setForwarding(null);
     try {
-      await chatApi.forward(m.id, convId);
+      for (const cid of convIds) {
+        for (const m of msgs) await chatApi.forward(m.id, cid);
+      }
       loadConversations();
-      if (convId === activeId) openConversation(convId);
-      toast.success('Forwarded');
+      if (convIds.includes(activeId)) openConversation(activeId);
+      toast.success(`Forwarded${msgs.length > 1 ? ` ${msgs.length} messages` : ''}`);
+      exitSelect();
     } catch { toast.error('Could not forward'); }
   };
 
@@ -231,6 +334,35 @@ export default function ChatPage() {
     setSavedView(true); setActiveId(null);
     try { setBookmarks(await chatApi.bookmarks()); } catch { setBookmarks([]); }
   };
+
+  const openNew = (tab) => { setNewTab(tab); setNewOpen(true); };
+
+  const markAllRead = async () => {
+    const ids = conversations.filter((c) => c.unread > 0).map((c) => c.id);
+    if (!ids.length) { toast.success('No unread chats'); return; }
+    await Promise.all(ids.map((id) => chatApi.markRead(id).catch(() => {})));
+    setConversations((cur) => cur.map((c) => ({ ...c, unread: 0 })));
+    toast.success('Marked all as read');
+  };
+
+  const exitChatSelect = () => { setChatSelectMode(false); setSelectedChats([]); };
+  const toggleChat = (id) => setSelectedChats((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const markSelectedRead = async () => {
+    const ids = selectedChats;
+    if (!ids.length) return;
+    await Promise.all(ids.map((id) => chatApi.markRead(id).catch(() => {})));
+    setConversations((cur) => cur.map((c) => (ids.includes(c.id) ? { ...c, unread: 0 } : c)));
+    toast.success(`Marked ${ids.length} as read`);
+    exitChatSelect();
+  };
+
+  // Close the header menu on outside click.
+  useEffect(() => {
+    if (!headerMenu) return undefined;
+    const h = (e) => { if (!headerMenuRef.current?.contains(e.target)) setHeaderMenu(false); };
+    document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, [headerMenu]);
 
   const onCreated = (conv) => {
     setNewOpen(false);
@@ -255,18 +387,49 @@ export default function ChatPage() {
         {/* ── Conversation list ── */}
         <aside style={s.sidebar}>
           <div style={s.sideHead}>
-            <span style={s.sideTitle}>Messages</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button className="icon-btn" style={s.iconBtn} title="Saved messages" onClick={openSaved}><Bookmark size={16} /></button>
-              <button className="btn btn-primary" style={s.newBtn} onClick={() => setNewOpen(true)}><Plus size={15} /> New</button>
+            {chatSelectMode ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button className="icon-btn" style={s.iconBtn} title="Cancel" onClick={exitChatSelect}><X size={16} /></button>
+                  <span style={s.sideTitle}>{selectedChats.length} selected</span>
+                </div>
+                <button className="btn btn-primary" style={s.newBtn} disabled={!selectedChats.length} onClick={markSelectedRead}>
+                  <CheckCheck size={15} /> Mark read
+                </button>
+              </>
+            ) : (
+            <>
+            <span style={s.sideTitle}>Chats</span>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <button className="icon-btn" style={s.iconBtn} title="New chat" onClick={() => openNew('direct')}><Plus size={19} /></button>
+              <div style={{ position: 'relative' }} ref={headerMenuRef}>
+                <button className="icon-btn" style={s.iconBtn} title="Menu" onClick={() => setHeaderMenu((o) => !o)}><MoreVertical size={18} /></button>
+                {headerMenu && (
+                  <div style={s.headerMenu}>
+                    <button type="button" className="wg-select-opt" style={s.headerMenuItem} onClick={() => { setHeaderMenu(false); openNew('group'); }}><UsersIcon size={16} /> New group</button>
+                    <button type="button" className="wg-select-opt" style={s.headerMenuItem} onClick={() => { setHeaderMenu(false); openSaved(); }}><Bookmark size={16} /> Starred messages</button>
+                    <button type="button" className="wg-select-opt" style={s.headerMenuItem} onClick={() => { setHeaderMenu(false); setChatSelectMode(true); setSelectedChats([]); }}><CheckSquare size={16} /> Select chats</button>
+                    <button type="button" className="wg-select-opt" style={s.headerMenuItem} onClick={() => { setHeaderMenu(false); markAllRead(); }}><CheckCheck size={16} /> Mark all as read</button>
+                  </div>
+                )}
+              </div>
             </div>
+            </>
+            )}
           </div>
           <div style={s.convList}>
             {conversations.length === 0 && <div style={s.sideEmpty}>No conversations yet.<br />Start one with “New”.</div>}
             {conversations.map((c) => (
               <button key={c.id} className="wg-row-hover"
-                style={{ ...s.convRow, ...(c.id === activeId && !savedView ? s.convRowActive : {}) }}
-                onClick={() => openConversation(c.id)}>
+                style={{ ...s.convRow,
+                  ...(chatSelectMode && selectedChats.includes(c.id) ? { background: 'var(--c-primary-weak)' }
+                    : (c.id === activeId && !savedView && !chatSelectMode ? s.convRowActive : {})) }}
+                onClick={() => (chatSelectMode ? toggleChat(c.id) : openConversation(c.id))}>
+                {chatSelectMode && (
+                  <span style={{ ...s.chatCheck, ...(selectedChats.includes(c.id) ? s.chatCheckOn : {}) }}>
+                    {selectedChats.includes(c.id) && <Check size={13} strokeWidth={3} />}
+                  </span>
+                )}
                 {c.type === 'group'
                   ? (c.avatar_url
                     ? <span style={{ ...s.avatar, width: 38, height: 38 }}><img src={c.avatar_url} alt="" style={s.avatarImg} /></span>
@@ -373,13 +536,26 @@ export default function ChatPage() {
                 </div>
               )}
 
-              <div style={s.messages} ref={scrollRef}>
+              {selectMode && (
+                <div style={s.selectBar}>
+                  <button className="icon-btn" style={s.iconBtn} title="Cancel" onClick={exitSelect}><X size={16} /></button>
+                  <span style={s.selectCount}>{selected.length} selected</span>
+                  <button className="btn btn-primary" style={s.selectFwd} disabled={!selected.length}
+                    onClick={() => setForwarding(messages.filter((m) => selected.includes(m.id) && !m.is_deleted))}>
+                    <Forward size={15} /> Forward
+                  </button>
+                </div>
+              )}
+
+              <div style={s.messages} ref={scrollRef} onScroll={onThreadScroll} onWheel={onUserScroll} onTouchMove={onUserScroll}>
                 {loadingMsgs ? <div style={s.msgHint}>Loading…</div>
                   : messages.length === 0 ? <div style={s.msgHint}>No messages yet — say hello 👋</div>
                     : messages.map((m, i) => (
                       <ChatMessage key={m.id} m={m} me={me} isGroup={active.type === 'group'}
                         showName={active.type === 'group' && (i === 0 || messages[i - 1].sender_id !== m.sender_id)}
-                        seen={m.id === seenMsgId} actions={actions} />
+                        seen={m.id === seenMsgId} actions={actions} onMediaLoad={onMediaLoad}
+                        mentionNames={active.members.map((mem) => mem.name)} members={active.members}
+                        selectMode={selectMode} selected={selected.includes(m.id)} />
                     ))}
               </div>
 
@@ -405,6 +581,7 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
+              {!selectMode && (
               <form style={s.composer} onSubmit={submit}>
                 <div style={{ position: 'relative' }} ref={emojiRef}>
                   <button type="button" className="icon-btn" style={s.composerIcon} title="Emoji"
@@ -429,9 +606,21 @@ export default function ChatPage() {
                 <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={stageFile} />
                 <input ref={fileRef} type="file" multiple hidden onChange={stageFile} />
                 <div style={s.inputWrap}>
-                  <input style={s.composerInput}
+                  {mentionOptions.length > 0 && (
+                    <div style={s.mentionPanel}>
+                      <div style={s.mentionHead}>Members</div>
+                      {mentionOptions.map((mem) => (
+                        <button key={mem.id} type="button" className="wg-select-opt" style={s.mentionItem}
+                          onMouseDown={(e) => { e.preventDefault(); pickMention(mem); }}>
+                          <Avatar name={mem.name} url={mem.avatar_url} color={mem.avatar_color} size={26} />
+                          <span style={s.mentionName}>{mem.name || 'Unknown'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input ref={composerInputRef} style={s.composerInput}
                     placeholder={pending.length ? 'Add a caption…' : uploading ? 'Uploading…' : (editing ? 'Edit message…' : 'Type a message…')}
-                    value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+                    value={draft} onChange={onDraftChange} onBlur={() => setMentionOpen(false)} autoFocus />
                   {(draft.trim() || pending.length > 0) && (
                     <button type="submit" style={s.sendInside} disabled={uploading} title={editing ? 'Save' : 'Send'}>
                       <SendIcon size={17} />
@@ -439,14 +628,15 @@ export default function ChatPage() {
                   )}
                 </div>
               </form>
+              )}
             </>
           )}
         </section>
       </div>
 
-      <NewChatModal open={newOpen} onClose={() => setNewOpen(false)} onCreated={onCreated} />
-      <ForwardModal open={!!forwarding} conversations={conversations} message={forwarding}
-        onPick={doForward} onClose={() => setForwarding(null)} />
+      <NewChatModal open={newOpen} initialTab={newTab} onClose={() => setNewOpen(false)} onCreated={onCreated} />
+      <ForwardModal open={!!forwarding} conversations={conversations} messages={forwarding}
+        onSubmit={doForward} onClose={() => setForwarding(null)} />
       <NewPollModal open={pollOpen} onClose={() => setPollOpen(false)} onCreate={createPoll} />
     </div>
   );
@@ -461,9 +651,13 @@ const s = {
   sideTitle: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)' },
   iconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, height: 32, color: 'var(--c-muted)' },
   newBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' },
-  convList: { flex: 1, minHeight: 0, overflowY: 'auto', padding: 6 },
+  headerMenu: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, minWidth: 200, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: 6, boxShadow: '0 12px 30px rgba(16,24,40,.2)', zIndex: 30 },
+  headerMenuItem: { display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '9px 11px', borderRadius: 7, fontSize: 13.5, color: 'var(--c-text)' },
+  chatCheck: { width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--c-border)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--c-on-primary)' },
+  chatCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
+  convList: { flex: 1, minHeight: 0, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 4 },
   sideEmpty: { padding: '32px 20px', textAlign: 'center', color: 'var(--c-faint)', fontSize: 13, lineHeight: 1.6 },
-  convRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', background: 'none', cursor: 'pointer', padding: '9px 10px', borderRadius: 10, textAlign: 'left' },
+  convRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', cursor: 'pointer', padding: '9px 10px', borderRadius: 10, textAlign: 'left' },
   convRowActive: { background: 'var(--c-primary-weak)' },
   convBody: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
   convTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -490,6 +684,9 @@ const s = {
   memberRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 8px', borderRadius: 8 },
   memberName: { flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--c-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   memberTag: { fontSize: 11, fontWeight: 700, color: 'var(--c-primary)', background: 'var(--c-primary-weak)', padding: '2px 8px', borderRadius: 999 },
+  selectBar: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface-2)' },
+  selectCount: { flex: 1, fontSize: 13.5, fontWeight: 700, color: 'var(--c-text-strong)' },
+  selectFwd: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, padding: '7px 14px' },
   pinBar: { padding: '8px 16px', borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface-2)', maxHeight: 120, overflowY: 'auto' },
   pinTitle: { fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', marginBottom: 4 },
   pinItem: { fontSize: 12.5, color: 'var(--c-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '1px 0' },
@@ -512,6 +709,10 @@ const s = {
   composerIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, color: 'var(--c-muted)' },
   emojiPanel: { position: 'absolute', bottom: 46, left: 0, zIndex: 20, boxShadow: '0 12px 30px rgba(16,24,40,.2)', borderRadius: 10 },
   inputWrap: { position: 'relative', flex: 1, display: 'flex' },
+  mentionPanel: { position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: 5, boxShadow: '0 12px 30px rgba(16,24,40,.2)', zIndex: 25 },
+  mentionHead: { fontSize: 11, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: .4, padding: '4px 8px 6px' },
+  mentionItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '7px 8px', borderRadius: 7, color: 'var(--c-text)' },
+  mentionName: { fontSize: 13.5, color: 'var(--c-text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   composerInput: { width: '100%', boxSizing: 'border-box', padding: '10px 46px 10px 14px', border: '1px solid var(--c-border)', borderRadius: 999, fontSize: 14, background: 'var(--c-surface)', color: 'var(--c-text)' },
   sendInside: { position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', width: 32, height: 32, flexShrink: 0,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: '50%', cursor: 'pointer' },

@@ -594,6 +594,7 @@ input[type="radio"] {
 /* --- Generic table/list row hover (any clickable row) --- */
 .wg-row-hover,
 .wg-rel-row {
+  background: transparent;
   transition: background var(--t-fast);
 }
 .wg-row-hover:hover,
