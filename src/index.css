@@ -1095,3 +1095,10 @@ button:not(:disabled):not([aria-disabled="true"]):active {
     white-space: nowrap;
   }
 }
+
+/* --- Right-side drawer slide-in (chat profile) --- */
+@keyframes wg-slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.wg-drawer-anim { animation: wg-slide-in-right 0.18s ease-out; }

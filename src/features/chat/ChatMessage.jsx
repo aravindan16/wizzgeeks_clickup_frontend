@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Smile, CornerUpLeft, MoreHorizontal, Pencil, Trash2, Pin, Bookmark, Forward, Plus, FileText, Download, Check, CheckSquare } from 'lucide-react';
+import { Smile, CornerUpLeft, MoreHorizontal, Pencil, Trash2, Pin, Bookmark, Forward, Plus, FileText, Download, Check, CheckSquare, Copy } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 
 const fmtSize = (b) => (!b ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`);
@@ -7,6 +7,7 @@ const fmtSize = (b) => (!b ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 10
 const initials = (n) => (n || '?').split(/[\s@.]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '');
 const EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
+const popDir = (up) => (up ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' });
 
 /** Render message text, highlighting @mentions — full member names (incl. spaces,
  * matched longest-first) plus a single-word "@name" fallback. */
@@ -32,12 +33,20 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
   const [full, setFull] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [reactSheet, setReactSheet] = useState(false);
+  const [reactTab, setReactTab] = useState('all'); // 'all' or a specific emoji
+  const [openUp, setOpenUp] = useState(true); // open toolbar popups upward vs downward
   const ref = useRef(null);
   const sheetRef = useRef(null);
+  // Open upward only when the bubble sits in the lower part of the viewport (else it clips at the top).
+  const decideUp = () => {
+    const r = ref.current?.getBoundingClientRect();
+    return r ? r.top > window.innerHeight * 0.45 : true;
+  };
   const att = m.attachment;
   const isImageAtt = !!att && (att.kind === 'image' || (att.content_type || '').startsWith('image/'));
+  const hasImage = !!att?.url && isImageAtt && !imgError && !m.is_deleted;
   // Bare image (no caption/poll): hug the image and overlay the time in its corner.
-  const imageOnly = isImageAtt && !imgError && !m.is_deleted && !m.body && !m.poll;
+  const imageOnly = hasImage && !m.body && !m.poll;
 
   useEffect(() => {
     if (!menu && !emoji && !full) return undefined;
@@ -79,26 +88,27 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
           {/* Hover toolbar */}
           {!m.is_deleted && !selectMode && (
             <div className="wg-msg-actions" style={{ ...s.actions, ...(mine ? { left: -8, transform: 'translateX(-100%)' } : { right: -8, transform: 'translateX(100%)' }) }}>
-              <button style={s.actBtn} title="React" onClick={() => { setEmoji((o) => !o); setMenu(false); setFull(false); }}><Smile size={15} /></button>
+              <button style={s.actBtn} title="React" onClick={() => { setOpenUp(decideUp()); setEmoji((o) => !o); setMenu(false); setFull(false); }}><Smile size={15} /></button>
               <button style={s.actBtn} title="Reply" onClick={() => actions.onReply(m)}><CornerUpLeft size={15} /></button>
-              <button style={s.actBtn} title="More" onClick={() => { setMenu((o) => !o); setEmoji(false); setFull(false); }}><MoreHorizontal size={15} /></button>
+              <button style={s.actBtn} title="More" onClick={() => { setOpenUp(decideUp()); setMenu((o) => !o); setEmoji(false); setFull(false); }}><MoreHorizontal size={15} /></button>
             </div>
           )}
           {/* Popups anchored to the bubble (not the side toolbar) so they float just above the message. */}
           {emoji && !full && (
-            <div style={{ ...s.emojiPop, ...(mine ? { right: 0 } : { left: 0 }) }}>
+            <div style={{ ...s.emojiPop, ...popDir(openUp), ...(mine ? { right: 0 } : { left: 0 }) }}>
               {EMOJIS.map((e) => <button key={e} style={s.emojiBtn} onClick={() => react(e)}>{e}</button>)}
               <button style={s.emojiMore} title="More emojis" onClick={() => setFull(true)}><Plus size={16} /></button>
             </div>
           )}
           {emoji && full && (
-            <div style={{ ...s.fullPop, ...(mine ? { right: 0 } : { left: 0 }) }}>
+            <div style={{ ...s.fullPop, ...popDir(openUp), ...(mine ? { right: 0 } : { left: 0 }) }}>
               <EmojiPicker onPick={react} />
             </div>
           )}
           {menu && (
-            <div style={{ ...s.menu, ...(mine ? { right: 0 } : { left: 0 }) }}>
-              {mine && <button style={s.menuItem} onClick={() => { setMenu(false); actions.onEdit(m); }}><Pencil size={14} /> Edit</button>}
+            <div style={{ ...s.menu, ...popDir(openUp), ...(mine ? { right: 0 } : { left: 0 }) }}>
+              {m.body && <button style={s.menuItem} onClick={() => { setMenu(false); actions.onCopy(m); }}><Copy size={14} /> Copy</button>}
+              {mine && m.body && !m.is_deleted && <button style={s.menuItem} onClick={() => { setMenu(false); actions.onEdit(m); }}><Pencil size={14} /> Edit</button>}
               <button style={s.menuItem} onClick={() => { setMenu(false); actions.onForward(m); }}><Forward size={14} /> Forward</button>
               <button style={s.menuItem} onClick={() => { setMenu(false); actions.onStartSelect(m); }}><CheckSquare size={14} /> Select</button>
               <button style={s.menuItem} onClick={() => { setMenu(false); actions.onPin(m); }}><Pin size={14} /> {m.pinned ? 'Unpin' : 'Pin'}</button>
@@ -107,7 +117,7 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
             </div>
           )}
 
-          <div style={{ ...s.bubble, ...(mine ? s.mine : s.other), ...(selectMode ? { pointerEvents: 'none' } : {}), ...(imageOnly ? s.bubbleMedia : {}) }}>
+          <div style={{ ...s.bubble, ...(mine ? s.mine : s.other), ...(selectMode ? { pointerEvents: 'none' } : {}), ...(hasImage ? s.bubbleMedia : {}) }}>
             {showName && !mine && <div style={s.sender}>{m.sender_name}</div>}
             {m.forwarded_from && <div style={s.fwd}>↪ Forwarded{m.forwarded_from.sender_name ? ` from ${m.forwarded_from.sender_name}` : ''}</div>}
             {m.reply_to && (
@@ -117,7 +127,10 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
               </div>
             )}
             {m.is_deleted ? (
-              <span style={s.deleted}>This message was deleted</span>
+              <span style={s.deleted}>
+                This message was deleted
+                <span style={s.timeSpacer} aria-hidden="true">{clock(m.created_at)}</span>
+              </span>
             ) : (
               <>
                 {att?.url && isImageAtt && !imgError && (
@@ -147,7 +160,7 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
                 )}
                 {m.poll && <Poll poll={m.poll} me={me} onVote={(oid) => actions.onVote(m, oid)} mine={mine} />}
                 {m.body && (
-                  <span style={s.body}>
+                  <span style={{ ...s.body, ...(hasImage ? s.caption : {}) }}>
                     {renderBody(m.body, mine, mentionNames)}
                     {/* Hidden spacer reserves room on the last line so the corner time never overlaps text. */}
                     <span style={s.timeSpacer} aria-hidden="true">
@@ -159,16 +172,16 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
                 )}
               </>
             )}
-            {/* Text/caption messages: time in the bottom-right corner (WhatsApp style). */}
-            {m.body && !m.is_deleted && (
+            {/* Text/caption/deleted messages: time in the bottom-right corner (WhatsApp style). */}
+            {(m.body || m.is_deleted) && (
               <span style={{ ...s.timeCorner, color: mine ? 'rgba(255,255,255,.75)' : 'var(--c-faint)' }}>
-                {m.pinned && <Pin size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />}
-                {m.bookmarked && <Bookmark size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />}
-                {m.is_edited && 'edited · '}{clock(m.created_at)}
+                {!m.is_deleted && m.pinned && <Pin size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />}
+                {!m.is_deleted && m.bookmarked && <Bookmark size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />}
+                {!m.is_deleted && m.is_edited && 'edited · '}{clock(m.created_at)}
               </span>
             )}
-            {/* Everything else (file-only, poll-only, deleted): time on its own row. */}
-            {!imageOnly && !m.body && (
+            {/* Everything else (file-only, poll-only): time on its own row. */}
+            {!imageOnly && !m.body && !m.is_deleted && (
               <span style={{ ...s.time, color: mine ? 'rgba(255,255,255,.75)' : 'var(--c-faint)' }}>
                 {m.pinned && <Pin size={10} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
                 {m.bookmarked && <Bookmark size={10} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
@@ -181,21 +194,26 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
         {reactions.length > 0 && (
           <div style={{ position: 'relative' }} ref={sheetRef}>
             <div style={s.reactRow}>
-              {reactions.map(([e, users]) => {
-                const iReacted = users.includes(me);
-                return (
-                  <button key={e} onClick={() => setReactSheet((o) => !o)}
-                    style={{ ...s.reactChip, ...(iReacted ? s.reactChipOn : {}) }}>
-                    {e} {users.length}
-                  </button>
-                );
-              })}
+              {/* One combined pill: the emojis clustered + total reactor count (WhatsApp style). */}
+              <button type="button" onClick={() => { setReactTab('all'); setReactSheet((o) => !o); }}
+                style={{ ...s.reactChip, ...(reactions.some(([, u]) => u.includes(me)) ? s.reactChipOn : {}) }}>
+                {reactions.slice(0, 3).map(([e]) => <span key={e} style={s.reactChipEmoji}>{e}</span>)}
+                <span style={s.reactChipCount}>{reactors.length}</span>
+              </button>
             </div>
             {reactSheet && (
               <div style={{ ...s.reactSheet, ...(mine ? { right: 0 } : { left: 0 }) }}>
-                <div style={s.reactSheetHead}>{reactors.length} reaction{reactors.length > 1 ? 's' : ''}</div>
+                {/* WhatsApp-style tabs: All + one per emoji, filtering the list below. */}
+                <div style={s.reactTabs}>
+                  <button type="button" style={{ ...s.reactTab, ...(reactTab === 'all' ? s.reactTabOn : {}) }}
+                    onClick={() => setReactTab('all')}>All {reactors.length}</button>
+                  {reactions.map(([e, users]) => (
+                    <button key={e} type="button" style={{ ...s.reactTab, ...(reactTab === e ? s.reactTabOn : {}) }}
+                      onClick={() => setReactTab(e)}>{e} {users.length}</button>
+                  ))}
+                </div>
                 <div style={s.reactSheetList}>
-                  {reactors.map(({ uid, emoji: e }) => {
+                  {reactors.filter((r) => reactTab === 'all' || r.emoji === reactTab).map(({ uid, emoji: e }) => {
                     const isMe = uid === me;
                     const u = memberMap[uid] || {};
                     const name = isMe ? 'You' : (u.name || m.sender_name || 'Someone');
@@ -208,7 +226,7 @@ export default function ChatMessage({ m, me, isGroup, showName, seen, actions, s
                         </span>
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span style={s.reactorName}>{name}</span>
-                          {isMe && <span style={s.reactorSub}>Click to remove</span>}
+                          {isMe && <span style={s.reactorSub}>Tap to remove</span>}
                         </span>
                         <span style={s.reactorEmoji}>{e}</span>
                       </button>
@@ -283,6 +301,7 @@ const s = {
   attachLink: { display: 'block', marginBottom: 4, position: 'relative' },
   attachImg: { maxWidth: 260, maxHeight: 260, borderRadius: 11, display: 'block', objectFit: 'cover' },
   bubbleMedia: { padding: 3 },
+  caption: { display: 'block', padding: '3px 7px 2px' },
   imgTime: { position: 'absolute', right: 7, bottom: 7, fontSize: 10.5, color: '#fff',
     background: 'rgba(0,0,0,.45)', borderRadius: 8, padding: '1px 7px', lineHeight: 1.5, pointerEvents: 'none' },
   fileCard: { display: 'flex', alignItems: 'center', gap: 10, width: 240, padding: '8px 10px', marginBottom: 4,
@@ -299,22 +318,26 @@ const s = {
     border: '1px solid var(--c-border)', borderRadius: 8, padding: 2, boxShadow: '0 4px 14px rgba(16,24,40,.16)', zIndex: 3 },
   actBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26,
     border: 'none', background: 'none', color: 'var(--c-muted)', borderRadius: 6, cursor: 'pointer' },
-  emojiPop: { position: 'absolute', bottom: 'calc(100% + 4px)', display: 'flex', gap: 2, background: 'var(--c-surface)',
+  emojiPop: { position: 'absolute', display: 'flex', gap: 2, background: 'var(--c-surface)',
     border: '1px solid var(--c-border)', borderRadius: 10, padding: 4, boxShadow: '0 8px 22px rgba(16,24,40,.2)', zIndex: 5 },
   emojiBtn: { border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, padding: 3, borderRadius: 6, lineHeight: 1 },
   emojiMore: { border: 'none', background: 'var(--c-surface-3)', color: 'var(--c-muted)', cursor: 'pointer',
     width: 26, height: 26, borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
-  fullPop: { position: 'absolute', bottom: 'calc(100% + 4px)', zIndex: 6, boxShadow: '0 12px 30px rgba(16,24,40,.22)', borderRadius: 10 },
-  menu: { position: 'absolute', bottom: 'calc(100% + 4px)', minWidth: 170, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+  fullPop: { position: 'absolute', zIndex: 6, boxShadow: '0 12px 30px rgba(16,24,40,.22)', borderRadius: 10 },
+  menu: { position: 'absolute', minWidth: 170, background: 'var(--c-surface)', border: '1px solid var(--c-border)',
     borderRadius: 10, padding: 5, boxShadow: '0 12px 30px rgba(16,24,40,.2)', zIndex: 5 },
   menuItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', border: 'none',
     background: 'none', cursor: 'pointer', padding: '8px 10px', borderRadius: 7, fontSize: 13.5, color: 'var(--c-text)' },
   reactRow: { display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' },
-  reactChip: { border: '1px solid var(--c-border)', background: 'var(--c-surface)', borderRadius: 999,
-    padding: '1px 8px', fontSize: 12, cursor: 'pointer', color: 'var(--c-text)' },
+  reactChip: { display: 'inline-flex', alignItems: 'center', gap: 1, border: '1px solid var(--c-border)', background: 'var(--c-surface)', borderRadius: 999,
+    padding: '2px 9px', fontSize: 13, cursor: 'pointer', color: 'var(--c-text)' },
   reactChipOn: { background: 'var(--c-primary-weak)', borderColor: 'var(--c-primary)', color: 'var(--c-primary)', fontWeight: 700 },
+  reactChipEmoji: { fontSize: 13, lineHeight: 1 },
+  reactChipCount: { marginLeft: 4, fontSize: 12, fontWeight: 700 },
   reactSheet: { position: 'absolute', bottom: 'calc(100% + 6px)', minWidth: 240, maxWidth: 300, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(16,24,40,.24)', zIndex: 10, overflow: 'hidden' },
-  reactSheetHead: { padding: '10px 14px', fontSize: 13, fontWeight: 700, color: 'var(--c-text-strong)', borderBottom: '1px solid var(--c-border)' },
+  reactTabs: { display: 'flex', gap: 6, padding: '8px 10px', borderBottom: '1px solid var(--c-border)', overflowX: 'auto' },
+  reactTab: { flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: 700, color: 'var(--c-muted)' },
+  reactTabOn: { background: 'var(--c-primary-weak)', color: 'var(--c-primary)' },
   reactSheetList: { maxHeight: 220, overflowY: 'auto', padding: 6 },
   reactor: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', padding: '7px 8px', borderRadius: 8 },
   reactorAvatar: { width: 34, height: 34, borderRadius: '50%', background: '#f59e0b', color: '#fff', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, overflow: 'hidden' },

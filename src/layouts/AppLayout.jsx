@@ -8,6 +8,7 @@ import SpacesMenu from '../features/spaces/SpacesMenu';
 import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import FiltersMenu from '../features/filters/FiltersMenu';
 import NotificationBell from '../features/notifications/NotificationBell';
+import ChatToastListener from '../features/chat/ChatToastListener';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconMembers, IconSettings,
@@ -85,6 +86,7 @@ export default function AppLayout() {
 
   return (
     <div style={s.shell}>
+      <ChatToastListener />
 
       {/* ===== TOP BAR (full width) ===== */}
       <header style={s.topbar}>

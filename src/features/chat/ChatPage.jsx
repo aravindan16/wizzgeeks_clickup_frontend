@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon, Forward, MoreVertical, CheckCheck, CheckSquare, Check } from 'lucide-react';
+import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon, Forward, MoreVertical, CheckCheck, CheckSquare, Check, User as UserIcon, Star } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import NewPollModal from './NewPollModal';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -10,6 +10,7 @@ import { chatApi } from './chatApi';
 import ChatMessage from './ChatMessage';
 import NewChatModal from './NewChatModal';
 import ForwardModal from './ForwardModal';
+import AddMembersModal from './AddMembersModal';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 function timeAgo(iso) {
@@ -43,6 +44,9 @@ export default function ChatPage() {
   const [pinned, setPinned] = useState([]);
   const [showPinned, setShowPinned] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [msgTotal, setMsgTotal] = useState(0); // total messages in the active conversation
+  const loadingOlderRef = useRef(false);
+  const loadOlderRef = useRef(() => {});
   const [draft, setDraft] = useState('');
   const [reply, setReply] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -51,6 +55,10 @@ export default function ChatPage() {
   const [headerMenu, setHeaderMenu] = useState(false);
   const [chatSelectMode, setChatSelectMode] = useState(false);
   const [selectedChats, setSelectedChats] = useState([]); // selected conversation ids
+  const [threadMenu, setThreadMenu] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [chatFilter, setChatFilter] = useState('all'); // 'all' | 'favorites'
+  const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [forwarding, setForwarding] = useState(null); // array of messages to forward (null = closed)
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState([]); // selected message ids
@@ -72,7 +80,9 @@ export default function ChatPage() {
   const groupPhotoRef = useRef(null); // group-avatar image input
   const composerInputRef = useRef(null);
   const headerMenuRef = useRef(null);
+  const threadMenuRef = useRef(null);
   const msgCacheRef = useRef({}); // conversationId → last-seen messages, for instant re-open
+  const isViewingRef = useRef(true); // is this tab actually visible + focused? (gates read receipts)
 
   const active = conversations.find((c) => c.id === activeId) || null;
 
@@ -96,8 +106,35 @@ export default function ChatPage() {
     const el = scrollRef.current;
     if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
   };
+  // Prepend the next older page when the user scrolls near the top (WhatsApp-style).
+  loadOlderRef.current = async () => {
+    if (loadingOlderRef.current || !activeId || messages.length >= msgTotal) return;
+    loadingOlderRef.current = true;
+    const el = scrollRef.current;
+    const prevH = el ? el.scrollHeight : 0;
+    try {
+      const data = await chatApi.messages(activeId, { skip: messages.length, limit: 30 });
+      const older = data.items || [];
+      if (data.total != null) setMsgTotal(data.total);
+      setMessages((cur) => {
+        const seen = new Set(cur.map((m) => m.id));
+        return [...older.filter((m) => !seen.has(m.id)), ...cur];
+      });
+      requestAnimationFrame(() => { // keep the viewport anchored where the user was reading
+        const el2 = scrollRef.current;
+        if (el2) el2.scrollTop = el2.scrollHeight - prevH;
+      });
+    } catch { /* */ }
+    finally { loadingOlderRef.current = false; }
+  };
+
   // Plain scroll events also fire when images grow the thread — ignore those while opening.
-  const onThreadScroll = useCallback(() => { if (!openingRef.current) recomputeNearBottom(); }, []);
+  const onThreadScroll = useCallback(() => {
+    if (openingRef.current) return;
+    recomputeNearBottom();
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 80) loadOlderRef.current();
+  }, []);
   // A wheel/touch is genuine user intent: end the opening lock and track their position.
   const onUserScroll = useCallback(() => { openingRef.current = false; recomputeNearBottom(); }, []);
   // Media (images) lay out after render and grow the thread — keep pinning to bottom.
@@ -121,7 +158,7 @@ export default function ChatPage() {
   const loadPinned = useCallback((id) => chatApi.pinned(id).then(setPinned).catch(() => setPinned([])), []);
 
   const openConversation = useCallback(async (id) => {
-    setSavedView(false); setActiveId(id); setReply(null); setEditing(null); setDraft(''); setShowPinned(false); setMembersOpen(false); setSelectMode(false); setSelected([]); clearPending();
+    setSavedView(false); setActiveId(id); setReply(null); setEditing(null); setDraft(''); setShowPinned(false); setMembersOpen(false); setProfileOpen(false); setSelectMode(false); setSelected([]); clearPending();
     beginOpening(); // opening a chat always lands on the newest message (and stays there as images load)
     const cached = msgCacheRef.current[id];
     if (cached) { setMessages(cached); setLoadingMsgs(false); } // show instantly, refresh below
@@ -131,6 +168,7 @@ export default function ChatPage() {
       const items = data.items || [];
       msgCacheRef.current[id] = items;
       setMessages(items);
+      setMsgTotal(data.total ?? items.length);
       loadPinned(id);
       chatApi.markRead(id).catch(() => {});
       setConversations((cur) => cur.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
@@ -144,12 +182,16 @@ export default function ChatPage() {
       const msg = e.detail;
       if (msg?.event === 'chat.message') {
         const d = msg.data;
-        if (d.conversation_id === activeId) {
+        if (d.conversation_id === activeId && isViewingRef.current) {
+          // Only mark read when this tab is actually being viewed (not open in the background).
           setMessages((cur) => (cur.some((m) => m.id === d.id) ? cur : [...cur, d]));
-          // Reading the open chat must settle before we refresh the list, then force its badge to 0.
           try { await chatApi.markRead(activeId); } catch { /* */ }
           await loadConversations();
           setConversations((cur) => cur.map((c) => (c.id === activeId ? { ...c, unread: 0 } : c)));
+        } else if (d.conversation_id === activeId) {
+          // Chat open but tab not focused: show the message, keep it unread until they return.
+          setMessages((cur) => (cur.some((m) => m.id === d.id) ? cur : [...cur, d]));
+          loadConversations();
         } else {
           loadConversations();
         }
@@ -170,6 +212,28 @@ export default function ChatPage() {
     window.addEventListener('wg:ws', onWs);
     return () => window.removeEventListener('wg:ws', onWs);
   }, [activeId, loadConversations, loadPinned]);
+
+  // Track whether this tab is actually being viewed; only then do we send read receipts.
+  useEffect(() => {
+    const setViewing = () => { isViewingRef.current = !document.hidden && document.hasFocus(); };
+    // Only on a genuine return-to-tab do we mark read (opening a chat already marks it read).
+    const onReturn = () => {
+      setViewing();
+      if (isViewingRef.current && activeId) {
+        chatApi.markRead(activeId).catch(() => {});
+        setConversations((cur) => cur.map((c) => (c.id === activeId ? { ...c, unread: 0 } : c)));
+      }
+    };
+    setViewing(); // initialise flag only — no read call on mount / chat switch
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
+    window.addEventListener('blur', setViewing);
+    return () => {
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
+      window.removeEventListener('blur', setViewing);
+    };
+  }, [activeId]);
 
   const mergeUpdated = (u) => {
     setMessages((cur) => cur.map((m) => (m.id === u.id ? { ...m, ...u } : m)));
@@ -309,6 +373,10 @@ export default function ChatPage() {
       } catch { /* */ }
     },
     onForward: (m) => setForwarding([m]),
+    onCopy: async (m) => {
+      try { await navigator.clipboard.writeText(m.body || ''); toast.success('Copied'); }
+      catch { toast.error('Could not copy'); }
+    },
     onVote: async (m, optionId) => { try { mergeUpdated(await chatApi.vote(m.id, optionId)); } catch { /* */ } },
     onStartSelect: (m) => { setSelectMode(true); setSelected([m.id]); },
     onToggleSelect: (m) => setSelected((cur) => (cur.includes(m.id) ? cur.filter((x) => x !== m.id) : [...cur, m.id])),
@@ -316,10 +384,20 @@ export default function ChatPage() {
 
   const exitSelect = () => { setSelectMode(false); setSelected([]); };
 
-  // Forward every staged message into every chosen conversation (order preserved).
-  const doForward = async (convIds) => {
+  // Forward every staged message to every chosen target (existing chat or a new person).
+  const doForward = async (targets) => {
     const msgs = forwarding || []; setForwarding(null);
     try {
+      const convIds = [];
+      for (const t of targets) {
+        if (t.kind === 'user') { // no chat yet → start a direct conversation first
+          const conv = await chatApi.createDirect(t.id);
+          setConversations((cur) => (cur.some((c) => c.id === conv.id) ? cur : [conv, ...cur]));
+          convIds.push(conv.id);
+        } else {
+          convIds.push(t.id);
+        }
+      }
       for (const cid of convIds) {
         for (const m of msgs) await chatApi.forward(m.id, cid);
       }
@@ -363,6 +441,31 @@ export default function ChatPage() {
     document.addEventListener('mousedown', h, true);
     return () => document.removeEventListener('mousedown', h, true);
   }, [headerMenu]);
+
+  // Close the chat-header menu on outside click.
+  useEffect(() => {
+    if (!threadMenu) return undefined;
+    const h = (e) => { if (!threadMenuRef.current?.contains(e.target)) setThreadMenu(false); };
+    document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, [threadMenu]);
+
+  const markActiveRead = async () => {
+    if (!activeId) return;
+    await chatApi.markRead(activeId).catch(() => {});
+    setConversations((cur) => cur.map((c) => (c.id === activeId ? { ...c, unread: 0 } : c)));
+    toast.success('Marked as read');
+  };
+
+  const toggleFavorite = async () => {
+    if (!activeId) return;
+    const wasFav = !!active?.favorite;
+    try {
+      const conv = await chatApi.setFavorite(activeId, !wasFav);
+      setConversations((cur) => cur.map((c) => (c.id === conv.id ? { ...c, ...conv } : c)));
+      toast.success(wasFav ? 'Removed from favourites' : 'Added to favourites');
+    } catch { toast.error('Could not update favourites'); }
+  };
 
   const onCreated = (conv) => {
     setNewOpen(false);
@@ -417,9 +520,21 @@ export default function ChatPage() {
             </>
             )}
           </div>
+          {!chatSelectMode && (
+            <div style={s.filterRow}>
+              <button type="button" style={{ ...s.filterTab, ...(chatFilter === 'all' ? s.filterTabOn : {}) }}
+                onClick={() => setChatFilter('all')}>All</button>
+              <button type="button" style={{ ...s.filterTab, ...(chatFilter === 'favorites' ? s.filterTabOn : {}) }}
+                onClick={() => setChatFilter('favorites')}><Star size={13} fill={chatFilter === 'favorites' ? 'currentColor' : 'none'} /> Favourites</button>
+            </div>
+          )}
           <div style={s.convList}>
-            {conversations.length === 0 && <div style={s.sideEmpty}>No conversations yet.<br />Start one with “New”.</div>}
-            {conversations.map((c) => (
+            {(() => {
+              const shown = chatFilter === 'favorites' ? conversations.filter((c) => c.favorite) : conversations;
+              if (shown.length === 0) {
+                return <div style={s.sideEmpty}>{chatFilter === 'favorites' ? 'No favourite chats yet.' : <>No conversations yet.<br />Start one with “New”.</>}</div>;
+              }
+              return shown.map((c) => (
               <button key={c.id} className="wg-row-hover"
                 style={{ ...s.convRow,
                   ...(chatSelectMode && selectedChats.includes(c.id) ? { background: 'var(--c-primary-weak)' }
@@ -445,9 +560,11 @@ export default function ChatPage() {
                       : (c.type === 'group' ? 'Group created' : 'Say hello 👋')}
                   </span>
                 </span>
+                {c.favorite && <Star size={13} fill="currentColor" style={{ color: 'var(--c-primary)', flexShrink: 0 }} />}
                 {c.unread > 0 && <span style={s.unread}>{c.unread > 9 ? '9+' : c.unread}</span>}
               </button>
-            ))}
+              ));
+            })()}
           </div>
         </aside>
 
@@ -482,48 +599,47 @@ export default function ChatPage() {
                   )
                   : <Avatar name={active.name} url={active.avatar_url} color={active.avatar_color} size={34} />}
                 {active.type === 'group' ? (
-                  <button type="button" className="wg-row-hover" style={s.headInfoBtn}
-                    onClick={() => setMembersOpen((o) => !o)} title="View members">
+                  <button type="button" style={s.headInfoBtn}
+                    onClick={() => setProfileOpen(true)} title="Group info">
                     <div style={s.threadName}>{active.name}</div>
                     <div style={s.threadSub}>
                       {active.members.map((mem) => (mem.id === me ? 'You' : (mem.name || 'Unknown'))).join(', ')}
                     </div>
                   </button>
                 ) : (
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                  <button type="button" style={s.headInfoBtn}
+                    onClick={() => setProfileOpen(true)} title="Contact info">
                     <div style={s.threadName}>{active.name}</div>
                     <div style={s.threadSub}>Direct message</div>
-                  </div>
+                  </button>
                 )}
                 {pinned.length > 0 && (
                   <button className="icon-btn" style={s.iconBtn} title="Pinned messages" onClick={() => setShowPinned((o) => !o)}>
                     <Pin size={16} /> <span style={{ fontSize: 12, marginLeft: 3 }}>{pinned.length}</span>
                   </button>
                 )}
+                <div style={{ position: 'relative' }} ref={threadMenuRef}>
+                  <button className="icon-btn" style={s.iconBtn} title="Options" onClick={() => setThreadMenu((o) => !o)}><MoreVertical size={18} /></button>
+                  {threadMenu && (
+                    <div style={s.headerMenu}>
+                      <button type="button" className="wg-select-opt" style={s.headerMenuItem}
+                        onClick={() => { setThreadMenu(false); setProfileOpen(true); }}>
+                        <UserIcon size={16} /> {active.type === 'group' ? 'View group info' : 'View profile'}
+                      </button>
+                      <button type="button" className="wg-select-opt" style={s.headerMenuItem}
+                        onClick={() => { setThreadMenu(false); toggleFavorite(); }}>
+                        <Star size={16} fill={active.favorite ? 'currentColor' : 'none'} /> {active.favorite ? 'Remove from favourites' : 'Add to favourites'}
+                      </button>
+                      <button type="button" className="wg-select-opt" style={s.headerMenuItem}
+                        onClick={() => { setThreadMenu(false); openSaved(); }}><Bookmark size={16} /> Starred messages</button>
+                      <button type="button" className="wg-select-opt" style={s.headerMenuItem}
+                        onClick={() => { setThreadMenu(false); markActiveRead(); }}><CheckCheck size={16} /> Mark as read</button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <input ref={groupPhotoRef} type="file" accept="image/*" hidden onChange={changeGroupPhoto} />
-
-              {membersOpen && active.type === 'group' && (
-                <div style={s.memberBar}>
-                  <div style={s.memberBarHead}>
-                    <span style={s.memberBarTitle}>Members · {active.members.length}</span>
-                    <button className="icon-btn" style={s.iconBtn} title="Close" onClick={() => setMembersOpen(false)}><X size={15} /></button>
-                  </div>
-                  <button type="button" className="btn" style={s.changePhotoBtn} onClick={() => groupPhotoRef.current?.click()}>
-                    <ImageIcon size={14} /> {active.avatar_url ? 'Change group photo' : 'Add group photo'}
-                  </button>
-                  <div style={s.memberList}>
-                    {active.members.map((mem) => (
-                      <div key={mem.id} style={s.memberRow}>
-                        <Avatar name={mem.name} url={mem.avatar_url} color={mem.avatar_color} size={32} />
-                        <span style={s.memberName}>{mem.name || 'Unknown'}{mem.id === me ? ' (You)' : ''}</span>
-                        {mem.id === active.created_by && <span style={s.memberTag}>Creator</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {showPinned && pinned.length > 0 && (
                 <div style={s.pinBar}>
@@ -631,6 +747,60 @@ export default function ChatPage() {
               )}
             </>
           )}
+
+          {profileOpen && active && (() => {
+            const isGroup = active.type === 'group';
+            const other = isGroup ? {} : (active.members.find((mm) => mm.id !== me) || {});
+            return (
+              <div style={s.drawerBackdrop} onClick={() => setProfileOpen(false)}>
+                <aside className="wg-drawer-anim" style={s.drawer} onClick={(e) => e.stopPropagation()}>
+                  <div style={s.drawerHead}>
+                    <span style={s.drawerTitle}>{isGroup ? 'Group info' : 'Contact info'}</span>
+                    <button className="icon-btn" style={s.iconBtn} title="Close" onClick={() => setProfileOpen(false)}><X size={16} /></button>
+                  </div>
+                  <div style={s.drawerBody}>
+                    {isGroup ? (
+                      <button type="button" style={s.groupAvatarBtn} title="Change group photo" onClick={() => groupPhotoRef.current?.click()}>
+                        {active.avatar_url
+                          ? <span style={{ ...s.avatar, width: 96, height: 96 }}><img src={active.avatar_url} alt="" style={s.avatarImg} /></span>
+                          : <span style={{ ...s.avatar, width: 96, height: 96, background: 'var(--c-primary-weak)', color: 'var(--c-primary)' }}><UsersIcon size={40} /></span>}
+                        <span style={s.groupAvatarEdit}><ImageIcon size={11} /></span>
+                      </button>
+                    ) : (
+                      <Avatar name={other.name || active.name} url={other.avatar_url || active.avatar_url} color={other.avatar_color || active.avatar_color} size={96} />
+                    )}
+                    <div style={s.profileName}>{isGroup ? active.name : (other.name || active.name)}</div>
+                    <div style={s.profileSub}>{isGroup ? `${active.members.length} members` : 'Direct message'}</div>
+
+                    {isGroup ? (
+                      <>
+                        <div style={s.memberActions}>
+                          <button type="button" className="btn" style={s.memberActionBtn} onClick={() => groupPhotoRef.current?.click()}>
+                            <ImageIcon size={14} /> {active.avatar_url ? 'Change photo' : 'Add photo'}
+                          </button>
+                          <button type="button" className="btn" style={s.memberActionBtn} onClick={() => setAddMembersOpen(true)}>
+                            <Plus size={14} /> Add members
+                          </button>
+                        </div>
+                        <div style={s.drawerMemberList}>
+                          <div style={s.memberBarTitle}>Members · {active.members.length}</div>
+                          {active.members.map((mem) => (
+                            <div key={mem.id} style={s.memberRow}>
+                              <Avatar name={mem.name} url={mem.avatar_url} color={mem.avatar_color} size={34} />
+                              <span style={s.memberName}>{mem.name || 'Unknown'}{mem.id === me ? ' (You)' : ''}</span>
+                              {mem.id === active.created_by && <span style={s.memberTag}>Creator</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary" style={s.profileBtn} onClick={() => setProfileOpen(false)}><MessageSquare size={15} /> Message</button>
+                    )}
+                  </div>
+                </aside>
+              </div>
+            );
+          })()}
         </section>
       </div>
 
@@ -638,6 +808,15 @@ export default function ChatPage() {
       <ForwardModal open={!!forwarding} conversations={conversations} messages={forwarding}
         onSubmit={doForward} onClose={() => setForwarding(null)} />
       <NewPollModal open={pollOpen} onClose={() => setPollOpen(false)} onCreate={createPoll} />
+      <AddMembersModal open={addMembersOpen} convId={activeId}
+        existingIds={active?.members?.map((mm) => mm.id) || []}
+        onClose={() => setAddMembersOpen(false)}
+        onAdded={(conv) => {
+          setAddMembersOpen(false);
+          setConversations((cur) => cur.map((c) => (c.id === conv.id ? { ...c, ...conv } : c)));
+          toast.success('Members added');
+        }} />
+
     </div>
   );
 }
@@ -653,8 +832,19 @@ const s = {
   newBtn: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' },
   headerMenu: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, minWidth: 200, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, padding: 6, boxShadow: '0 12px 30px rgba(16,24,40,.2)', zIndex: 30 },
   headerMenuItem: { display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '9px 11px', borderRadius: 7, fontSize: 13.5, color: 'var(--c-text)' },
+  filterRow: { display: 'flex', gap: 6, padding: '8px 12px', borderBottom: '1px solid var(--c-border)' },
+  filterTab: { display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--c-border)', background: 'transparent', color: 'var(--c-muted)', cursor: 'pointer', padding: '5px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600 },
+  filterTabOn: { background: 'var(--c-primary-weak)', color: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
   chatCheck: { width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--c-border)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--c-on-primary)' },
   chatCheckOn: { background: 'var(--c-primary)', borderColor: 'var(--c-primary)' },
+  drawerBackdrop: { position: 'absolute', inset: 0, background: 'rgba(15,23,42,.4)', zIndex: 40 },
+  drawer: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 320, maxWidth: '90%', background: 'var(--c-surface)', color: 'var(--c-text)', boxShadow: '-8px 0 32px rgba(16,24,40,.22)', display: 'flex', flexDirection: 'column', zIndex: 41 },
+  drawerHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid var(--c-border)' },
+  drawerTitle: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)' },
+  drawerBody: { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '32px 20px' },
+  profileName: { fontSize: 19, fontWeight: 700, color: 'var(--c-text-strong)', marginTop: 12, textAlign: 'center' },
+  profileSub: { fontSize: 13, color: 'var(--c-muted)' },
+  profileBtn: { display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 18, padding: '9px 18px', fontSize: 13.5 },
   convList: { flex: 1, minHeight: 0, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 4 },
   sideEmpty: { padding: '32px 20px', textAlign: 'center', color: 'var(--c-faint)', fontSize: 13, lineHeight: 1.6 },
   convRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: 'none', cursor: 'pointer', padding: '9px 10px', borderRadius: 10, textAlign: 'left' },
@@ -665,7 +855,7 @@ const s = {
   convTime: { fontSize: 11, color: 'var(--c-faint)', flexShrink: 0 },
   convPreview: { fontSize: 12.5, color: 'var(--c-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   unread: { minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  thread: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 },
+  thread: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' },
   threadEmpty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--c-muted)' },
   emptyIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60, borderRadius: '50%', background: 'var(--c-surface-3)', color: 'var(--c-faint)', marginBottom: 6 },
   emptyTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
@@ -673,10 +863,12 @@ const s = {
   threadHead: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--c-border)' },
   threadName: { fontSize: 15, fontWeight: 700, color: 'var(--c-text-strong)' },
   threadSub: { fontSize: 12, color: 'var(--c-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  headInfoBtn: { minWidth: 0, flex: 1, textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px 8px', borderRadius: 8 },
+  headInfoBtn: { minWidth: 0, flex: 1, textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px 0', outline: 'none', transform: 'none' },
   groupAvatarBtn: { position: 'relative', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', flexShrink: 0, lineHeight: 0 },
   groupAvatarEdit: { position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: '50%', background: 'var(--c-primary)', color: 'var(--c-on-primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--c-surface)' },
-  changePhotoBtn: { display: 'inline-flex', alignItems: 'center', gap: 7, margin: '0 16px 8px', fontSize: 13, padding: '7px 12px' },
+  memberActions: { display: 'flex', gap: 8, marginTop: 16 },
+  memberActionBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '7px 11px' },
+  drawerMemberList: { width: '100%', marginTop: 20, display: 'flex', flexDirection: 'column', gap: 2 },
   memberBar: { borderBottom: '1px solid var(--c-border)', background: 'var(--c-surface-2)', maxHeight: 260, overflowY: 'auto' },
   memberBarHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', position: 'sticky', top: 0, background: 'var(--c-surface-2)' },
   memberBarTitle: { fontSize: 12.5, fontWeight: 700, color: 'var(--c-muted)', textTransform: 'uppercase', letterSpacing: .4 },
