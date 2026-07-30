@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { logout } from '../features/auth/authSlice';
 import { useAuth } from '../features/auth/useAuth';
@@ -8,12 +8,13 @@ import SpacesMenu from '../features/spaces/SpacesMenu';
 import DashboardsMenu from '../features/dashboard/DashboardsMenu';
 import FiltersMenu from '../features/filters/FiltersMenu';
 import NotificationBell from '../features/notifications/NotificationBell';
+import ChatToastListener from '../features/chat/ChatToastListener';
 import { HeaderSlotContext } from './headerSlot';
 import {
   IconMembers, IconSettings,
   IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
-import { ShieldCheck, MessageSquare } from 'lucide-react';
+import { ShieldCheck, MessageSquare, Menu as MenuIcon, LayoutGrid, Layers, Filter } from 'lucide-react';
 import ThemeCustomizer from '../components/ThemeCustomizer';
 import { syncFromUser } from '../services/theme';
 
@@ -32,6 +33,17 @@ const NAV = [
   { to: '/permissions', label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },
 ];
 
+// Mobile drawer tabs: everything is shown, but only Chat is enabled for now.
+const MOBILE_TABS = [
+  { label: 'Chat', to: '/chat', Icon: IconChat, enabled: true },
+  { label: 'Dashboards', Icon: ({ size }) => <LayoutGrid size={size} strokeWidth={1.9} /> },
+  { label: 'Spaces', Icon: ({ size }) => <Layers size={size} strokeWidth={1.9} />, permission: 'project.read' },
+  { label: 'Filters', Icon: ({ size }) => <Filter size={size} strokeWidth={1.9} />, permission: 'task.read' },
+  { label: 'Users', Icon: IconMembers, permission: 'user.read' },
+  { label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
+  { label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },
+];
+
 const STORAGE_KEY = 'wg_sidebar_collapsed';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -41,8 +53,11 @@ const prettyRole = (r) => (r || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.t
 export default function AppLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, can } = useAuth();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(STORAGE_KEY) === '1');
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [navOpen, setNavOpen] = useState(false); // mobile nav drawer
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [slotEl, setSlotEl] = useState(null); // topbar node pages portal their breadcrumb into
 
@@ -59,15 +74,23 @@ export default function AppLayout() {
     });
   };
 
-  // Responsive: auto-collapse the sidebar on tablet/mobile widths.
+  // Responsive: auto-collapse on tablet; switch to a drawer nav on mobile.
   useEffect(() => {
-    const onResize = () => { if (window.innerWidth < 1024) setCollapsed(true); };
+    const onResize = () => {
+      if (window.innerWidth < 1024) setCollapsed(true);
+      setIsMobile(window.innerWidth < 768);
+    };
     onResize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Close the mobile nav drawer whenever the route changes.
+  useEffect(() => { setNavOpen(false); }, [location.pathname]);
+
   const width = collapsed ? 68 : 240;
+  const navCollapsed = isMobile ? false : collapsed; // drawer always shows labels
+  const sidebarWidth = isMobile ? 264 : width;
 
   // Shared renderer for a top-level sidebar link (used above and below the Spaces tree).
   const renderNav = (n) => (
@@ -85,52 +108,85 @@ export default function AppLayout() {
 
   return (
     <div style={s.shell}>
+      <ChatToastListener />
 
       {/* ===== TOP BAR (full width) ===== */}
       <header style={s.topbar}>
-        <div style={{ ...s.brand, width, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+        <div style={{ ...s.brand, width: isMobile ? 'auto' : width, justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+          ...(isMobile ? { borderRight: 'none' } : {}) }}>
           <div style={s.brandLeft}>
             <img src="/logo.png" alt="Taskmanager" style={{ width: 26, height: 26, objectFit: 'contain' }} />
-            {!collapsed && <span style={s.brandText}>Taskmanager</span>}
+            {!collapsed && !isMobile && <span style={s.brandText}>Taskmanager</span>}
           </div>
         </div>
 
-        {/* Page breadcrumb/title portals in here (fills the left side of the topbar). */}
-        <div style={s.headerSlot} ref={setSlotEl} />
+        {/* Page breadcrumb/title portals in here — hidden on mobile to keep the header clean. */}
+        <div style={{ ...s.headerSlot, ...(isMobile ? { display: 'none' } : {}) }} ref={setSlotEl} />
+        {isMobile && <div style={{ flex: 1 }} />}
 
         <div style={s.topRight}>
+          {isMobile && (
+            <button style={s.panelBtn} title="Menu" onClick={() => setNavOpen((o) => !o)}><MenuIcon size={20} /></button>
+          )}
           <NotificationBell />
         </div>
       </header>
 
       {/* ===== BODY: sidebar + main ===== */}
       <div style={s.body}>
+        {isMobile && navOpen && <div style={s.navBackdrop} onClick={() => setNavOpen(false)} />}
         {/* Collapsed: allow hover tooltips (icons only, so labels aren't visible).
             Expanded: suppress them — the text labels are already shown. */}
-        <aside style={{ ...s.sidebar, width }} {...(collapsed ? {} : { 'data-no-tip': true })}>
+        <aside {...(navCollapsed ? {} : { 'data-no-tip': true })}
+          style={{ ...s.sidebar, width: sidebarWidth,
+            ...(isMobile ? { position: 'fixed', top: 56, bottom: 0, left: 0, zIndex: 60,
+              transform: navOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s ease',
+              boxShadow: navOpen ? '4px 0 24px rgba(16,24,40,.2)' : 'none' } : {}) }}>
           <div style={s.navScroll}>
-            <nav style={s.nav}>
-              <DashboardsMenu collapsed={collapsed} />
-              {can('project.read') && <SpacesMenu collapsed={collapsed} />}
-              {can('task.read') && <FiltersMenu collapsed={collapsed} />}
-              {NAV.filter((n) => !n.permission || can(n.permission)).map(renderNav)}
-            </nav>
+            {isMobile ? (
+              <nav style={s.nav}>
+                {MOBILE_TABS.filter((t) => !t.permission || can(t.permission)).map((t) => (
+                  t.enabled ? (
+                    <NavLink key={t.label} to={t.to}
+                      className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                      style={({ isActive }) => ({ ...s.navItem, ...(isActive ? s.navActive : {}) })}>
+                      <span style={s.navIcon}><t.Icon size={18} /></span>
+                      <span style={s.navLabel}>{t.label}</span>
+                    </NavLink>
+                  ) : (
+                    <div key={t.label} style={{ ...s.navItem, opacity: 0.4, cursor: 'not-allowed' }} title="Available on desktop">
+                      <span style={s.navIcon}><t.Icon size={18} /></span>
+                      <span style={s.navLabel}>{t.label}</span>
+                    </div>
+                  )
+                ))}
+              </nav>
+            ) : (
+              <nav style={s.nav}>
+                <DashboardsMenu collapsed={navCollapsed} />
+                {can('project.read') && <SpacesMenu collapsed={navCollapsed} />}
+                {can('task.read') && <FiltersMenu collapsed={navCollapsed} />}
+                {NAV.filter((n) => !n.permission || can(n.permission)).map(renderNav)}
+              </nav>
+            )}
           </div>
 
           {/* Footer: signed-in user chip → the SAME dropdown (Profile/Customize/
               Log out) as the top-bar avatar, opening upward; plus the collapse toggle. */}
-          <div style={{ ...s.sidebarFooter, flexDirection: collapsed ? 'column-reverse' : 'row', gap: collapsed ? 6 : 4 }}>
-            <UserMenu user={user} variant="chip" collapsed={collapsed} placement="up"
+          <div style={{ ...s.sidebarFooter, flexDirection: navCollapsed ? 'column-reverse' : 'row', gap: navCollapsed ? 6 : 4 }}>
+            <UserMenu user={user} variant="chip" collapsed={navCollapsed} placement="up"
               onProfile={() => navigate('/profile')} onLogout={() => dispatch(logout())}
               onCustomize={() => setCustomizeOpen(true)} />
-            <button className="wg-user-chip" style={s.panelBtn} onClick={(e) => { e.currentTarget.blur(); toggle(); }}
-              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-              <IconPanel size={18} />
-            </button>
+            {!isMobile && (
+              <button className="wg-user-chip" style={s.panelBtn} onClick={(e) => { e.currentTarget.blur(); toggle(); }}
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+                <IconPanel size={18} />
+              </button>
+            )}
           </div>
         </aside>
 
-        <main style={s.main}>
+        <main style={{ ...s.main, ...(isMobile ? { padding: 0 } : {}) }}>
           <HeaderSlotContext.Provider value={slotEl}><Outlet /></HeaderSlotContext.Provider>
         </main>
       </div>
@@ -305,6 +361,7 @@ const s = {
 
   // --- body / sidebar ---
   body: { flex: 1, minHeight: 0, display: 'flex' },
+  navBackdrop: { position: 'fixed', top: 56, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,.4)', zIndex: 55 },
   sidebar: { background: 'var(--c-surface)', color: 'var(--c-text)', transition: 'width .32s cubic-bezier(.4,0,.2,1)',
     flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)', overflow: 'hidden' },
   navScroll: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' },

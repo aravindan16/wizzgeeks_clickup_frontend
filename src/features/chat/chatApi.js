@@ -21,6 +21,10 @@ export const chatApi = {
     fd.append('file', file);
     return apiClient.post('/chat/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, _silent: true }).then((r) => r.data);
   },
+  addMembers: (convId, memberIds) =>
+    apiClient.post(`/chat/conversations/${convId}/members`, { member_ids: memberIds }, SILENT).then((r) => r.data),
+  setFavorite: (convId, favorite) =>
+    apiClient.post(`/chat/conversations/${convId}/favorite`, { favorite }, SILENT).then((r) => r.data),
   setGroupAvatar: (convId, file) => {
     const fd = new FormData();
     fd.append('file', file);

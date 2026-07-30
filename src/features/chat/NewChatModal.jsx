@@ -7,9 +7,9 @@ import { chatApi } from './chatApi';
 const initials = (n) => (n || '?').split(/[\s@.]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 /** Start a direct message or create a group chat by picking from the contacts directory. */
-export default function NewChatModal({ open, onClose, onCreated }) {
+export default function NewChatModal({ open, onClose, onCreated, initialTab = 'direct' }) {
   const toast = useToast();
-  const [tab, setTab] = useState('direct');
+  const [tab, setTab] = useState(initialTab);
   const [contacts, setContacts] = useState([]);
   const [q, setQ] = useState('');
   const [groupName, setGroupName] = useState('');
@@ -18,9 +18,9 @@ export default function NewChatModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return;
-    setTab('direct'); setQ(''); setGroupName(''); setSelected(new Set());
+    setTab(initialTab); setQ(''); setGroupName(''); setSelected(new Set());
     chatApi.contacts().then(setContacts).catch(() => setContacts([]));
-  }, [open]);
+  }, [open, initialTab]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
