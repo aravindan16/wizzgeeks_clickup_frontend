@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon, Forward, MoreVertical, CheckCheck, CheckSquare, Check, User as UserIcon, Star } from 'lucide-react';
+import { MessageSquare, Users as UsersIcon, Plus, Bookmark, Pin, X, Smile, Image as ImageIcon, FileText, BarChart3, Send as SendIcon, Forward, MoreVertical, CheckCheck, CheckSquare, Check, User as UserIcon, Star, ChevronLeft } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import NewPollModal from './NewPollModal';
 import { useHeaderSlot } from '../../layouts/headerSlot';
@@ -59,6 +59,7 @@ export default function ChatPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [chatFilter, setChatFilter] = useState('all'); // 'all' | 'favorites'
   const [addMembersOpen, setAddMembersOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [forwarding, setForwarding] = useState(null); // array of messages to forward (null = closed)
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState([]); // selected message ids
@@ -88,6 +89,15 @@ export default function ChatPage() {
 
   const loadConversations = useCallback(() => chatApi.conversations().then(setConversations).catch(() => {}), []);
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  // On mobile, one pane at a time: list OR the open thread. Back returns to the list.
+  const showThread = !isMobile || !!activeId || savedView;
+  const goBack = () => { setActiveId(null); setSavedView(false); };
 
   const nearBottomRef = useRef(true); // is the user parked at the newest message?
   const openingRef = useRef(true);    // just opened a chat: force-stick to bottom until images settle
@@ -484,11 +494,11 @@ export default function ChatPage() {
   }
 
   return (
-    <div style={s.page}>
+    <div style={{ ...s.page, ...(isMobile ? { height: '100%', marginBottom: 0 } : {}) }}>
       {slotEl && createPortal(<span style={s.headerTitle}>Chat</span>, slotEl)}
-      <div style={s.shell}>
+      <div style={{ ...s.shell, ...(isMobile ? { border: 'none', borderRadius: 0 } : {}) }}>
         {/* ── Conversation list ── */}
-        <aside style={s.sidebar}>
+        <aside style={{ ...s.sidebar, ...(isMobile ? { width: '100%', borderRight: 'none', display: showThread ? 'none' : 'flex' } : {}) }}>
           <div style={s.sideHead}>
             {chatSelectMode ? (
               <>
@@ -569,10 +579,13 @@ export default function ChatPage() {
         </aside>
 
         {/* ── Right pane ── */}
-        <section style={s.thread}>
+        <section style={{ ...s.thread, ...(isMobile && !showThread ? { display: 'none' } : {}) }}>
           {savedView ? (
             <>
-              <div style={s.threadHead}><Bookmark size={18} /><div style={s.threadName}>Saved messages</div></div>
+              <div style={s.threadHead}>
+                {isMobile && <button className="icon-btn" style={s.iconBtn} title="Back" onClick={goBack}><ChevronLeft size={18} /></button>}
+                <Bookmark size={18} /><div style={s.threadName}>Saved messages</div>
+              </div>
               <div style={s.messages}>
                 {bookmarks.length === 0 ? <div style={s.msgHint}>No saved messages yet.</div>
                   : bookmarks.map((m) => <ChatMessage key={m.id} m={m} me={me} isGroup={false} actions={actions} />)}
@@ -587,6 +600,7 @@ export default function ChatPage() {
           ) : (
             <>
               <div style={s.threadHead}>
+                {isMobile && <button className="icon-btn" style={s.iconBtn} title="Back" onClick={goBack}><ChevronLeft size={18} /></button>}
                 {active.type === 'group'
                   ? (
                     <button type="button" style={s.groupAvatarBtn} title="Change group photo"
@@ -753,7 +767,9 @@ export default function ChatPage() {
             const other = isGroup ? {} : (active.members.find((mm) => mm.id !== me) || {});
             return (
               <div style={s.drawerBackdrop} onClick={() => setProfileOpen(false)}>
-                <aside className="wg-drawer-anim" style={s.drawer} onClick={(e) => e.stopPropagation()}>
+                <aside className={isMobile ? undefined : 'wg-drawer-anim'}
+                  style={{ ...s.drawer, ...(isMobile ? { width: '100%', maxWidth: '100%', boxShadow: 'none' } : {}) }}
+                  onClick={(e) => e.stopPropagation()}>
                   <div style={s.drawerHead}>
                     <span style={s.drawerTitle}>{isGroup ? 'Group info' : 'Contact info'}</span>
                     <button className="icon-btn" style={s.iconBtn} title="Close" onClick={() => setProfileOpen(false)}><X size={16} /></button>
