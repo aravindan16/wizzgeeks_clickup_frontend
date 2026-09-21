@@ -66,7 +66,7 @@ export default function CardFieldsMenu({ cf, customFields = [] }) {
     <div style={s.row}>
       <span style={s.rowLeft}>
         <span style={s.icon}><Ic size={15} /></span>
-        <span style={s.rowLabel} title={label}>{label}</span>
+        <span style={s.rowLabel}>{label}</span>
       </span>
       <Toggle on={on} onClick={onClick} />
     </div>

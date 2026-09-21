@@ -73,7 +73,7 @@ export default function RoleFormModal({ open, catalog, seed, onClose, onSaved })
                     {g.permissions.map((p) => (
                       <label key={p.key} style={s.permRow}>
                         <input type="checkbox" checked={selected.has(p.key)} onChange={() => toggle(p.key)} />
-                        <span style={s.permLabel} title={p.key}>{p.label}</span>
+                        <span style={s.permLabel}>{p.label}</span>
                       </label>
                     ))}
                   </div>

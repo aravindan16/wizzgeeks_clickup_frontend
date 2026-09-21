@@ -20,7 +20,10 @@ export default function CardFrame({ title, onRemove, onEdit, onExpand, fill = fa
           {onRemove && <button className="icon-btn" style={s.btn} title="Remove card" onMouseDown={stop} onClick={onRemove}><IconTrash size={15} /></button>}
         </span>
       </div>
-      <div style={fill ? s.bodyFill : undefined}>{children}</div>
+      <div
+        style={{ ...(fill ? s.bodyFill : {}), ...(onExpand ? s.bodyClick : {}) }}
+        onClick={onExpand || undefined}
+      >{children}</div>
     </div>
   );
 }
@@ -29,6 +32,7 @@ const s = {
   card: { background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 12, boxShadow: 'var(--sh-xs)', overflow: 'hidden' },
   cardFill: { height: '100%', display: 'flex', flexDirection: 'column' },
   bodyFill: { flex: 1, minHeight: 0, overflow: 'auto' },
+  bodyClick: { cursor: 'pointer' },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--c-border-2)' },
   titleWrap: { display: 'inline-flex', alignItems: 'center', gap: 6 },
   grip: { color: 'var(--c-faint)', display: 'inline-flex', cursor: 'grab' },

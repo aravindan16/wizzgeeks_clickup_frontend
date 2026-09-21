@@ -68,6 +68,7 @@ export default function DashboardsMenu({ collapsed }) {
   };
 
   const shareDashboard = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?share=1`); };
+  const addCardTo = (d) => { setRowMenu(null); navigate(`/dashboard/${d.id}?add=1`); };
 
   const startRename = (d) => { setRowMenu(null); setDraft(d.name || ''); setRenaming(d.id); };
   const commitRename = async (d) => {
@@ -95,7 +96,8 @@ export default function DashboardsMenu({ collapsed }) {
 
   if (collapsed) {
     return (
-      <button title="Dashboards" style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
+      <button title="Dashboards" className={`nav-item${location.pathname.startsWith('/dashboard') ? ' active' : ''}`}
+        style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/dashboard')}>
         <span style={s.navIcon}><IconDashboard size={18} /></span>
       </button>
     );
@@ -154,6 +156,9 @@ export default function DashboardsMenu({ collapsed }) {
                     onClick={() => { setHeaderMenu(false); setRowMenu(rowMenu === d.id ? null : d.id); }}><IconDots size={16} /></button>
                   {rowMenu === d.id && (
                     <div style={{ ...s.dropdown, top: 'calc(100% - 2px)', right: 4 }} role="menu">
+                      <button className="wg-menu-item" style={s.dropItem} onClick={() => addCardTo(d)}>
+                        <span style={s.dropIcon}><IconPlus size={15} /></span> Add card
+                      </button>
                       <button className="wg-menu-item" style={s.dropItem} onClick={() => startRename(d)}>
                         <span style={s.dropIcon}><IconEdit size={15} /></span> Rename
                       </button>
@@ -214,7 +219,7 @@ const s = {
 
   // collapsed
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none',
+    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', border: 'none',
     cursor: 'pointer', fontSize: 14 },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
 };

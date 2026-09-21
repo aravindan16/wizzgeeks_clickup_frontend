@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usersApi } from './usersApi';
 import UserModal from './UserModal';
@@ -8,9 +8,11 @@ import { useAuth } from '../auth/useAuth';
 import { useHeaderSlot } from '../../layouts/headerSlot';
 import Select from '../../components/Select';
 import ResizableTable from '../../components/ResizableTable';
+import { useConfirm } from '../../components/ConfirmDialog';
 
 export default function UserManagementPage() {
   const { can } = useAuth();
+  const confirm = useConfirm();
   const slotEl = useHeaderSlot();
   const [users, setUsers] = useState([]);      // the current page from the API
   const [total, setTotal] = useState(0);       // total matching rows (for the pager)
@@ -49,15 +51,25 @@ export default function UserManagementPage() {
   useEffect(() => { usersApi.roles().then(setRoles).catch(() => setRoles([])); }, []);
 
   const toggleStatus = async (u) => {
-    if (u.status === 'active') await usersApi.disable(u._id);
+    const disabling = u.status === 'active';
+    const ok = await confirm({
+      title: disabling ? `Disable ${u.full_name || 'user'}?` : `Activate ${u.full_name || 'user'}?`,
+      message: disabling
+        ? 'This user will be suspended and won’t be able to sign in until reactivated.'
+        : 'This user will be able to sign in again.',
+      confirmLabel: disabling ? 'Disable' : 'Activate',
+      danger: disabling,
+    });
+    if (!ok) return;
+    if (disabling) await usersApi.disable(u._id);
     else await usersApi.activate(u._id);
     load();
   };
 
   const columns = useMemo(() => [
-    { key: 'name', label: 'Name', width: 180, render: (u) => u.full_name },
-    { key: 'email', label: 'Email', width: 240, render: (u) => u.email },
-    { key: 'roles', label: 'Roles', width: 150, render: (u) => (u.roles || []).join(', ') },
+    { key: 'name', label: 'Name', width: 180, render: (u) => <OverflowText text={u.full_name} /> },
+    { key: 'email', label: 'Email', width: 240, render: (u) => <OverflowText text={u.email} /> },
+    { key: 'roles', label: 'Roles', width: 150, render: (u) => <OverflowText text={(u.roles || []).join(', ')} /> },
     { key: 'status', label: 'Status', width: 110, render: (u) => (
       <span className={`badge ${u.status === 'active' ? 'badge-ok' : 'badge-err'}`}>{u.status}</span>
     ) },
@@ -82,7 +94,7 @@ export default function UserManagementPage() {
   ], [can]);
 
   return (
-    <div>
+    <div style={s.page}>
       {slotEl && createPortal(<span style={s.headerTitle}>User Management</span>, slotEl)}
 
       <div style={s.filters}>
@@ -101,19 +113,22 @@ export default function UserManagementPage() {
 
       {error && <p style={{ color: '#991b1b' }}>{error}</p>}
 
-      <ResizableTable
-        columns={columns}
-        rows={users}
-        rowKey={(u) => u._id}
-        persistKey="wg-users-table"
-        emptyText={loading ? 'Loading…' : 'No users found.'}
-        serverMode
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        onPageChange={setPage}
-        onPageSizeChange={(n) => { setPageSize(n); setPage(0); }}
-      />
+      <div style={s.tableWrap}>
+        <ResizableTable
+          columns={columns}
+          rows={users}
+          rowKey={(u) => u._id}
+          persistKey="wg-users-table"
+          emptyText={loading ? 'Loading…' : 'No users found.'}
+          fillHeight
+          serverMode
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(0); }}
+        />
+      </div>
 
       <UserModal
         open={modal.open}
@@ -133,7 +148,39 @@ export default function UserManagementPage() {
   );
 }
 
+// Table cell that ellipsises its text and shows a tooltip with the full value
+// ONLY when the text is actually truncated. Measured at hover time (reliable) and
+// portaled to body so it can't be clipped by the table's overflow.
+function OverflowText({ text }) {
+  const ref = useRef(null);
+  const [tip, setTip] = useState(null); // { x, y }
+  const onEnter = () => {
+    const el = ref.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    const r = el.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <>
+      <span ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setTip(null)}
+        style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
+      {tip && createPortal(
+        <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: 'translate(-50%, -125%)',
+          pointerEvents: 'none', background: 'var(--c-text-strong)', color: 'var(--c-surface)',
+          padding: '5px 9px', borderRadius: 7, fontSize: 12, lineHeight: 1.25, whiteSpace: 'nowrap',
+          boxShadow: '0 4px 14px rgba(0,0,0,.22)', zIndex: 9999 }}>{text}</div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 const s = {
+  // Full-height column: filters stay on top, the table fills the rest so its pager pins
+  // to the bottom. The extra 24px (with marginBottom -24) consumes the app main's bottom
+  // padding so the pager sits flush at the very bottom of the screen.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', minHeight: 0, marginBottom: -24 },
+  tableWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
   filters: { display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' },
   input: { padding: '8px 11px', border: '1px solid var(--c-border)', borderRadius: 8, background: 'var(--c-surface)',
@@ -141,5 +188,5 @@ const s = {
   primary: { padding: '9px 16px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none',
     borderRadius: 8, fontWeight: 600, cursor: 'pointer' },
   iconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
-    background: 'none', border: 'none', borderRadius: 7, color: 'var(--c-muted)', cursor: 'pointer' },
+    border: 'none', borderRadius: 7, color: 'var(--c-muted)', cursor: 'pointer' },
 };

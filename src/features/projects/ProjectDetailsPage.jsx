@@ -55,6 +55,14 @@ export default function ProjectDetailsPage() {
   const [spaceFields, setSpaceFields] = useState([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Close the filter modal on Escape.
+  useEffect(() => {
+    if (!filterOpen) return undefined;
+    const onEsc = (e) => e.key === 'Escape' && setFilterOpen(false);
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [filterOpen]);
+
   // Views (List/Board/Table tabs) — persisted per Space, shared with the List board.
   const vs = useViews(id);
   const { activeId, setActiveId, updateView, activeView } = vs;
@@ -136,6 +144,10 @@ export default function ProjectDetailsPage() {
   // space can manage members (add/remove/change role) — no specific role needed.
   const isMember = memberIds.has(me);
   const canManage = isOwner || isMember || canManageGlobal;
+  // Adding / removing people is separately gated (backend requires these). Mirror the
+  // backend so the buttons only show when the action will actually succeed.
+  const canAddPeople = can('project.member.add') || canManageGlobal;
+  const canRemovePeople = can('project.member.remove') || canManageGlobal;
   const canArchive = can('project.update') || isOwner;
   // Only the person who created the space (owner) can delete it.
   const canDelete = isOwner;
@@ -177,7 +189,8 @@ export default function ProjectDetailsPage() {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <SpaceSettingsMenu onSpaceSetting={() => navigate(`/projects/${id}/settings`)} />
           {isMembersTab
-            ? (canManage ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setAddPeopleOpen(true)}>+ Add people</button> : null)
+            ? <button className="btn btn-primary" style={{ ...s.taskBtn, ...(canAddPeople ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }}
+                onClick={() => (canAddPeople ? setAddPeopleOpen(true) : toast.error("You don't have permission to add members"))}>+ Add people</button>
             : (can('task.create') && project.status !== 'archived'
                 ? <button className="btn btn-primary" style={s.taskBtn} onClick={() => setTaskOpen(true)}>+ Task</button>
                 : null)}
@@ -203,14 +216,34 @@ export default function ProjectDetailsPage() {
         </div>
       )}
 
-      {!isMembersTab && filterOpen && (
-        <div style={{ marginBottom: 14 }}>
-          <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
-        </div>
+      {!isMembersTab && filterOpen && createPortal(
+        <div style={s.filterBackdrop} onClick={() => setFilterOpen(false)}>
+          <div style={s.filterModal} onClick={(e) => e.stopPropagation()}>
+            <div style={s.filterModalHead}>
+              <span style={s.filterModalTitle}>
+                <IconFilter size={16} /> Filters
+                {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              </span>
+              <button type="button" className="icon-btn wg-x-btn" style={s.filterModalClose}
+                onClick={() => setFilterOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div style={s.filterModalBody}>
+              <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
+            </div>
+            <div style={s.filterModalFoot}>
+              <button type="button" className="wg-clear-btn"
+                onClick={() => { setFcards([newGroup()]); setFconj('AND'); }}>Clear all</button>
+              <button type="button" className="btn btn-primary" onClick={() => setFilterOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* Scrollable content area — header/tabs/toolbar above stay fixed */}
-      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea,
+        overflow: (isMembersTab || ['table', 'board', 'list'].includes(activeView?.type)) ? 'hidden' : 'auto',
+        ...((isMembersTab || activeView?.type === 'table') ? { display: 'flex', flexDirection: 'column' } : {}) }}>
       {!isMembersTab && activeView?.type === 'board' && (
         <KanbanBoard tasks={visibleTasks} onChanged={loadTasks} projectId={id} members={members}
           statuses={statuses} onOpenTask={setOpenTaskId} />
@@ -228,11 +261,11 @@ export default function ProjectDetailsPage() {
 
       {/* MEMBERS */}
       {isMembersTab && (
-        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet."
+        <ResizableTable persistKey="wg_space_members_cols" rowKey={(m) => m._id} rows={members} emptyText="No members yet." fillHeight
           columns={[
             { key: 'name', label: 'Name', width: 320, min: 140, render: (m) => m.full_name || '—' },
             { key: 'email', label: 'Email', width: 320, min: 140, render: (m) => <span style={{ color: 'var(--c-muted)' }}>{m.email || '—'}</span> },
-            ...(canManage ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
+            ...(canRemovePeople ? [{ key: 'actions', label: 'Actions', width: 120, min: 90, align: 'right',
               render: (m) => <button className="wg-danger-link" style={s.link} onClick={() => removeMember(m)}>Remove</button> }] : []),
           ]} />
       )}
@@ -260,7 +293,9 @@ const s = {
   // Full-height column: header/tabs/toolbar stay fixed, only viewArea scrolls.
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  // height compensates BOTH negative margins (14 top + 24 bottom) so the column spans
+  // the full viewport and the pager/scrollbar sits flush at the very bottom.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 38px)', marginTop: -14, marginBottom: -24 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
@@ -303,4 +338,18 @@ const s = {
   ghost: { padding: '8px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer' },
   danger: { padding: '8px 14px', background: '#fff', border: '1px solid #fca5a5', color: '#b91c1c', borderRadius: 8, cursor: 'pointer' },
   link: { border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: '5px 12px', borderRadius: 8 },
+
+  // Filter modal (opens as a centered dialog instead of pushing the board down).
+  filterBackdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 80,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' },
+  filterModal: { width: 720, maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+    background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)',
+    borderRadius: 14, boxShadow: 'var(--sh-lg)', overflow: 'hidden' },
+  filterModalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '14px 18px', borderBottom: '1px solid var(--c-border-2)' },
+  filterModalTitle: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  filterModalClose: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 4 },
+  filterModalBody: { padding: 18, overflowY: 'auto' },
+  filterModalFoot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '12px 18px', borderTop: '1px solid var(--c-border-2)' },
 };

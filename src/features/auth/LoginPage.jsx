@@ -68,6 +68,11 @@ export default function LoginPage() {
   );
 }
 
+// Brand/logo green. The login screen is pre-auth (no user yet), so it must NOT use
+// var(--c-primary) — that still carries the LAST user's accent. Pin it to the brand
+// colour so the Sign-in button/links are the logo colour for every visitor.
+const BRAND = '#16a34a';
+
 const styles = {
   wrap: {
     minHeight: '100dvh',
@@ -76,7 +81,7 @@ const styles = {
     justifyContent: 'center',
     padding: 24,
     boxSizing: 'border-box',
-    background: 'radial-gradient(1100px 520px at 50% -8%, color-mix(in srgb, var(--c-primary) 12%, transparent), transparent), var(--c-bg)',
+    background: `radial-gradient(1100px 520px at 50% -8%, color-mix(in srgb, ${BRAND} 12%, transparent), transparent), var(--c-bg)`,
   },
   card: {
     width: '100%',
@@ -100,14 +105,14 @@ const styles = {
   sub: { margin: '6px 0 0', color: 'var(--c-muted)', fontSize: 14 },
   label: { fontSize: 13, fontWeight: 600, color: 'var(--c-text)', marginBottom: 6, display: 'block' },
   labelRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 6 },
-  linkSm: { fontSize: 12.5, color: 'var(--c-primary)', textDecoration: 'none', fontWeight: 600 },
+  linkSm: { fontSize: 12.5, color: BRAND, textDecoration: 'none', fontWeight: 600 },
   input: {
     width: '100%', boxSizing: 'border-box', padding: '11px 13px',
     border: '1px solid var(--c-border)', borderRadius: 10, fontSize: 14,
     background: 'var(--c-surface)', color: 'var(--c-text)', marginBottom: 4,
   },
   button: {
-    marginTop: 18, padding: '12px', background: 'var(--c-primary)', color: 'var(--c-on-primary)',
+    marginTop: 18, padding: '12px', background: BRAND, color: '#ffffff',
     border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer',
     transition: 'filter .12s',
   },
@@ -117,5 +122,5 @@ const styles = {
     background: 'color-mix(in srgb, #ef4444 12%, transparent)', padding: '9px 11px', borderRadius: 8,
   },
   footer: { textAlign: 'center', marginTop: 18, fontSize: 13.5, color: 'var(--c-muted)' },
-  link: { color: 'var(--c-primary)', fontWeight: 600, textDecoration: 'none' },
+  link: { color: BRAND, fontWeight: 600, textDecoration: 'none' },
 };

@@ -57,7 +57,7 @@ export default function TaskListView({ tasks, members, statuses = [], onOpenTask
   ];
 
   return (
-    <ResizableTable persistKey="wg_task_list_cols" columns={columns} rows={tasks}
+    <ResizableTable persistKey="wg_task_list_cols" columns={columns} rows={tasks} fillHeight
       rowKey={(t) => t._id} onRowClick={(t) => open(t._id)}
       emptyText={(tasks || []).length === 0 ? 'No tasks yet.' : 'No matching work.'} />
   );

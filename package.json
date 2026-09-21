@@ -9,9 +9,12 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@fontsource/inter": "^5.2.8",
     "@reduxjs/toolkit": "^2.2.5",
     "axios": "^1.7.2",
+    "emoji-mart": "^5.6.0",
     "lucide-react": "^1.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

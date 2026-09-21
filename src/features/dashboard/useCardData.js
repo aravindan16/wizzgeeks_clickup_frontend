@@ -11,6 +11,24 @@ import { beginSilent, endSilent } from '../../services/apiClient';
 
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
+// Short-lived shared cache so the N cards on a dashboard don't each re-fetch the
+// SAME lists / tasks / space docs. It (a) dedupes concurrent requests by returning
+// the in-flight promise, and (b) reuses a result for a few seconds — enough to
+// collapse the burst when every card mounts at once. Failed requests are evicted
+// immediately so a retry isn't blocked. Read-only data only (never mutated by callers).
+const SHARED_TTL = 15000; // ms
+const _shared = new Map(); // key -> { at, promise }
+function shared(key, fetcher) {
+  const hit = _shared.get(key);
+  if (hit && Date.now() - hit.at < SHARED_TTL) return hit.promise;
+  const promise = fetcher();
+  _shared.set(key, { at: Date.now(), promise });
+  promise.catch(() => { if (_shared.get(key)?.promise === promise) _shared.delete(key); });
+  return promise;
+}
+// Bust the cache (e.g. after a task/list edit) so the next dashboard load is fresh.
+export function clearDashboardCache() { _shared.clear(); }
+
 /**
  * Loads the card's tracked units and derives the aggregates every card type needs.
  * Two source modes:
@@ -27,11 +45,11 @@ export function useCardData(card) {
     (async () => {
       beginSilent(); // background load — don't flash the global loader
       try {
-        const stCache = {}; // spaceId -> resolved statuses
+        const stCache = {}; // spaceId -> resolved statuses (per-card memo on top of the shared cache)
         const getSts = async (spaceId) => {
           if (!spaceId) return [];
           if (stCache[spaceId] === undefined) {
-            const sp = await projectsApi.get(spaceId).catch(() => null);
+            const sp = await shared('proj:' + spaceId, () => projectsApi.get(spaceId)).catch(() => null);
             stCache[spaceId] = sp ? resolveStatuses(sp) : [];
           }
           return stCache[spaceId];
@@ -73,12 +91,12 @@ export function useCardData(card) {
           // from that List's tasks through relationship custom fields, optionally filtered
           // to the chosen related Lists (Frontend / Backend …).
           rows = await Promise.all((card.tasks || []).map(async (meta) => {
-            const fields = await customFieldsApi.list(meta.spaceId, meta.id).catch(() => []);
+            const fields = await shared('cf:' + meta.spaceId + ':' + meta.id, () => customFieldsApi.list(meta.spaceId, meta.id)).catch(() => []);
             const relFields = (fields || []).filter((f) => f.type === 'relationship');
             const want = meta.lists || [];
             const useFields = want.length ? relFields.filter((f) => want.includes(f.location)) : relFields;
 
-            const res = await tasksApi.list({ list_id: meta.id, limit: 200 }).catch(() => ({ items: [] }));
+            const res = await shared('tasks:' + meta.id, () => tasksApi.list({ list_id: meta.id, limit: 200 })).catch(() => ({ items: [] }));
             const parents = res.items || [];
             const childGroup = {}; // childId -> related list name
             let childIds = [];
@@ -106,8 +124,8 @@ export function useCardData(card) {
         } else {
           rows = await Promise.all((card.lists || []).map(async (l) => {
             const [listDoc, res] = await Promise.all([
-              listsApi.get(l.id).catch(() => null),
-              tasksApi.list({ list_id: l.id, limit: 200 }).catch(() => ({ items: [] })),
+              shared('list:' + l.id, () => listsApi.get(l.id)).catch(() => null),
+              shared('tasks:' + l.id, () => tasksApi.list({ list_id: l.id, limit: 200 })).catch(() => ({ items: [] })),
             ]);
             const tasks = res.items || [];
             const spaceSts = await getSts(l.spaceId);

@@ -22,6 +22,7 @@ const FiltersIndex = lazy(() => import('./features/filters/FiltersIndex'));
 const FilterBulkPage = lazy(() => import('./features/filters/FilterBulkPage'));
 const TaskDetailsPage = lazy(() => import('./features/tasks/TaskDetailsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
+const ChatPage = lazy(() => import('./features/chat/ChatPage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
 
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardHome />} />
           <Route path="/dashboard/:id" element={<DashboardHome />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/chat" element={<ChatPage />} />
         </Route>
       </Route>
 

@@ -68,7 +68,8 @@ export default function FiltersMenu({ collapsed }) {
 
   if (collapsed) {
     return (
-      <button title="Filters" style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/filters')}>
+      <button title="Filters" className={`nav-item${location.pathname.startsWith('/filters') ? ' active' : ''}`}
+        style={{ ...s.navItem, ...s.navItemCollapsed }} onClick={() => navigate('/filters')}>
         <span style={s.navIcon}><IconFilter size={18} /></span>
       </button>
     );
@@ -177,6 +178,6 @@ const s = {
   divider: { height: 1, background: 'var(--c-border-2)', margin: '4px 0' },
 
   navItem: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', boxSizing: 'border-box',
-    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 },
+    padding: '9px 12px', borderRadius: 8, color: 'var(--c-muted)', border: 'none', cursor: 'pointer', fontSize: 14 },
   navItemCollapsed: { justifyContent: 'center', padding: '10px 0', gap: 0 },
 };

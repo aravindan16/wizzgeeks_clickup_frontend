@@ -69,6 +69,15 @@ export default function ProfilePage() {
     catch (err) { toast.error(err.response?.data?.error?.message || 'Upload failed'); }
   };
 
+  const removeAvatar = async () => {
+    try {
+      await usersApi.removeAvatar();
+      toast.success('Photo removed');
+      setProfile((p) => ({ ...p, avatar_url: null }));
+      dispatch(patchUser({ avatar_url: null }));
+    } catch (err) { toast.error(err.response?.data?.error?.message || 'Could not remove photo'); load(); }
+  };
+
   const pickColor = async (color) => {
     setProfile((p) => ({ ...p, avatar_color: color }));
     dispatch(patchUser({ avatar_color: color }));
@@ -98,6 +107,13 @@ export default function ProfilePage() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--c-text-strong)' }}>{profile.full_name}</div>
               <div style={{ color: 'var(--c-muted)' }}>{profile.email}</div>
+              {profile.avatar_url && (
+                <button type="button" onClick={removeAvatar}
+                  style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    color: 'var(--c-danger, #dc2626)', fontSize: 13, fontWeight: 600 }}>
+                  Remove photo
+                </button>
+              )}
             </div>
           </div>
 

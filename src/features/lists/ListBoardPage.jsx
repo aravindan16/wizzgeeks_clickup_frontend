@@ -66,6 +66,14 @@ export default function ListBoardPage() {
 
   useEffect(() => { labelsApi.list().then(setLabels).catch(() => setLabels([])); }, []);
 
+  // Close the filter modal on Escape.
+  useEffect(() => {
+    if (!filterOpen) return undefined;
+    const onEsc = (e) => e.key === 'Escape' && setFilterOpen(false);
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [filterOpen]);
+
   // Inline rename of the List from the header breadcrumb (like the dashboard header).
   const startRename = () => { setNameDraft(list?.name || ''); setEditingName(true); };
   const commitName = async () => {
@@ -191,13 +199,31 @@ export default function ListBoardPage() {
         <span style={{ color: '#6b7280', fontSize: 13 }}>{visibleTasks.length} of {tasks.length}</span>
       </div>
 
-      {filterOpen && (
-        <div style={{ marginBottom: 14 }}>
-          <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
-        </div>
+      {filterOpen && createPortal(
+        <div style={s.filterBackdrop} onClick={() => setFilterOpen(false)}>
+          <div style={s.filterModal} onClick={(e) => e.stopPropagation()}>
+            <div style={s.filterModalHead}>
+              <span style={s.filterModalTitle}>
+                <IconFilter size={16} /> Filters
+                {activeFilterCount > 0 && <span style={s.filterBadge}>{activeFilterCount}</span>}
+              </span>
+              <button type="button" className="icon-btn wg-x-btn" style={s.filterModalClose}
+                onClick={() => setFilterOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div style={s.filterModalBody}>
+              <FilterBuilder cards={fcards} onCards={setFcards} conj={fconj} onConj={setFconj} options={filterOptions} />
+            </div>
+            <div style={s.filterModalFoot}>
+              <button type="button" className="wg-clear-btn"
+                onClick={() => { setFcards([newGroup()]); setFconj('AND'); }}>Clear all</button>
+              <button type="button" className="btn btn-primary" onClick={() => setFilterOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
-      <div style={{ ...s.viewArea, overflow: activeView?.type === 'board' ? 'hidden' : 'auto' }}>
+      <div style={{ ...s.viewArea, overflow: 'hidden', ...(activeView?.type === 'table' ? { display: 'flex', flexDirection: 'column' } : {}) }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
             listId={list._id} members={members} statuses={statuses} onOpenTask={setOpenTaskId}
@@ -225,7 +251,9 @@ export default function ListBoardPage() {
 const s = {
   // height+negative margin consume the app's bottom padding so the board's
   // horizontal scrollbar sits at the very bottom of the viewport.
-  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 24px)', marginTop: -14, marginBottom: -24 },
+  // height compensates BOTH negative margins (14 top + 24 bottom) so the column spans
+  // the full viewport and the pager/scrollbar sits flush at the very bottom.
+  page: { display: 'flex', flexDirection: 'column', height: 'calc(100% + 38px)', marginTop: -14, marginBottom: -24 },
   crumbs: { display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 },
   crumbLink: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, fontWeight: 600, padding: 0 },
   crumbSep: { color: 'var(--c-faint)', fontSize: 15 },
@@ -245,4 +273,18 @@ const s = {
   filterBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px',
     borderRadius: 999, background: 'var(--c-primary)', color: 'var(--c-on-primary)', fontSize: 11, fontWeight: 700 },
   viewArea: { flex: 1, minHeight: 0, paddingRight: 2 },
+
+  // Filter modal (opens as a centered dialog instead of pushing the board down).
+  filterBackdrop: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 80,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' },
+  filterModal: { width: 720, maxWidth: '96vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+    background: 'var(--c-surface)', color: 'var(--c-text)', border: '1px solid var(--c-border)',
+    borderRadius: 14, boxShadow: 'var(--sh-lg)', overflow: 'hidden' },
+  filterModalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '14px 18px', borderBottom: '1px solid var(--c-border-2)' },
+  filterModalTitle: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 700, color: 'var(--c-text-strong)' },
+  filterModalClose: { background: 'none', border: 'none', color: 'var(--c-muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 4 },
+  filterModalBody: { padding: 18, overflowY: 'auto' },
+  filterModalFoot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    padding: '12px 18px', borderTop: '1px solid var(--c-border-2)' },
 };
