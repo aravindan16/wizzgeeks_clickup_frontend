@@ -20,7 +20,57 @@ export const tasksApi = {
   links: (id) => apiClient.get(`/tasks/${id}/links`).then((r) => r.data),
   addLink: (id, target_task_id, link_type) => apiClient.post(`/tasks/${id}/links`, { target_task_id, link_type }).then((r) => r.data),
   removeLink: (id, target_id) => apiClient.delete(`/tasks/${id}/links/${target_id}`).then((r) => r.data),
+  // time tracking (worklog)
+  timeEntries: (id) => apiClient.get(`/tasks/${id}/time-entries`).then((r) => r.data),
+  logTime: (id, payload, opts) => apiClient.post(`/tasks/${id}/time-entries`, payload, opts).then((r) => r.data),
+  deleteTimeEntry: (entryId) => apiClient.delete(`/tasks/time-entries/${entryId}`).then((r) => r.data),
 };
+
+// --- Task dates ---
+// start/end/due dates are stored as local "YYYY-MM-DD" (date only) or
+// "YYYY-MM-DDTHH:MM" (date + time). created_at/updated_at are full ISO timestamps.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Parse any task date into a local Date (date-only → local midnight). null if empty/invalid. */
+export function parseTaskDate(d) {
+  if (!d) return null;
+  const dt = DATE_ONLY.test(d) ? new Date(`${d}T00:00`) : new Date(d);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+/** True when the stored value carries a time-of-day ("YYYY-MM-DDTHH:MM"). */
+export const hasTime = (d) => !!d && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(d);
+
+/** "Jul 17" or "Jul 17, 6:30 PM" (time shown only when one was set). */
+export function fmtTaskDate(d, opts = {}) {
+  const dt = parseTaskDate(d);
+  if (!dt) return '';
+  const date = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(opts.year ? { year: 'numeric' } : {}) });
+  return hasTime(d) ? `${date}, ${dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : date;
+}
+
+// --- Durations (worklog) ---
+/** 150 → "2h 30m", 45 → "45m", 120 → "2h". */
+export function fmtMinutes(min) {
+  const m = Math.max(0, Math.round(min || 0));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (!h) return `${r}m`;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+
+/** Parse "2h 30m", "1h30", "2h", "45m", "1.5" (hours), "1:30" → minutes. null if invalid. */
+export function parseDuration(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return null;
+  let m;
+  if ((m = t.match(/^(\d+):(\d{1,2})$/))) return Number(m[1]) * 60 + Number(m[2]);
+  if ((m = t.match(/^(\d+(?:\.\d+)?)$/))) return Math.round(Number(m[1]) * 60);
+  if ((m = t.match(/^(\d+)\s*h(?:rs?|ours?)?\s*(\d{1,2})$/))) return Number(m[1]) * 60 + Number(m[2]); // "1h30"
+  m = t.match(/^(?:(\d+(?:\.\d+)?)\s*h(?:rs?|ours?)?)?\s*(?:(\d+)\s*m(?:ins?|inutes?)?)?$/);
+  if (!m || (m[1] == null && m[2] == null)) return null;
+  return Math.round(Number(m[1] || 0) * 60 + Number(m[2] || 0));
+}
 
 // Issue-link relationships, with the human label shown in the UI.
 export const LINK_TYPES = [

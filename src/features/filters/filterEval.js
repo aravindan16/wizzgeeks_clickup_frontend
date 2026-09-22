@@ -2,7 +2,27 @@
  * Client-side evaluation of a saved-filter builder tree (`cards` + `conj`) against
  * a task. Shared by the Filters page and dashboard cards that use a saved filter.
  */
-export const ruleActive = (r) => (Array.isArray(r.value) ? r.value.length > 0 : (r.value !== '' && r.value != null));
+export const ruleActive = (r) => {
+  const v = r.value;
+  if (Array.isArray(v)) return v.length > 0;
+  if (v && typeof v === 'object') return !!(v.from || v.to); // date range
+  return v !== '' && v != null;
+};
+
+// Date-range fields: value = { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', tz } (either end optional).
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Start / End date: a plain "YYYY-MM-DD" or an automatic UTC timestamp → local day.
+const taskDay = (t, field) => {
+  const raw = field === 'start_date' ? t.start_date : (t.end_date || t.due_date);
+  if (!raw) return null;
+  if (String(raw).includes('T')) { const d = new Date(raw); return Number.isNaN(d.getTime()) ? null : localDay(d); }
+  return String(raw).slice(0, 10);
+};
+function matchDateRange(t, field, v) {
+  const day = taskDay(t, field);
+  if (!day) return false;
+  return (!v.from || day >= v.from) && (!v.to || day <= v.to);
+}
 export const nodeActive = (n) => (n.type === 'group' ? n.children.some(nodeActive) : ruleActive(n));
 
 export function evalNode(node, t, ctx = {}) {
@@ -24,6 +44,10 @@ export function evalNode(node, t, ctx = {}) {
     } else {
       m = String(tv ?? '').toLowerCase().includes(String(node.value).toLowerCase());
     }
+    return neg ? !m : m;
+  }
+  if (node.field === 'start_date' || node.field === 'end_date') {
+    m = node.value && typeof node.value === 'object' ? matchDateRange(t, node.field, node.value) : true;
     return neg ? !m : m;
   }
   const vals = Array.isArray(node.value) ? node.value.map(String) : [String(node.value)];

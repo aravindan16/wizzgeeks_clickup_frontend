@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
-import { tasksApi, resolveStatuses, statusLabel, statusColor, PRIORITY_COLOR } from '../tasks/tasksApi';
+import { tasksApi, resolveStatuses, statusLabel, statusColor, PRIORITY_COLOR, fmtTaskDate } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
 import { listsApi } from '../lists/listsApi';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
@@ -16,6 +16,9 @@ import Select from '../../components/Select';
 import { IconTrash, IconPlus, IconChevronDown, IconSearch, IconUser, IconEdit, IconMembers, IconBoard, IconFilter, IconListCheck } from '../../components/icons';
 import { useConfirm } from '../../components/ConfirmDialog';
 import FilterShareModal from './FilterShareModal';
+import {
+  findContextSpaceId, findContextListId, statusesBySpace, buildStatusOptions, buildListOptions,
+} from './filterOptions';
 import ResizableTable from '../../components/ResizableTable';
 
 /**
@@ -245,25 +248,10 @@ export default function FiltersPage() {
   }, [routeId]); // eslint-disable-line
 
   // Context Space: the Space (or a List's Space) chosen in a rule — drives List & Status options.
-  const contextSpaceId = useMemo(() => {
-    let sid = '';
-    const scan = (n) => {
-      if (sid) return;
-      if (n.type === 'group') { n.children.forEach(scan); return; }
-      if (n.field === 'space' && ruleActive(n)) sid = String(n.value);
-      else if (n.field === 'list' && ruleActive(n)) { const l = lists.find((x) => n.value.map(String).includes(String(x._id))); if (l) sid = String(l.spaceId); }
-    };
-    cards.forEach(scan);
-    return sid;
-  }, [cards, lists]);
+  const contextSpaceId = useMemo(() => findContextSpaceId(cards, lists), [cards, lists]);
 
   // First selected List (for loading List-scoped custom fields).
-  const contextListId = useMemo(() => {
-    let lid = '';
-    const scan = (n) => { if (lid) return; if (n.type === 'group') n.children.forEach(scan); else if (n.field === 'list' && Array.isArray(n.value) && n.value.length) lid = String(n.value[0]); };
-    cards.forEach(scan);
-    return lid;
-  }, [cards]);
+  const contextListId = useMemo(() => findContextListId(cards), [cards]);
 
   // Custom fields (dropdown/text/relationship) of the chosen Space — filterable too.
   // Builder-only (never shown in the results table), so skip the fetch when the builder
@@ -289,9 +277,7 @@ export default function FiltersPage() {
       .catch(() => setCustomFields([]));
   }, [contextSpaceId, contextListId, builderShown, hasCfRule, cfWanted]);
 
-  const stsBySpace = useMemo(() => { const m = {}; projects.forEach((p) => { m[p._id] = resolveStatuses(p); }); return m; }, [projects]);
-  // A List can have its own custom status set; otherwise it inherits its Space's.
-  const listStatuses = (l) => ((l.status_mode === 'custom' && l.statuses?.length) ? resolveStatuses(l) : (stsBySpace[l.spaceId] || []));
+  const stsBySpace = useMemo(() => statusesBySpace(projects), [projects]);
   // Statuses to resolve a task's label/colour: its List's custom set (if any) + its Space's.
   const stsForTask = (t) => {
     const base = stsBySpace[t.project_id] || [];
@@ -303,50 +289,10 @@ export default function FiltersPage() {
     return merged;
   };
 
-  const statusOptions = useMemo(() => {
-    // Which Lists are selected anywhere in the filter? Base Status on THOSE lists.
-    const listIds = new Set();
-    const scan = (n) => { if (n.type === 'group') n.children.forEach(scan); else if (n.field === 'list' && Array.isArray(n.value)) n.value.forEach((id) => listIds.add(String(id))); };
-    cards.forEach(scan);
-    // Group the statuses BY LIST (each list can have its own custom workflow), so the
-    // dropdown shows e.g. "DEVELOPMENT → its statuses, EPIC → its statuses, …" with
-    // EVERY status listed under each list. Option values are namespaced `${listId}::${key}`
-    // so the SAME status key living in two lists stays independently selectable — ticking
-    // DEVELOPMENT's status must NOT tick EPIC's copy. The status eval below understands
-    // this `list::key` form (it matches the task's list AND status).
-    const grouped = (srcLists) => srcLists.flatMap((l) =>
-      listStatuses(l).map((st) => ({ value: `${l._id}::${st.key}`, label: st.name, group: l.name })));
-    if (listIds.size) return grouped(lists.filter((l) => listIds.has(String(l._id))));
-    if (contextSpaceId) {
-      // A SPACE is selected (no specific List): show every List of the Space, each with
-      // its full status set, grouped by List.
-      const spaceLists = lists.filter((l) => String(l.spaceId) === contextSpaceId);
-      if (spaceLists.length) return grouped(spaceLists);
-      return (stsBySpace[contextSpaceId] || []).map((st) => ({ value: st.key, label: st.name }));
-    }
-    // No space/list chosen → every space's statuses, grouped by SPACE. Each space
-    // shows the UNION of its lists' statuses (custom + inherited), deduped per space,
-    // so custom statuses like "Ready for deployment" show up too — not just the 3 defaults.
-    return projects.flatMap((p) => {
-      const spaceLists = lists.filter((l) => String(l.spaceId) === p._id);
-      const seen = {}; const out = [];
-      const add = (arr) => arr.forEach((st) => { if (!seen[st.key]) { seen[st.key] = 1; out.push({ value: st.key, label: st.name, group: p.name || p.key }); } });
-      if (spaceLists.length) spaceLists.forEach((l) => add(listStatuses(l)));
-      else add(stsBySpace[p._id] || []);
-      return out;
-    });
-  }, [cards, lists, contextSpaceId, stsBySpace, projects]);
+  const statusOptions = useMemo(() => buildStatusOptions({ cards, lists, projects, contextSpaceId, stsBySpace }),
+    [cards, lists, contextSpaceId, stsBySpace, projects]);
 
-  const listOptions = useMemo(() => {
-    // A Space is chosen → just its Lists (flat). Otherwise group the Lists BY SPACE
-    // (space name as the header) so the dropdown reads "Opbook360AI → its lists, …".
-    if (contextSpaceId) {
-      return lists.filter((l) => String(l.spaceId) === contextSpaceId).map((l) => ({ value: l._id, label: l.name }));
-    }
-    return [...lists]
-      .sort((a, b) => (a.spaceName || '').localeCompare(b.spaceName || '') || (a.name || '').localeCompare(b.name || ''))
-      .map((l) => ({ value: l._id, label: l.name, group: l.spaceName }));
-  }, [contextSpaceId, lists]);
+  const listOptions = useMemo(() => buildListOptions(lists, contextSpaceId), [contextSpaceId, lists]);
   const userName = (id) => users.find((u) => String(u.user_id) === String(id))?.full_name || users.find((u) => String(u.user_id) === String(id))?.email || '—';
   const spaceName = (id) => projects.find((p) => String(p._id) === String(id))?.name || projects.find((p) => String(p._id) === String(id))?.key || '—';
 
@@ -442,7 +388,7 @@ export default function FiltersPage() {
   }, [activeCount, treeSig, cards, cardsConj, page, pageSize, absorbRefs]);
 
   // Result table columns — defaults from COL_DEFS, cell renderers close over helpers.
-  const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—');
+  const shortDate = (d) => fmtTaskDate(d) || '—';
   const RENDERERS = {
     key: (t) => <span style={s.key}>{t.key}</span>,
     title: (t) => <OverflowText text={t.title} style={s.name} />,
