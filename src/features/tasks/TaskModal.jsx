@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
-import { tasksApi, resolveStatuses } from './tasksApi';
+import { tasksApi, resolveStatuses, fmtTaskDate } from './tasksApi';
 
 const NO_PERM_MSG = 'You do not have permission to perform this action.';
 import { projectsApi } from '../projects/projectsApi';
@@ -15,7 +15,7 @@ import {
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-const shortDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+const shortDate = fmtTaskDate;
 
 // ClickUp priorities → our values.
 const PRIORITY_OPTS = [

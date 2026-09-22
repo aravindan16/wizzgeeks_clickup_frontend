@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   tasksApi, STATUS_LABELS, PRIORITIES, LINK_TYPES, LINK_LABELS,
-  resolveStatuses, statusLabel,
+  resolveStatuses, statusLabel, fmtMinutes, parseDuration, hasTime, parseTaskDate,
 } from './tasksApi';
 import { projectsApi } from '../projects/projectsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
@@ -86,6 +86,10 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const [addingLink, setAddingLink] = useState(false);
   const [linkType, setLinkType] = useState('relates_to');
   const [linkTarget, setLinkTarget] = useState('');
+  const [timeInput, setTimeInput] = useState(''); // "1h30", "2h" … logged for today on Enter
+  const [savingTime, setSavingTime] = useState(false);
+  const [timeEntries, setTimeEntries] = useState([]); // each logged entry (newest first)
+  const [showAllTime, setShowAllTime] = useState(false); // time log list: first 5 unless expanded
 
   const load = useCallback(async () => {
     // Silent: this whole batch (opening the panel, or refreshing after an action)
@@ -96,7 +100,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
       setTask(t);
       setTitleVal(t.title); setDescVal(t.description || ''); setLabelsVal((t.labels || []).join(', '));
       setFieldValues(t.custom_fields || {});
-      const [ms, cs, act, subs, lks, sibs, proj, cf] = await Promise.all([
+      const [ms, cs, act, subs, lks, sibs, proj, cf, te] = await Promise.all([
         projectsApi.members(t.project_id).catch(() => []),
         tasksApi.comments(taskId).catch(() => []),
         tasksApi.activity(taskId).catch(() => []),
@@ -105,7 +109,9 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
         tasksApi.list({ project_id: t.project_id, limit: 200 }).then((r) => r.items || []).catch(() => []),
         statusesProp?.length ? Promise.resolve(null) : projectsApi.get(t.project_id).catch(() => null),
         customFieldsApi.list(t.project_id, t.list_id, t._id).catch(() => []),
+        tasksApi.timeEntries(taskId).catch(() => []),
       ]);
+      setTimeEntries(sortEntries(te));
       setFetchedMembers(ms); setComments(cs); setActivity(act);
       setSubtasks(subs); setLinks(lks); setSiblings(sibs); setFetchedProject(proj);
       // Hide inherited Space fields disabled for this List.
@@ -157,6 +163,42 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
     catch (err) { toast.error(err.response?.data?.error?.message || NO_PERM); load(); }
   };
 
+  // --- time tracking ---
+  // Time log: type a duration ("1h30", "2h", "45m") and press Enter → logged for today.
+  const logTime = async () => {
+    const text = timeInput.trim();
+    if (!text || savingTime) return;
+    const minutes = parseDuration(text);
+    if (!minutes || minutes < 1) { toast.error('Enter time like 1h30, 2h or 45m'); return; }
+    if (minutes > 24 * 60) { toast.error('A single entry can be at most 24h'); return; }
+    setSavingTime(true);
+    try {
+      const created = await tasksApi.logTime(taskId, { minutes, work_date: localToday() }, { _silent: true });
+      setTimeEntries((arr) => sortEntries([created, ...arr]));
+      setTask((t) => ({ ...t, actual_hours: Math.round(((t.actual_hours || 0) + minutes / 60) * 100) / 100 }));
+      setTimeInput('');
+      toast.success(`Logged ${fmtMinutes(minutes)}`);
+      onChanged?.(); refreshActivity();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Could not log time');
+    } finally {
+      setSavingTime(false);
+    }
+  };
+  const deleteTimeEntry = async (entry) => {
+    const ok = await confirm({ title: 'Delete time entry?', message: `${fmtMinutes(entry.minutes)} added ${fmtDate(entry.created_at)} will be removed from the total.`,
+      confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
+    try {
+      await tasksApi.deleteTimeEntry(entry._id);
+      setTimeEntries((arr) => arr.filter((x) => x._id !== entry._id));
+      setTask((t) => ({ ...t, actual_hours: Math.max(0, Math.round(((t.actual_hours || 0) - entry.minutes / 60) * 100) / 100) }));
+      onChanged?.(); refreshActivity();
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Could not delete time entry');
+    }
+  };
+
   // Description auto-saves silently (no loader): debounced while typing + on blur.
   // Doesn't reload the task (that would reset the textarea mid-edit) — just an
   // optimistic update + a background refresh of the parent board.
@@ -180,7 +222,12 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const move = async (to) => {
     if (to === task.status) return;
     setTask((t) => ({ ...t, status: to })); // optimistic
-    try { await tasksApi.changeStatus(taskId, { to_status: to }, { _silent: true }); onChanged?.(); refreshActivity(); }
+    try {
+      const upd = await tasksApi.changeStatus(taskId, { to_status: to }, { _silent: true });
+      // The server may auto-set start/end dates (Active → start, Done/Closed → end).
+      if (upd) setTask((t) => ({ ...t, start_date: upd.start_date, end_date: upd.end_date }));
+      onChanged?.(); refreshActivity();
+    }
     catch (err) { toast.error(err.response?.data?.error?.message || 'Could not change status'); load(); }
   };
   const assign = async (uid) => {
@@ -246,6 +293,7 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   const linkedIds = new Set([taskId, ...links.map((l) => l.task_id)]);
   const linkCandidates = siblings.filter((s) => !linkedIds.has(s._id));
   const subDone = subtasks.filter((s) => DONE.has(s.status)).length;
+  const loggedMin = Math.round((task.actual_hours || 0) * 60);
 
   // merged "All" activity feed (comments + audit events), newest first
   const feed = [
@@ -479,18 +527,20 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
             </Field>
 
-            <Field label="Start date">
-              <input type="date" style={s.fieldSelect} value={task.start_date || ''} disabled={!canEdit}
-                max={task.end_date || undefined}
+            <Field label="Start date" top={hasTime(task.start_date)}>
+              <input type="date" style={s.fieldSelect} value={dayOf(task.start_date)} disabled={!canEdit}
+                max={dayOf(task.end_date) || undefined}
                 onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not supported */ } }}
                 onChange={(e) => save({ start_date: e.target.value || null })} />
+              {hasTime(task.start_date) && <div style={s.autoStamp}>Started {fmtDate(task.start_date)}</div>}
             </Field>
 
-            <Field label="End date">
-              <input type="date" style={s.fieldSelect} value={task.end_date || ''} disabled={!canEdit}
-                min={task.start_date || undefined}
+            <Field label="End date" top={hasTime(task.end_date)}>
+              <input type="date" style={s.fieldSelect} value={dayOf(task.end_date)} disabled={!canEdit}
+                min={dayOf(task.start_date) || undefined}
                 onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* not supported */ } }}
                 onChange={(e) => save({ end_date: e.target.value || null, due_date: e.target.value || null })} />
+              {hasTime(task.end_date) && <div style={s.autoStamp}>Completed {fmtDate(task.end_date)}</div>}
             </Field>
 
             <Field label="Reporter">
@@ -507,7 +557,35 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
                 </span>
               )}
             </Field>
+
+            <Field label="Time log" top>
+              <div style={{ width: '100%' }}>
+                {canEdit && (
+                  <input style={s.fieldSelect} placeholder="e.g. 1h30 or 2h — press Enter" value={timeInput}
+                    disabled={savingTime} onChange={(e) => setTimeInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); logTime(); } }} />
+                )}
+                <div style={s.timeTotal}>
+                  Total: <strong style={{ color: 'var(--c-text-strong)' }}>{fmtMinutes(loggedMin)}</strong>
+                </div>
+                {/* Every entry that makes up the total: how much, who, and when it was added. */}
+                {timeEntries.length > 0 && (
+                  <div style={s.timeList}>
+                    {(showAllTime ? timeEntries : timeEntries.slice(0, TIME_PREVIEW)).map((te) => (
+                      <TimeEntryRow key={te._id} entry={te} who={te.user_name || nameOf(te.user_id) || 'User'}
+                        canDelete={te.user_id === me || can('project.update')} onDelete={() => deleteTimeEntry(te)} />
+                    ))}
+                    {timeEntries.length > TIME_PREVIEW && (
+                      <button style={s.timeMore} onClick={() => setShowAllTime((v) => !v)}>
+                        {showAllTime ? 'Show less' : `Show ${timeEntries.length - TIME_PREVIEW} more`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Field>
           </div>
+
         </aside>
       </div>
       </div>
@@ -515,10 +593,66 @@ export default function TaskDetail({ taskId, onClose, onChanged, members: member
   );
 }
 
-function Field({ label, children }) {
+const TIME_PREVIEW = 5; // time log entries shown before "Show more"
+
+/**
+ * One time-log entry, worded like the Activity feed:
+ *   "+50m Aravindan kumar time log 50m added on Sep 21, 2026 · Sep 21, 2026, 04:31 PM"
+ * Single line; when it's cut off, hovering shows the full text (app tooltip).
+ */
+function TimeEntryRow({ entry, who, canDelete, onDelete }) {
+  const ref = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+  const dur = fmtMinutes(entry.minutes);
+  const full = `+${dur} ${who} time log ${dur} added on ${fmtDay(entry.work_date)} · ${fmtDate(entry.created_at)}`;
+  // Measure before hover so the global tooltip already sees data-tip on first mouseover.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [full]);
   return (
-    <div style={s.fieldRow}>
-      <span style={s.fieldLabel}>{label}</span>
+    <div style={s.timeEntry}>
+      <span ref={ref} style={s.timeText} {...(truncated ? { 'data-tip': full } : {})}>
+        <strong style={s.timeAdd}>+{dur}</strong> <strong>{who}</strong> time log <strong>{dur}</strong> added on{' '}
+        {fmtDay(entry.work_date)} <span style={s.timeWhen}>· {fmtDate(entry.created_at)}</span>
+      </span>
+      {canDelete && <button style={s.timeX} title="Delete this entry" onClick={onDelete}>✕</button>}
+    </div>
+  );
+}
+
+// Time-log entries, newest first (by when they were added).
+const sortEntries = (arr) => [...(arr || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+// A task date as the local "YYYY-MM-DD" a date input needs. Automatic timestamps
+// (UTC, set when the status moved to Active / Done) are converted to the local day.
+const dayOf = (v) => {
+  if (!v) return '';
+  if (!hasTime(v)) return String(v).slice(0, 10);
+  const d = parseTaskDate(v);
+  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+};
+
+// Local-time "YYYY-MM-DD" for today (not UTC — matters just after midnight in IST).
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// "2026-09-21" → "21 Sep 2026"
+const fmtDay = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+
+// `top`: pin the label to the first line (the input) instead of centring it against
+// tall content such as the Time log's entry list.
+function Field({ label, children, top = false }) {
+  return (
+    <div style={{ ...s.fieldRow, ...(top ? { alignItems: 'flex-start' } : {}) }}>
+      <span style={{ ...s.fieldLabel, ...(top ? s.fieldLabelTop : {}) }}>{label}</span>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
   );
@@ -581,6 +715,7 @@ function CommentRow({ c, me, editingComment, setEditingComment, saveEdit, delCom
 const FIELD_LABEL = {
   title: 'Title', description: 'Description', priority: 'Priority',
   due_date: 'Due date', labels: 'Labels', type: 'Type', estimate_hours: 'Estimate',
+  start_date: 'Start date', end_date: 'End date',
 };
 
 // Maps an audit-log entry to a human sentence + optional detail node.
@@ -611,6 +746,10 @@ function describeActivity(a, nameOf) {
       return { verb: <>linked a work item</> };
     case 'task.link_removed':
       return { verb: <>removed a link</> };
+    case 'task.time_logged':
+      return { verb: <>logged <strong>{fmtMinutes(m.minutes)}</strong>{m.work_date ? <> on {fmtDay(m.work_date)}</> : null}</> };
+    case 'task.time_deleted':
+      return { verb: <>deleted a time entry{m.minutes ? <> of <strong>{fmtMinutes(m.minutes)}</strong></> : null}</> };
     case 'task.archived':
       return { verb: <>archived this work item</> };
     case 'task.deleted':
@@ -715,11 +854,23 @@ const s = {
   statusTop: { width: '100%', padding: '10px 12px', border: '1px solid var(--c-border)', borderRadius: 8, fontWeight: 600, fontSize: 14, background: 'var(--c-hover)' },
   fieldRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--c-border)' },
   fieldLabel: { width: 90, color: 'var(--c-muted)', fontSize: 13, flexShrink: 0 },
+  autoStamp: { marginTop: 4, fontSize: 12, color: 'var(--c-muted)' },
+  fieldLabelTop: { lineHeight: '33px' }, // = the input's height, so the label sits level with it
   fieldSelect: { padding: '7px 9px', border: '1px solid var(--c-border)', borderRadius: 7, fontSize: 14, width: '100%', boxSizing: 'border-box', background: 'var(--c-surface)', color: 'var(--c-text)' },
   assignMe: { background: 'none', border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', fontSize: 12, padding: '4px 0 0' },
   person: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14 },
   btn: { padding: '7px 14px', background: 'var(--c-primary)', color: 'var(--c-on-primary)', border: 'none', borderRadius: 8, cursor: 'pointer' },
   btnGhost: { padding: '7px 14px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--c-text)' },
+  timeTotal: { marginTop: 4, fontSize: 12, color: 'var(--c-muted)' },
+  timeList: { marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 },
+  timeEntry: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 0', borderTop: '1px dashed var(--c-border)' },
+  timeText: { flex: 1, minWidth: 0, color: 'var(--c-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  timeAdd: { color: 'var(--c-primary)' },
+  timeWhen: { color: 'var(--c-faint)' },
+  timeMore: { alignSelf: 'flex-start', marginTop: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+    fontSize: 12, fontWeight: 600, color: 'var(--c-text-strong)' },
+  timeX: { background: 'none', border: 'none', color: 'var(--c-faint)', cursor: 'pointer', fontSize: 11, padding: 0, flexShrink: 0 },
+
   link: { background: 'none', border: 'none', color: 'var(--c-text-strong)', cursor: 'pointer', padding: 0, fontSize: 13 },
   linkDanger: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontSize: 13 },
 };

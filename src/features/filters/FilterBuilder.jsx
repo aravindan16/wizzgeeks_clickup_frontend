@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import Select from '../../components/Select';
 import { IconPlus, IconTrash, IconUser, IconSearch, IconChevronDown } from '../../components/icons';
 
@@ -24,7 +24,11 @@ export const FIELDS = [
   { key: 'assignee', label: 'Assignee' },
   { key: 'reporter', label: 'Reporter' },
   { key: 'label', label: 'Label' },
+  { key: 'start_date', label: 'Start date' },
+  { key: 'end_date', label: 'End date' },
 ];
+export const DATE_FIELDS = new Set(['start_date', 'end_date']);
+const DATE_OPS = [{ value: 'is', label: 'Between' }, { value: 'is_not', label: 'Not between' }];
 export const MULTI_FIELDS = new Set(['list', 'type', 'status', 'assignee', 'reporter', 'label']);
 export const AND_OR = [{ value: 'AND', label: 'AND' }, { value: 'OR', label: 'OR' }];
 export const emptyValue = (field) => (MULTI_FIELDS.has(field) ? [] : '');
@@ -56,7 +60,12 @@ const removeFromTree = (node, id) => {
     .filter((c) => !(c.type === 'group' && c.children.length === 0));
   return { ...node, children };
 };
-export const ruleActive = (r) => (Array.isArray(r.value) ? r.value.length > 0 : (r.value !== '' && r.value != null));
+export const ruleActive = (r) => {
+  const v = r.value;
+  if (Array.isArray(v)) return v.length > 0;
+  if (v && typeof v === 'object') return !!(v.from || v.to); // date range
+  return v !== '' && v != null;
+};
 export const nodeActive = (n) => (n.type === 'group' ? n.children.some(nodeActive) : ruleActive(n));
 
 // Count active rules across all cards (for a "Filter" badge).
@@ -170,7 +179,7 @@ function RuleCols({ rule, setNode, onValue, onRemove, options, usedFields }) {
         <Select value={rule.field} onChange={(v) => set({ field: v, value: emptyFor(v) })} options={fieldOpts} />
       </div>
       <div style={g.opCol}>
-        <Select value={rule.op} onChange={(v) => set({ op: v })} options={OPS} />
+        <Select value={rule.op} onChange={(v) => set({ op: v })} options={DATE_FIELDS.has(rule.field) ? DATE_OPS : OPS} />
       </div>
       <div style={g.valCol}>
         <ValueEditor rule={rule} setVal={setVal} options={options} />
@@ -198,6 +207,7 @@ function ValueEditor({ rule, setVal, options }) {
       .map((t) => ({ value: t._id, label: `${t.key ? t.key + ' · ' : ''}${t.title || ''}` }));
     return <MultiSelect active={active} value={arr} onChange={setVal} options={opts} placeholder="Select tasks" />;
   }
+  if (DATE_FIELDS.has(rule.field)) return <DateRangeFilter value={rule.value} onChange={setVal} />;
   if (rule.field === 'space')
     return <Select placeholder="Select option" value={rule.value} onChange={setVal}
       options={(options.projects || []).map((p) => ({ value: p._id, label: p.name || p.key }))} />;
@@ -211,6 +221,26 @@ function ValueEditor({ rule, setVal, options }) {
     return <MultiSelect active={active} value={arr} onChange={setVal} options={options.labels || []} placeholder="Select labels" />;
   return <UserPicker active={active} value={arr} onChange={setVal} users={options.users || []}
     myId={options.myId} allowUnassigned={rule.field === 'assignee'} />;
+}
+
+// From / To dates (either optional). Stored as { from, to, tz } — tz lets the server
+// bucket timestamps into the user's local day; both empty → '' (rule inactive).
+function DateRangeFilter({ value, onChange }) {
+  const v = value && typeof value === 'object' ? value : {};
+  const update = (patch) => {
+    const next = { from: v.from || '', to: v.to || '', ...patch };
+    onChange(next.from || next.to ? { ...next, tz: new Date().getTimezoneOffset() } : '');
+  };
+  const openPicker = (e) => { try { e.currentTarget.showPicker?.(); } catch { /* unsupported */ } };
+  return (
+    <div style={g.dateRange}>
+      <input type="date" className="wg-select-trigger" style={{ ...g.trigger, ...g.dateInput }} value={v.from || ''}
+        max={v.to || undefined} title="From" onClick={openPicker} onChange={(e) => update({ from: e.target.value })} />
+      <span style={g.dateSep}>to</span>
+      <input type="date" className="wg-select-trigger" style={{ ...g.trigger, ...g.dateInput }} value={v.to || ''}
+        min={v.from || undefined} title="To" onClick={openPicker} onChange={(e) => update({ to: e.target.value })} />
+    </div>
+  );
 }
 
 function TextFilter({ value, onChange }) {
@@ -241,12 +271,19 @@ function MultiSelect({ value, onChange, options, placeholder, active }) {
       {open && (
         <div style={g.pop}>
           {options.length === 0 && <div style={g.popEmpty}>No options</div>}
-          {options.map((o) => (
-            <button key={o.value} type="button" style={g.popItem} onClick={() => toggle(o.value)}>
-              <span style={{ ...g.checkbox, ...(value.includes(o.value) ? g.checkboxOn : {}) }}>{value.includes(o.value) ? '✓' : ''}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
-            </button>
-          ))}
+          {/* Options may carry a `group` (e.g. the List a status belongs to) → rendered as headers. */}
+          {(() => { let prev = null; return options.map((o, i) => {
+            const showHeader = o.group && o.group !== prev; prev = o.group;
+            return (
+              <Fragment key={`${o.group || ''}::${o.value}::${i}`}>
+                {showHeader && <div style={g.groupHeader}>{o.group}</div>}
+                <button type="button" style={g.popItem} onClick={() => toggle(o.value)}>
+                  <span style={{ ...g.checkbox, ...(value.includes(o.value) ? g.checkboxOn : {}) }}>{value.includes(o.value) ? '✓' : ''}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                </button>
+              </Fragment>
+            );
+          }); })()}
         </div>
       )}
     </div>
@@ -332,6 +369,10 @@ const g = {
   addFilter: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 600 },
   trigger: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', height: 38, padding: '0 12px', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   pop: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 40, minWidth: 240, maxWidth: 320, maxHeight: 280, overflowY: 'auto', background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(16,24,40,.16)', padding: 6 },
+  dateRange: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' },
+  dateInput: { flex: 1, minWidth: 0, cursor: 'pointer', fontFamily: 'inherit' },
+  dateSep: { fontSize: 13, color: 'var(--c-muted)', flexShrink: 0 },
+  groupHeader: { padding: '8px 10px 4px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--c-faint)' },
   popItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--c-text)' },
   popEmpty: { padding: '10px 12px', fontSize: 13, color: 'var(--c-muted)' },
   checkbox: { width: 18, height: 18, borderRadius: 5, border: '1px solid var(--c-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', flexShrink: 0 },

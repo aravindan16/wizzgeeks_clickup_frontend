@@ -25,6 +25,7 @@ const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const ChatPage = lazy(() => import('./features/chat/ChatPage'));
 const SettingsPage = lazy(() => import('./features/system/SettingsPage'));
 const PermissionsPage = lazy(() => import('./features/permissions/PermissionsPage'));
+const ExportPage = lazy(() => import('./features/export/ExportPage'));
 
 // Lightweight fallback shown while a route chunk loads.
 // Fixed, viewport-centered so it sits exactly where the GlobalLoader spinner is —
@@ -100,6 +101,7 @@ export default function App() {
           <Route path="/filters/:id" element={<FiltersPage />} />
           <Route path="/bulk-edit" element={<FilterBulkPage />} />
           <Route path="/tasks/:id" element={<TaskDetailsPage />} />
+          <Route path="/export" element={<ExportPage />} />
         </Route>
       </Route>
 

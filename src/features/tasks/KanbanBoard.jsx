@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { tasksApi, PRIORITY_COLOR, isDoneStatus } from './tasksApi';
+import { tasksApi, PRIORITY_COLOR, isDoneStatus, fmtTaskDate } from './tasksApi';
 import { useAuth } from '../auth/useAuth';
 
 // Title clamped to 2 lines — only expose a hover tooltip when it actually overflows.
@@ -240,11 +240,12 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
     setBoard((b) => b.map((t) => (t._id === id ? { ...t, status } : t)));
     try {
       // ClickUp-style: tasks move freely between any of the space's statuses.
-      // _silent so the global loader doesn't flash, and we DON'T refetch — the
-      // optimistic move already reflects the change, so the board never blinks /
-      // re-renders the whole page on drop. (Cache is cleared by the mutation, so
-      // counts self-heal on the next load/navigation.)
+      // _silent so the global loader doesn't flash. Then sync the PARENT's task list:
+      // the board re-seeds from the parent whenever it re-renders (e.g. opening a
+      // task), so skipping this showed the old status again until a page refresh.
+      // The refetch returns the same order/status, so the board doesn't blink.
       await tasksApi.changeStatus(id, { to_status: status }, { _silent: true });
+      onChanged?.();
     } catch (err) {
       setBoard(prev); // roll back the optimistic move
       setError(err.response?.data?.error?.message || 'Could not move task');
@@ -325,7 +326,7 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                     {cfv.type && <span style={s.metaChip} data-tip="Task type"><TaskTypeIcon type={t.type} size={12} /> {(t.type || 'task').charAt(0).toUpperCase() + (t.type || 'task').slice(1)}</span>}
                     {/* Dates in order: created · due. Calendar icon + hover tooltip. */}
                     {cfv.created_at && <span style={s.metaChip} data-tip="Date created (read-only)"><IconCalendar size={12} />{t.created_at && shortDate(t.created_at)}</span>}
-                    {cfv.due_date && <span style={s.metaChip} data-tip="Due date"><IconCalendar size={12} />{t.due_date && shortDate(t.due_date)}</span>}
+                    {cfv.due_date && <span style={s.metaChip} data-tip="Due date"><IconCalendar size={12} />{t.due_date && fmtTaskDate(t.due_date)}</span>}
                     {cfv.closed_at && (() => {
                       const cd = t.completed_at || t.closed_at || (isDoneStatus(statuses, t.status) ? t.updated_at : null);
                       return <span style={s.metaChip} data-tip="Date closed (read-only)"><IconCalendar size={12} />{cd && shortDate(cd)}</span>;

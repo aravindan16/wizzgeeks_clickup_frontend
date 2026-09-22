@@ -14,13 +14,14 @@ import {
   IconMembers, IconSettings,
   IconHelp, IconChevronDown, IconPanel, IconUser, IconLogout,
 } from '../components/icons';
-import { ShieldCheck, MessageSquare, Menu as MenuIcon, LayoutGrid, Layers, Filter } from 'lucide-react';
+import { ShieldCheck, MessageSquare, Menu as MenuIcon, LayoutGrid, Layers, Filter, Download } from 'lucide-react';
 import ThemeCustomizer from '../components/ThemeCustomizer';
 import { syncFromUser } from '../services/theme';
 
 // Sidebar Permission glyph — Lucide, tuned to the app's 1.9 stroke.
 const IconPermission = ({ size = 18 }) => <ShieldCheck size={size} strokeWidth={1.9} />;
 const IconChat = ({ size = 18 }) => <MessageSquare size={size} strokeWidth={1.9} />;
+const IconExport = ({ size = 18 }) => <Download size={size} strokeWidth={1.9} />;
 
 /**
  * Application shell: a full-width top bar (brand · search · actions) over a
@@ -28,6 +29,7 @@ const IconChat = ({ size = 18 }) => <MessageSquare size={size} strokeWidth={1.9}
  */
 const NAV = [
   { to: '/chat', label: 'Chat', Icon: IconChat },
+  { to: '/export', label: 'Export', Icon: IconExport, permission: 'task.read' },
   { to: '/users', label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { to: '/settings', label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
   { to: '/permissions', label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },
@@ -39,6 +41,7 @@ const MOBILE_TABS = [
   { label: 'Dashboards', Icon: ({ size }) => <LayoutGrid size={size} strokeWidth={1.9} /> },
   { label: 'Spaces', Icon: ({ size }) => <Layers size={size} strokeWidth={1.9} />, permission: 'project.read' },
   { label: 'Filters', Icon: ({ size }) => <Filter size={size} strokeWidth={1.9} />, permission: 'task.read' },
+  { label: 'Export', Icon: IconExport, permission: 'task.read' },
   { label: 'Users', Icon: IconMembers, permission: 'user.read' },
   { label: 'Settings', Icon: IconSettings, permission: 'admin.settings' },
   { label: 'Permission setting', Icon: IconPermission, permission: 'permission.manage' },

@@ -1,9 +1,9 @@
-import { PRIORITY_COLOR, statusLabel } from './tasksApi';
+import { PRIORITY_COLOR, statusLabel, fmtTaskDate } from './tasksApi';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import ResizableTable from '../../components/ResizableTable';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-const fmtDate = (d) => (d ? new Date(`${d}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+const fmtDate = fmtTaskDate;
 
 /**
  * Spreadsheet-style Table view of a Space/List's tasks — numbered rows with

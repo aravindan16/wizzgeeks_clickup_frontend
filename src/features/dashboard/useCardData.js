@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor, PRIORITY_COLOR, STATUS_GROUPS } from '../tasks/tasksApi';
+import { tasksApi, resolveStatuses, isDoneStatus, statusLabel, statusColor, PRIORITY_COLOR, STATUS_GROUPS, parseTaskDate } from '../tasks/tasksApi';
 
 const GROUP_COLOR = { not_started: '#9ca3af', active: '#3b82f6', done: '#22c55e', closed: '#16a34a' };
 import { projectsApi } from '../projects/projectsApi';
@@ -60,7 +60,7 @@ export function useCardData(card) {
           const due = tasks.filter((t) => {
             if (isDoneStatus(sts, t.status)) return false;
             const d = t.end_date || t.due_date;
-            return d && new Date(`${d}T00:00`) < t0;
+            return d && parseTaskDate(d) < t0;
           }).length;
           return { done, due };
         };

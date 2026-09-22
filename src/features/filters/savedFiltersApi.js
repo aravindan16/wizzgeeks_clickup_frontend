@@ -9,8 +9,9 @@ export const savedFiltersApi = {
   results: (id, { skip = 0, limit = 0 } = {}) =>
     apiClient.get(`/saved-filters/${id}/results`, { params: { skip, limit }, _silent: true }).then((r) => r.data),
   // Evaluate an ad-hoc rule tree server-side (live builder preview / edited filter), paged.
-  evaluate: (cards, conj, { skip = 0, limit = 0 } = {}) =>
-    apiClient.post('/saved-filters/evaluate', { cards, conj }, { params: { skip, limit }, _silent: true }).then((r) => r.data),
+  // Optional date range (Export): date_field ('created_at' | 'updated_at'), date_from, date_to.
+  evaluate: (cards, conj, { skip = 0, limit = 0, ...range } = {}) =>
+    apiClient.post('/saved-filters/evaluate', { cards, conj, ...range }, { params: { skip, limit }, _silent: true }).then((r) => r.data),
   create: (payload) => apiClient.post('/saved-filters', payload).then((r) => r.data),
   update: (id, payload) => apiClient.patch(`/saved-filters/${id}`, payload).then((r) => r.data),
   remove: (id) => apiClient.delete(`/saved-filters/${id}`).then((r) => r.data),
