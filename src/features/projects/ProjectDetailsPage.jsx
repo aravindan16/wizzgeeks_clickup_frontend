@@ -82,7 +82,7 @@ export default function ProjectDetailsPage() {
   const canManageGlobal = can('project.member.manage');
 
   const loadTasks = useCallback(async () => {
-    const res = await tasksApi.list({ project_id: id, limit: 200, sort_by: 'created_at', sort_dir: 1 });
+    const res = await tasksApi.listAll({ project_id: id, sort_by: 'created_at', sort_dir: 1 });
     setTasks(res.items);
   }, [id]);
 

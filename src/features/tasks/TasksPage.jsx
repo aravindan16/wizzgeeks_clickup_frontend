@@ -21,10 +21,10 @@ export default function TasksPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = { limit: 200, ...sort };
+    const params = { ...sort };
     Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
     const [list, mx] = await Promise.all([
-      tasksApi.list(params),
+      tasksApi.listAll(params),
       tasksApi.metrics(filters.project_id ? { project_id: filters.project_id } : {}),
     ]);
     setTasks(list.items);

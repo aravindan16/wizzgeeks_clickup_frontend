@@ -89,7 +89,7 @@ export default function ListBoardPage() {
   };
 
   const loadTasks = useCallback(async (listId) => {
-    const res = await tasksApi.list({ list_id: listId, limit: 200, sort_by: 'created_at', sort_dir: 1 });
+    const res = await tasksApi.listAll({ list_id: listId, sort_by: 'created_at', sort_dir: 1 });
     setTasks(res.items);
   }, []);
 

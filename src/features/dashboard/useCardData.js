@@ -96,7 +96,7 @@ export function useCardData(card) {
             const want = meta.lists || [];
             const useFields = want.length ? relFields.filter((f) => want.includes(f.location)) : relFields;
 
-            const res = await shared('tasks:' + meta.id, () => tasksApi.list({ list_id: meta.id, limit: 200 })).catch(() => ({ items: [] }));
+            const res = await shared('tasks:' + meta.id, () => tasksApi.listAll({ list_id: meta.id })).catch(() => ({ items: [] }));
             const parents = res.items || [];
             const childGroup = {}; // childId -> related list name
             let childIds = [];
@@ -125,7 +125,7 @@ export function useCardData(card) {
           rows = await Promise.all((card.lists || []).map(async (l) => {
             const [listDoc, res] = await Promise.all([
               shared('list:' + l.id, () => listsApi.get(l.id)).catch(() => null),
-              shared('tasks:' + l.id, () => tasksApi.list({ list_id: l.id, limit: 200 })).catch(() => ({ items: [] })),
+              shared('tasks:' + l.id, () => tasksApi.listAll({ list_id: l.id })).catch(() => ({ items: [] })),
             ]);
             const tasks = res.items || [];
             const spaceSts = await getSts(l.spaceId);
