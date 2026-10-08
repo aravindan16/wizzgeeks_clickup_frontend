@@ -10,6 +10,21 @@ export const tasksApi = {
   remove: (id) => apiClient.delete(`/tasks/${id}`).then((r) => r.data),
   activity: (id, opts) => apiClient.get(`/tasks/${id}/activity`, opts).then((r) => r.data),
   metrics: (params) => apiClient.get('/tasks/metrics', { params }).then((r) => r.data),
+  listAll: async (params, { cap = 5000, batch = 5 } = {}) => {
+    const PAGE = 200;
+    const first = await apiClient.get('/tasks', { params: { ...params, skip: 0, limit: PAGE } }).then((r) => r.data);
+    const total = Math.min(first.total ?? 0, cap);
+    const items = first.items || [];
+    const skips = [];
+    for (let skip = PAGE; skip < total; skip += PAGE) skips.push(skip);
+    for (let i = 0; i < skips.length; i += batch) {
+      const pages = await Promise.all(skips.slice(i, i + batch).map((skip) =>
+        apiClient.get('/tasks', { params: { ...params, skip, limit: PAGE } })
+          .then((r) => r.data.items || []).catch(() => [])));
+      pages.forEach((p) => items.push(...p));
+    }
+    return { items, total: first.total ?? items.length };
+  },
   comments: (id) => apiClient.get(`/tasks/${id}/comments`).then((r) => r.data),
   addComment: (id, body) => apiClient.post(`/tasks/${id}/comments`, { body }).then((r) => r.data),
   editComment: (cid, body) => apiClient.patch(`/tasks/comments/${cid}`, { body }).then((r) => r.data),
