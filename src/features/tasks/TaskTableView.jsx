@@ -1,6 +1,7 @@
 import { PRIORITY_COLOR, statusLabel, fmtTaskDate } from './tasksApi';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import ResizableTable from '../../components/ResizableTable';
+import { selectionColumn } from './selectionColumn';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const fmtDate = fmtTaskDate;
@@ -10,12 +11,13 @@ const fmtDate = fmtTaskDate;
  * Name / Assignee / Status / Due date / Priority columns. Clicking a row opens
  * the task. Columns are drag-resizable (shared ResizableTable).
  */
-export default function TaskTableView({ tasks, members, statuses = [], onOpenTask }) {
+export default function TaskTableView({ tasks, members, statuses = [], onOpenTask, selection = null }) {
   const open = onOpenTask || (() => {});
   const nameOf = (uid) => (members || []).find((m) => m.user_id === uid)?.full_name;
   const colorOf = (key) => statuses.find((st) => st.key === key)?.color || 'var(--c-muted)';
 
   const columns = [
+    ...selectionColumn(selection),
     { key: 'idx', label: '#', width: 48, min: 40, align: 'center', render: (t, i) => <span style={{ color: 'var(--c-faint)' }}>{i + 1}</span> },
     { key: 'name', label: 'Name', width: 360, min: 160, render: (t) => (
       <span style={s.nameCell}>
@@ -41,7 +43,7 @@ export default function TaskTableView({ tasks, members, statuses = [], onOpenTas
   ];
 
   return (
-    <ResizableTable persistKey="wg_task_table_cols" columns={columns} rows={tasks} fillHeight
+    <ResizableTable key={selection ? 'sel' : 'plain'} persistKey="wg_task_table_cols" columns={columns} rows={tasks} fillHeight
       rowKey={(t) => t._id} onRowClick={(t) => open(t._id)} emptyText="No tasks." />
   );
 }

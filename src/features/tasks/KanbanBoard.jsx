@@ -76,6 +76,8 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const toast = useToast();
   const me = user?._id || user?.id;
   const [dragId, setDragId] = useState(null);
+  // Bulk selection: tick cards, then drag ANY ticked card to move them all at once.
+  const [selected, setSelected] = useState(() => new Set());
   const [dragOverCol, setDragOverCol] = useState(null); // status key currently hovered while dragging
   const [error, setError] = useState(null);
 
@@ -196,6 +198,14 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
   const canCreate = can('task.create') && !!projectId;
   const byStatus = (st) => board.filter((t) => t.status === st);
   const draggedTask = dragId ? board.find((t) => t._id === dragId) : null;
+  const canDrag = can('task.update');
+  // One checkbox per column: ticks every card in that column, then dragging any of
+  // them moves the whole selection. Selecting a column replaces the previous one.
+  const isColSelected = (st) => {
+    const ids = byStatus(st).map((t) => t._id);
+    return ids.length > 0 && ids.every((id) => selected.has(id));
+  };
+  const toggleColumn = (st) => setSelected(() => (isColSelected(st) ? new Set() : new Set(byStatus(st).map((t) => t._id))));
   const typeOpt = TYPE_OPTIONS.find((t) => t.value === type) || TYPE_OPTIONS[1];
   const assignee = members.find((m) => m.user_id === assigneeId);
   const assigneeLabel = assignee?.full_name || '';
@@ -232,23 +242,31 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
     setDragId(null);
     setDragOverCol(null);
     setError(null);
-    const task = board.find((t) => t._id === id);
-    if (!task || task.status === status) return;
-    // Optimistic: move the card instantly so there's no perceived lag, then
+    // Dragging a TICKED card moves every ticked card; dragging an unticked one
+    // moves just that card (so plain single drags still work).
+    const ids = selected.has(id) ? [...selected] : [id];
+    const moving = board.filter((t) => ids.includes(t._id) && t.status !== status);
+    if (!moving.length) return;
+    // Optimistic: move the cards instantly so there's no perceived lag, then
     // persist in the background. Revert if the server rejects it.
     const prev = board;
-    setBoard((b) => b.map((t) => (t._id === id ? { ...t, status } : t)));
+    const movingIds = new Set(moving.map((t) => t._id));
+    setBoard((b) => b.map((t) => (movingIds.has(t._id) ? { ...t, status } : t)));
     try {
       // ClickUp-style: tasks move freely between any of the space's statuses.
       // _silent so the global loader doesn't flash. Then sync the PARENT's task list:
       // the board re-seeds from the parent whenever it re-renders (e.g. opening a
       // task), so skipping this showed the old status again until a page refresh.
-      // The refetch returns the same order/status, so the board doesn't blink.
-      await tasksApi.changeStatus(id, { to_status: status }, { _silent: true });
+      for (const t of moving) {
+        await tasksApi.changeStatus(t._id, { to_status: status }, { _silent: true });
+      }
+      if (moving.length > 1) toast.success(`Moved ${moving.length} tasks`);
+      setSelected(new Set());
       onChanged?.();
     } catch (err) {
       setBoard(prev); // roll back the optimistic move
       setError(err.response?.data?.error?.message || 'Could not move task');
+      onChanged?.(); // re-sync: some of the batch may already have moved
     }
   };
 
@@ -294,6 +312,11 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
             onDragOver={(e) => { e.preventDefault(); if (dragOverCol !== st) setDragOverCol(st); }}
             onDrop={() => onDrop(st)}>
             <div className="wg-col-head" style={{ background: bg }}>
+              {canDrag && byStatus(st).length > 0 && (
+                <input type="checkbox" style={s.colCheck} checked={isColSelected(st)}
+                  title={isColSelected(st) ? 'Clear selection' : `Select all ${byStatus(st).length} and drag to another column`}
+                  onChange={() => toggleColumn(st)} />
+              )}
               <span style={{ ...s.statusPill, background: col.color }}>
                 {['done', 'closed'].includes(col.group)
                   ? <span style={s.pillGlyph}>✓</span>
@@ -310,7 +333,8 @@ function KanbanBoard({ tasks, onChanged, projectId, listId = null, members = [],
                 <div key={t._id} className="wg-card"
                   draggable onDragStart={() => setDragId(t._id)}
                   onDragEnd={() => { setDragId(null); setDragOverCol(null); }}
-                  style={dragId === t._id ? s.cardDragging : undefined}
+                  style={{ ...(dragId === t._id ? s.cardDragging : {}),
+                    ...(selected.has(t._id) ? s.cardSelected : {}) }}
                   onClick={() => open(t._id)}>
                   <div style={s.cardTop}>
                     <CardTitle style={s.cardTitle} text={t.title} />
@@ -560,6 +584,8 @@ const s = {
   pillRing: { width: 10, height: 10, borderRadius: '50%', border: '2px solid', flexShrink: 0 },
   count: { background: 'transparent', borderRadius: 999, padding: '1px 4px', fontWeight: 800, fontSize: 13 },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
+  colCheck: { flexShrink: 0, marginRight: 2, cursor: 'pointer' },
+  cardSelected: { outline: '2px solid var(--c-primary)', outlineOffset: -1 },
   cardTitle: { fontSize: 14, fontWeight: 600, lineHeight: 1.35, color: 'var(--c-text)', display: '-webkit-box',
     WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
   chipsRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 },

@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useHeaderSlot } from '../../layouts/headerSlot';
 import { tasksApi, resolveStatuses } from '../tasks/tasksApi';
 import { projectsApi } from '../projects/projectsApi';
+import { listsApi } from '../lists/listsApi';
 import { customFieldsApi } from '../customfields/customFieldsApi';
 import CustomFieldValue from '../customfields/CustomFieldValue';
 import { dashboardsApi } from '../dashboard/dashboardsApi';
@@ -27,12 +28,14 @@ export default function FilterBulkPage() {
   const toast = useToast();
 
   const initial = location.state?.tasks || [];
+  // Where the selection came from (Filters, or a List/Space board) — shown in the crumb.
+  const backLabel = location.state?.backLabel || 'Filters';
   const [items, setItems] = useState(() => initial.map((t) => ({ ...t, _sel: true })));
   const [step, setStep] = useState(0);
   const [operation, setOperation] = useState('edit'); // edit | delete
   const [users, setUsers] = useState([]);
-  const [statusOpts, setStatusOpts] = useState([]); // union of statuses across the selected tasks' spaces
-  const [spaceSts, setSpaceSts] = useState({});      // projectId -> Set of valid status keys
+  const [statusOpts, setStatusOpts] = useState([]); // union of statuses across the selected tasks' workflows
+  const [allowedSts, setAllowedSts] = useState({});  // "projectId|listId" -> Set of valid status keys
   const [edit, setEdit] = useState({ statusOn: false, status: '', priorityOn: false, priority: 'medium', assigneeOn: false, assignee: '',
     reporterOn: false, reporter: '', dueOn: false, due: '', labelsOn: false, labels: [] });
   const [busy, setBusy] = useState(false);
@@ -67,18 +70,36 @@ export default function FilterBulkPage() {
     ? String(f.list_id) === String(t.list_id)
     : String(f.space_id) === String(t.project_id));
 
-  // Load each selected task's Space statuses → union of options (a status is only
-  // applied to tasks whose Space actually has it).
+  // Statuses offered for "Change status": the workflow of each selected task's LIST
+  // when that List has its own statuses, otherwise its Space's. (A List like
+  // DEVELOPMENT can define DEployed / Ready_for_deployment, which the Space lacks.)
   useEffect(() => {
-    const pids = [...new Set(initial.map((t) => String(t.project_id)))];
-    if (!pids.length) return;
-    Promise.all(pids.map((pid) => projectsApi.get(pid).then((sp) => ({ pid, sts: resolveStatuses(sp) })).catch(() => ({ pid, sts: [] }))))
-      .then((results) => {
-        const map = {}; const union = {};
-        results.forEach(({ pid, sts }) => { map[pid] = new Set(sts.map((x) => x.key)); sts.forEach((x) => { if (!union[x.key]) union[x.key] = { value: x.key, label: x.name }; }); });
-        setSpaceSts(map); setStatusOpts(Object.values(union));
+    const combos = {};
+    initial.forEach((t) => {
+      const pid = String(t.project_id); const lid = t.list_id ? String(t.list_id) : '';
+      combos[`${pid}|${lid}`] = { pid, lid };
+    });
+    const reqs = Object.values(combos);
+    if (!reqs.length) return;
+    Promise.all(reqs.map(async ({ pid, lid }) => {
+      const [sp, lst] = await Promise.all([
+        projectsApi.get(pid).catch(() => null),
+        lid ? listsApi.get(lid).catch(() => null) : Promise.resolve(null),
+      ]);
+      const source = (lst && lst.status_mode === 'custom' && lst.statuses?.length) ? lst : sp;
+      return { key: `${pid}|${lid}`, sts: source ? resolveStatuses(source) : [] };
+    })).then((results) => {
+      const map = {}; const union = {};
+      results.forEach(({ key, sts }) => {
+        map[key] = new Set(sts.map((x) => x.key));
+        sts.forEach((x) => { if (!union[x.key]) union[x.key] = { value: x.key, label: x.name }; });
       });
+      setAllowedSts(map); setStatusOpts(Object.values(union));
+    });
   }, []); // eslint-disable-line
+
+  // Valid status keys for one task (its List's workflow, else its Space's).
+  const stsFor = (t) => allowedSts[`${String(t.project_id)}|${t.list_id ? String(t.list_id) : ''}`];
 
   // No tasks (e.g. opened directly) → back to Filters.
   useEffect(() => { if (!initial.length) navigate('/filters', { replace: true }); }, []); // eslint-disable-line
@@ -140,9 +161,9 @@ export default function FilterBulkPage() {
           }
           if (Object.keys(patch).length) await tasksApi.update(t._id, patch);
           if (edit.assigneeOn) await tasksApi.assign(t._id, edit.assignee || null);
-          // Status: only change it on tasks whose Space actually has that status.
+          // Status: only change it on tasks whose own workflow has that status.
           if (edit.statusOn && edit.status) {
-            if (spaceSts[String(t.project_id)]?.has(edit.status)) await tasksApi.changeStatus(t._id, { to_status: edit.status });
+            if (stsFor(t)?.has(edit.status)) await tasksApi.changeStatus(t._id, { to_status: edit.status });
             else statusSkipped += 1;
           }
         }
@@ -158,7 +179,7 @@ export default function FilterBulkPage() {
     <div>
       {slotEl && createPortal(
         <span style={s.crumbs}>
-          <button style={s.crumbLink} onClick={() => navigate(-1)}>Filters</button>
+          <button style={s.crumbLink} onClick={() => navigate(-1)}>{backLabel}</button>
           <span style={s.crumbSep}>›</span>
           <span style={s.crumbCurrent}>Bulk Operation</span>
         </span>, slotEl)}
@@ -166,7 +187,7 @@ export default function FilterBulkPage() {
       <div style={s.layout}>
         {/* Step rail */}
         <aside style={s.rail}>
-          <button type="button" style={s.railTitle} title="Back to Filters" onClick={() => navigate(-1)}>Bulk Operation</button>
+          <button type="button" style={s.railTitle} title={`Back to ${backLabel}`} onClick={() => navigate(-1)}>Bulk Operation</button>
           {STEPS.map((label, i) => {
             const canGoBack = i < step; // only navigate BACK to already-completed steps
             return (
