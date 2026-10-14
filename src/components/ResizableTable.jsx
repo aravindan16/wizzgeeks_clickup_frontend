@@ -8,7 +8,8 @@ const PAGE_SIZES = [10, 20, 50, 100];
  * bottom pagination (10 / 20 / 50 / 100 per page — default 10). Column widths
  * persist in localStorage when `persistKey` is given.
  *
- * columns: [{ key, label, width, min?, align?, render:(row, index) => node }]
+ * columns: [{ key, label, width, min?, align?, render:(row, index) => node,
+ *            header? — a node rendered instead of `label` (e.g. a select-all checkbox) }]
  * rows:    array of records
  * rowKey:  (row) => stable key
  * onRowClick: (row) => void   (optional — rows get a pointer cursor when set)
@@ -83,7 +84,7 @@ export default function ResizableTable({
             <tr>
               {columns.map((c, i) => (
                 <th key={c.key} style={{ ...th, ...(c.align ? { textAlign: c.align } : {}), ...(i < last ? s.line : {}) }}>
-                  <span style={s.thLabel}>{c.label}</span>
+                  <span style={s.thLabel}>{c.header ?? c.label}</span>
                   {i < last && <span style={s.resize} onMouseDown={(e) => startResize(e, c.key)} title="Drag to resize" />}
                 </th>
               ))}

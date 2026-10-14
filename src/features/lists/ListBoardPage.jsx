@@ -11,6 +11,7 @@ import { tasksApi, STATUS_LABELS, resolveStatuses } from '../tasks/tasksApi';
 import KanbanBoard from '../tasks/KanbanBoard';
 import TaskListView from '../tasks/TaskListView';
 import TaskTableView from '../tasks/TaskTableView';
+import BulkSelectBar from '../tasks/BulkSelectBar';
 import ViewTabs from '../tasks/ViewTabs';
 import { useViews } from '../tasks/useViews';
 import TaskModal from '../tasks/TaskModal';
@@ -49,6 +50,8 @@ export default function ListBoardPage() {
   const [error, setError] = useState(null);
   const [taskQuery, setTaskQuery] = useState('');
   const [openTaskId, setOpenTaskId] = useState(null);
+  // Bulk selection (List / Table views) → the shared Bulk Operation wizard.
+  const [selected, setSelected] = useState(() => new Map());
   const [cardCustomFields, setCardCustomFields] = useState([]); // List's custom fields (for the Customize-view menu + card chips)
 
   // Which fields show on each board card (Customize view) — persisted per List.
@@ -132,6 +135,9 @@ export default function ListBoardPage() {
   }, [id, load]);
 
 
+  // Changing view or filters drops a stale selection.
+  useEffect(() => { setSelected(new Map()); }, [activeId, fcards, fconj, taskQuery]);
+
   if (error) return <div className="card" style={{ color: '#991b1b' }}>{error}</div>;
   if (!list || !space) return <div style={{ padding: '8px 0' }}><SkeletonBoard /></div>;
 
@@ -154,6 +160,18 @@ export default function ListBoardPage() {
   };
   const visibleTasks = filterTasks(tasks, fcards, fconj, { myId }).filter(matchesSearch);
   const activeFilterCount = activeRuleCount(fcards);
+
+  // Bulk selection is offered on the List / Table views (not the board).
+  const canBulk = can('task.update') && (activeView?.type === 'list' || activeView?.type === 'table');
+  const allSelected = visibleTasks.length > 0 && selected.size >= visibleTasks.length;
+  const toggleRow = (t) => setSelected((m) => {
+    const n = new Map(m);
+    if (n.has(t._id)) n.delete(t._id); else n.set(t._id, t);
+    return n;
+  });
+  const selectAll = () => setSelected(allSelected ? new Map() : new Map(visibleTasks.map((t) => [t._id, t])));
+  const startBulk = () => navigate('/bulk-edit', { state: { tasks: [...selected.values()], backLabel: list?.name } });
+  const selection = canBulk ? { selected, onToggle: toggleRow, allSelected, onToggleAll: selectAll } : null;
 
   return (
     <div style={s.page}>
@@ -223,6 +241,11 @@ export default function ListBoardPage() {
         document.body,
       )}
 
+      {selection && (
+        <BulkSelectBar count={selected.size} total={visibleTasks.length} allSelected={allSelected}
+          onToggleAll={selectAll} onClear={() => setSelected(new Map())} onStart={startBulk} />
+      )}
+
       <div style={{ ...s.viewArea, overflow: 'hidden', ...(activeView?.type === 'table' ? { display: 'flex', flexDirection: 'column' } : {}) }}>
         {activeView?.type === 'board' && (
           <KanbanBoard tasks={visibleTasks} onChanged={() => loadTasks(id)} projectId={space._id}
@@ -230,11 +253,11 @@ export default function ListBoardPage() {
             cardFields={cf.std} cardCustom={cardCustomFields.filter((f) => cf.isOn(`cf:${f._id}`, false))} />
         )}
         {activeView?.type === 'list' && (
-          <TaskListView tasks={visibleTasks} members={members} statuses={statuses}
+          <TaskListView tasks={visibleTasks} members={members} statuses={statuses} selection={selection}
             onChanged={() => loadTasks(id)} onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
         )}
         {activeView?.type === 'table' && (
-          <TaskTableView tasks={visibleTasks} members={members} statuses={statuses}
+          <TaskTableView tasks={visibleTasks} members={members} statuses={statuses} selection={selection}
             onCreate={() => setTaskOpen(true)} onOpenTask={setOpenTaskId} />
         )}
       </div>

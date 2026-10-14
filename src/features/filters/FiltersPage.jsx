@@ -500,7 +500,8 @@ export default function FiltersPage() {
             page={page} pageSize={pageSize} onPageChange={setPage}
             onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
             colState={colState} onResizeStart={startColResize}
-            onOpenTask={(id) => navigate(`/tasks/${id}`)} />
+            onOpenTask={(id) => navigate(`/tasks/${id}`)}
+            loadAllRows={() => savedFiltersApi.evaluate(cards, cardsConj, { skip: 0, limit: 0 }).then((r) => r.items || [])} />
         </div>
       ) : (
         // Brand-new (unsaved) filter: builder + a live results preview once a
@@ -512,7 +513,8 @@ export default function FiltersPage() {
               page={page} pageSize={pageSize} onPageChange={setPage}
               onPageSizeChange={(n) => { setPageSize(n); setPage(0); }} loading={loading}
               colState={colState} onResizeStart={startColResize}
-              onOpenTask={(id) => navigate(`/tasks/${id}`)} />
+              onOpenTask={(id) => navigate(`/tasks/${id}`)}
+            loadAllRows={() => savedFiltersApi.evaluate(cards, cardsConj, { skip: 0, limit: 0 }).then((r) => r.items || [])} />
           )}
         </div>
       )}
@@ -612,7 +614,7 @@ function OverflowText({ text, style }) {
 
 /* ---------------------------------------- Results table (resizable columns) */
 const PAGE_SIZES = [10, 20, 50, 100];
-function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPageSizeChange, loading, colState, onResizeStart, onOpenTask }) {
+function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPageSizeChange, loading, colState, onResizeStart, onOpenTask, loadAllRows }) {
   const navigate = useNavigate();
   const shown = columns.filter((c) => colState.visible[c.key]);
   // Server-side pagination: `rows` IS the current page; the parent refetches on page change.
@@ -623,14 +625,32 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
   const to = Math.min(total, safePage * pageSize + rows.length);
 
   // --- bulk selection --- (opens the step-by-step Bulk Operation page)
-  const [selected, setSelected] = useState(() => new Set());
-  const allIds = rows.map((r) => r._id);
-  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
-  const toggleRow = (id) => setSelected((s2) => { const n = new Set(s2); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSelected(() => (allSelected ? new Set() : new Set(allIds)));
-  const clearSel = () => setSelected(new Set());
+  // Keyed by id → the task itself, so a selection survives paging (the table only
+  // holds ONE server page at a time) and the bulk page gets every chosen task.
+  const [selected, setSelected] = useState(() => new Map());
+  const [selectingAll, setSelectingAll] = useState(false);
+  const allSelected = total > 0 && selected.size >= total;
+  const toggleRow = (t) => setSelected((m) => {
+    const n = new Map(m);
+    if (n.has(t._id)) n.delete(t._id); else n.set(t._id, t);
+    return n;
+  });
+  // The header checkbox selects EVERY matching task, not just this page's rows —
+  // it fetches the full match set (the table is server-paginated).
+  const toggleAll = async () => {
+    if (allSelected) { setSelected(new Map()); return; }
+    if (!loadAllRows) { setSelected(new Map(rows.map((r) => [r._id, r]))); return; }
+    setSelectingAll(true);
+    try {
+      const all = await loadAllRows();
+      setSelected(new Map(all.map((r) => [r._id, r])));
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+  const clearSel = () => setSelected(new Map());
   const startBulk = () => {
-    const picked = rows.filter((r) => selected.has(r._id));
+    const picked = [...selected.values()];
     if (picked.length) navigate('/bulk-edit', { state: { tasks: picked } });
   };
 
@@ -639,7 +659,7 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
       {/* Bulk action bar — appears when tasks are selected */}
       {selected.size > 0 && (
         <div style={s.bulkBar}>
-          <span style={s.bulkCount}>{selected.size} selected</span>
+          <span style={s.bulkCount}>{selectingAll ? 'Selecting…' : `${selected.size} selected`}</span>
           <button type="button" className="btn btn-primary" style={s.bulkBtn} onClick={startBulk}>Bulk change work items</button>
           <button type="button" className="icon-btn" style={s.bulkClear} onClick={clearSel} title="Clear selection">✕</button>
         </div>
@@ -650,7 +670,8 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
           <thead>
             <tr>
               <th style={{ ...s.rTh, ...s.rColLine, textAlign: 'center' }}>
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all" />
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={selectingAll}
+                  title={allSelected ? 'Clear selection' : `Select all ${total}`} />
               </th>
               {shown.map((c, i) => (
                 <th key={c.key} style={{ ...s.rTh, ...(i < shown.length - 1 ? s.rColLine : {}) }}>
@@ -664,8 +685,8 @@ function ResultsTable({ columns, rows, total, page, pageSize, onPageChange, onPa
             {!loading && total === 0 && <tr><td colSpan={shown.length + 1} style={s.empty}>No tasks found</td></tr>}
             {pageRows.map((t) => (
               <tr key={t._id} className="wg-rel-row" style={{ ...s.rRow, ...(selected.has(t._id) ? { background: 'var(--c-hover)' } : {}) }} onClick={() => onOpenTask(t._id)}>
-                <td style={{ ...s.rTd, ...s.rColLine, textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); toggleRow(t._id); }}>
-                  <input type="checkbox" checked={selected.has(t._id)} onChange={() => toggleRow(t._id)} onClick={(e) => e.stopPropagation()} />
+                <td style={{ ...s.rTd, ...s.rColLine, textAlign: 'center' }} onClick={(e) => { e.stopPropagation(); toggleRow(t); }}>
+                  <input type="checkbox" checked={selected.has(t._id)} onChange={() => toggleRow(t)} onClick={(e) => e.stopPropagation()} />
                 </td>
                 {shown.map((c, i) => <td key={c.key} style={{ ...s.rTd, ...(i < shown.length - 1 ? s.rColLine : {}) }}><div style={s.rClip}>{c.render(t)}</div></td>)}
               </tr>

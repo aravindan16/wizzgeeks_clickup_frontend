@@ -3,6 +3,7 @@ import { PRIORITY_COLOR, statusLabel } from './tasksApi';
 import TaskTypeIcon from '../../components/TaskTypeIcon';
 import { IconUser } from '../../components/icons';
 import ResizableTable from '../../components/ResizableTable';
+import { selectionColumn } from './selectionColumn';
 
 const initials = (n) => (n || '?').split(/[\s@.]+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
@@ -20,7 +21,7 @@ const colorFor = (name) => {
  * Status. Read-only — clicking a row opens the task. Columns are drag-resizable
  * (shared ResizableTable).
  */
-export default function TaskListView({ tasks, members, statuses = [], onOpenTask }) {
+export default function TaskListView({ tasks, members, statuses = [], onOpenTask, selection = null }) {
   const open = onOpenTask || (() => {});
 
   const nameOf = useMemo(() => {
@@ -39,6 +40,7 @@ export default function TaskListView({ tasks, members, statuses = [], onOpenTask
   }, [statuses, tasks]);
 
   const columns = [
+    ...selectionColumn(selection),
     { key: 'work', label: 'Work', width: 380, min: 180, render: (t) => (
       <div style={s.workCell}>
         <span title={t.type} style={{ display: 'inline-flex', color: 'var(--c-muted)' }}><TaskTypeIcon type={t.type} size={15} /></span>
@@ -57,7 +59,7 @@ export default function TaskListView({ tasks, members, statuses = [], onOpenTask
   ];
 
   return (
-    <ResizableTable persistKey="wg_task_list_cols" columns={columns} rows={tasks} fillHeight
+    <ResizableTable key={selection ? 'sel' : 'plain'} persistKey="wg_task_list_cols" columns={columns} rows={tasks} fillHeight
       rowKey={(t) => t._id} onRowClick={(t) => open(t._id)}
       emptyText={(tasks || []).length === 0 ? 'No tasks yet.' : 'No matching work.'} />
   );
